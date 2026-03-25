@@ -2,14 +2,27 @@
 <html lang="de">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
     <meta name="theme-color" content="#C1272D" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="format-detection" content="telephone=no" />
     <link rel="manifest" href="/manifest.json" />
+    <link rel="apple-touch-icon" href="/icon-192.png" />
     <title>Cereza Loyalty Club</title>
     <style>
-      body { margin: 0; padding: 0; background: #C1272D; overflow-x: hidden; }
+      html, body {
+        margin: 0; padding: 0;
+        background: #C1272D;
+        overflow: hidden;
+        position: fixed;
+        width: 100%; height: 100%;
+        overscroll-behavior: none;
+        -webkit-text-size-adjust: 100%;
+      }
+      /* Prevent pull-to-refresh */
+      body { touch-action: pan-y; }
     </style>
   </head>
   <body>

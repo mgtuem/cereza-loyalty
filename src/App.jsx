@@ -191,7 +191,7 @@ const HomeTab = ({ user, setUser, setTab }) => {
   useEffect(()=>{ db.getLeaderboard().then(d=>{if(d.length)setLb(d)}); },[]);
 
   return (
-    <div style={{ paddingBottom:"16px" }}>
+    <div style={{ paddingBottom:"16px", background:C.beige, minHeight:"100%", minHeight:"100%" }}>
       {/* Header */}
       <div style={{ padding:"18px 18px 20px", background:C.beige }}>
         <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:"14px" }}>
@@ -299,42 +299,90 @@ const HomeTab = ({ user, setUser, setTab }) => {
   );
 };
 
-// ─── Wheel ──────────────────────────────────────────────────────
+// ─── Missions + Wheel Tab ────────────────────────────────────────
 const WheelTab = ({ user, setUser }) => {
-  const [spinning,setSpinning]=useState(false); const [rot,setRot]=useState(0); const [result,setResult]=useState(null); const [spun,setSpun]=useState(user.wheel_spun_today||false);
+  const [spinning,setSpinning]=useState(false); const [rot,setRot]=useState(0); const [result,setResult]=useState(null);
+  const [spins,setSpins]=useState(user.wheel_spun_today ? 1 : 0); // 0, 1, or 2 spins used
+  const maxFreeSpins = 1; const maxPaidSpins = 2;
+  const canSpin = spins < maxPaidSpins;
+  const needsPay = spins >= maxFreeSpins;
+
   const spin = async()=>{
-    if(spinning||spun)return; setSpinning(true); setResult(null);
+    if(spinning || spins >= maxPaidSpins) return;
+    if(needsPay && (user.pts||0) < 100) { return; } // not enough pts for 2nd spin
+    setSpinning(true); setResult(null);
+    // Deduct 100 pts for 2nd spin
+    if(needsPay) {
+      const np = (user.pts||0) - 100;
+      setUser(u=>({...u, pts: np}));
+      if(user.id) await db.updateProfile(user.id, { pts: np });
+    }
     const idx=Math.floor(Math.random()*WHEEL_PRIZES.length); const seg=360/WHEEL_PRIZES.length;
     setRot(r=>r+360*6+(360-idx*seg-seg/2));
     setTimeout(async()=>{
-      setSpinning(false); setSpun(true); const prize=WHEEL_PRIZES[idx]; setResult(prize);
+      setSpinning(false); const newSpins = spins + 1; setSpins(newSpins);
+      const prize=WHEEL_PRIZES[idx]; setResult(prize);
       if(prize.value>0){ const np=(user.pts||0)+prize.value; setUser(u=>({...u,pts:np,wheel_spun_today:true})); if(user.id) await db.updateProfile(user.id,{pts:np,wheel_spun_today:true}); }
       else{ if(user.id) await db.updateProfile(user.id,{wheel_spun_today:true}); setUser(u=>({...u,wheel_spun_today:true})); }
     },5000);
   };
-  const sz=260,cx=sz/2,cy=sz/2,r=sz/2-10;
+
+  // Lighter wheel colors
+  const wheelColors = [
+    {bg:"#f4a59a"}, {bg:"#e8ddd0"}, {bg:"#f7c8a0"}, {bg:"#d4e8d0"},
+    {bg:"#f4a59a"}, {bg:"#e8ddd0"}, {bg:"#f7c8a0"}, {bg:"#d4e8d0"},
+  ];
+
+  const sz=240,cx=sz/2,cy=sz/2,r=sz/2-8;
   return (
-    <div style={{ paddingBottom:"16px", background:C.beige }}>
-      <div style={{ padding:"18px 20px 16px", textAlign:"center" }}>
-        <div style={{ fontSize:"10px", letterSpacing:"3px", color:C.textLight }}>daily</div>
-        <div style={{ fontSize:"24px", fontFamily:font.display, color:C.text, fontWeight:"700" }}>glücksrad</div>
-      </div>
-      <div style={{ display:"flex", flexDirection:"column", alignItems:"center", padding:"10px 16px" }}>
-        <div style={{ position:"relative", padding:"10px" }}>
-          <div style={{ position:"absolute",inset:0,borderRadius:"50%",border:`3px solid ${C.border}`,boxShadow:spinning?"0 0 24px rgba(226,74,40,0.4)":"0 0 12px rgba(0,0,0,0.08)",transition:"box-shadow 0.5s" }}/>
-          <div style={{ position:"absolute",top:"0",left:"50%",transform:"translateX(-50%)",zIndex:3,width:0,height:0,borderLeft:"9px solid transparent",borderRight:"9px solid transparent",borderTop:`16px solid ${C.orange}`,filter:"drop-shadow(0 2px 3px rgba(0,0,0,0.3))" }}/>
-          <svg width={sz} height={sz} viewBox={`0 0 ${sz} ${sz}`} style={{ transform:`rotate(${rot}deg)`,transition:spinning?"transform 5s cubic-bezier(0.15,0.6,0.15,1)":"none",display:"block" }}>
-            {WHEEL_PRIZES.map((p,i)=>{ const seg=360/WHEEL_PRIZES.length; const s=(i*seg-90)*Math.PI/180,e=((i+1)*seg-90)*Math.PI/180,mid=(s+e)/2;
-              return(<g key={i}><path d={`M${cx},${cy} L${cx+r*Math.cos(s)},${cy+r*Math.sin(s)} A${r},${r} 0 0,1 ${cx+r*Math.cos(e)},${cy+r*Math.sin(e)} Z`} fill={p.bg} stroke="rgba(255,255,255,0.06)" strokeWidth="1"/><text x={cx+(r*0.62)*Math.cos(mid)} y={cy+(r*0.62)*Math.sin(mid)} transform={`rotate(${i*seg+seg/2},${cx+(r*0.62)*Math.cos(mid)},${cy+(r*0.62)*Math.sin(mid)})`} textAnchor="middle" dominantBaseline="middle" fill="#fff" fontSize="10" fontWeight="700">{p.label}</text></g>);
-            })}
-            <circle cx={cx} cy={cy} r="24" fill={C.beige} stroke={C.orange} strokeWidth="3"/><circle cx={cx} cy={cy} r="18" fill={C.orange}/>
-            <text x={cx} y={cy+1} textAnchor="middle" dominantBaseline="middle" fill="#fff" fontSize="14" fontWeight="900" fontFamily="Gallica,serif">c</text>
-          </svg>
+    <div style={{ paddingBottom:"16px", background:C.beige, minHeight:"100%" }}>
+      {/* Missions Section */}
+      <div style={{ padding:"18px 16px 10px" }}>
+        <div style={{ display:"flex", justifyContent:"space-between", marginBottom:"10px" }}>
+          <div style={{ fontSize:"16px", fontWeight:"700", color:C.text }}>Missions</div>
+          <div style={{ fontSize:"11px", color:C.textLight }}>Week {Math.ceil((Date.now()-new Date(new Date().getFullYear(),0,1))/604800000)}</div>
         </div>
-        <button onClick={spin} disabled={spinning||spun} style={{ marginTop:"8px",padding:"13px 44px",border:"none",borderRadius:"50px",fontSize:"14px",fontWeight:"700",fontFamily:font.ui,background:spun?C.greyBg:C.orange,color:spun?C.textLight:C.white,cursor:spun?"not-allowed":"pointer",boxShadow:!spun?"0 4px 14px rgba(226,74,40,0.3)":"none" }}>
-          {spun?"morgen wieder ⏰":spinning?"dreht...":"🍒 drehen"}
-        </button>
-        {result && <Card style={{ marginTop:"14px",padding:"16px",textAlign:"center",animation:"scaleIn 0.4s",maxWidth:"240px" }}><div style={{fontSize:"32px",marginBottom:"4px"}}>{result.value>0?"🎉":result.value===-1?"⚡":"😅"}</div><div style={{fontSize:"16px",fontWeight:"800",color:result.value>0?C.orange:C.text}}>{result.value>0?`+${result.value} pts!`:result.value===-1?"2x pts heute!":"nächstes mal!"}</div></Card>}
+        {MOCK_MISSIONS.map((m,i)=>(
+          <Card key={m.id} style={{ marginBottom:"6px", padding:"12px 14px", display:"flex", alignItems:"center", gap:"10px", animation:`fadeUp 0.3s ease ${i*0.05}s both` }}>
+            <div style={{ width:"34px", height:"34px", borderRadius:"50%", background:C.beige, display:"flex", alignItems:"center", justifyContent:"center", fontSize:"15px" }}>{m.icon}</div>
+            <div style={{ flex:1 }}>
+              <div style={{ fontSize:"13px", fontWeight:"700", color:C.text }}>{m.title}</div>
+              <div style={{ fontSize:"10px", color:C.textLight, marginTop:"1px" }}>{m.description}</div>
+              {(m.progress||0)<m.goal && <div style={{ height:"3px", background:C.greyBg, borderRadius:"2px", marginTop:"6px" }}><div style={{ height:"100%", width:`${((m.progress||0)/m.goal)*100}%`, background:C.green, borderRadius:"2px" }}/></div>}
+            </div>
+            <div style={{ textAlign:"right" }}>
+              <div style={{ fontSize:"11px", fontWeight:"700", color:(m.progress||0)>=m.goal?C.green:C.orange }}>{m.progress||0}/{m.goal}</div>
+              <div style={{ fontSize:"9px", color:C.textLight }}>+{m.pts_reward} pts</div>
+            </div>
+          </Card>
+        ))}
+      </div>
+
+      {/* Wheel Section */}
+      <div style={{ padding:"10px 16px", textAlign:"center" }}>
+        <div style={{ fontSize:"12px", letterSpacing:"2px", color:C.textLight, marginBottom:"4px" }}>Daily Spin</div>
+        <div style={{ fontSize:"20px", fontFamily:font.display, color:C.text, fontWeight:"700", marginBottom:"12px" }}>Glücksrad</div>
+        
+        <div style={{ display:"flex", flexDirection:"column", alignItems:"center" }}>
+          <div style={{ position:"relative", padding:"8px" }}>
+            <div style={{ position:"absolute",inset:0,borderRadius:"50%",border:`2px solid ${C.border}`,boxShadow:spinning?"0 0 20px rgba(226,74,40,0.3)":"0 0 8px rgba(0,0,0,0.06)",transition:"box-shadow 0.5s" }}/>
+            <div style={{ position:"absolute",top:"-2px",left:"50%",transform:"translateX(-50%)",zIndex:3,width:0,height:0,borderLeft:"8px solid transparent",borderRight:"8px solid transparent",borderTop:`14px solid ${C.orange}` }}/>
+            <svg width={sz} height={sz} viewBox={`0 0 ${sz} ${sz}`} style={{ transform:`rotate(${rot}deg)`,transition:spinning?"transform 5s cubic-bezier(0.15,0.6,0.15,1)":"none",display:"block" }}>
+              {WHEEL_PRIZES.map((p,i)=>{ const seg=360/WHEEL_PRIZES.length; const s=(i*seg-90)*Math.PI/180,e=((i+1)*seg-90)*Math.PI/180,mid=(s+e)/2;
+                return(<g key={i}><path d={`M${cx},${cy} L${cx+r*Math.cos(s)},${cy+r*Math.sin(s)} A${r},${r} 0 0,1 ${cx+r*Math.cos(e)},${cy+r*Math.sin(e)} Z`} fill={wheelColors[i].bg} stroke={C.white} strokeWidth="2"/><text x={cx+(r*0.6)*Math.cos(mid)} y={cy+(r*0.6)*Math.sin(mid)} transform={`rotate(${i*seg+seg/2},${cx+(r*0.6)*Math.cos(mid)},${cy+(r*0.6)*Math.sin(mid)})`} textAnchor="middle" dominantBaseline="middle" fill={C.text} fontSize="10" fontWeight="700">{p.label}</text></g>);
+              })}
+              <circle cx={cx} cy={cy} r="28" fill={C.white} stroke={C.orange} strokeWidth="2"/>
+              <text x={cx} y={cy+2} textAnchor="middle" dominantBaseline="middle" fill={C.green} fontSize="24" fontWeight="900" fontFamily="Gallica,serif">c</text>
+            </svg>
+          </div>
+
+          <button onClick={spin} disabled={spinning || !canSpin || (needsPay && (user.pts||0)<100)} style={{ marginTop:"8px",padding:"12px 40px",border:"none",borderRadius:"50px",fontSize:"13px",fontWeight:"700",fontFamily:font.ui,background:!canSpin?C.greyBg:C.orange,color:!canSpin?C.textLight:C.white,cursor:!canSpin?"not-allowed":"pointer" }}>
+            {!canSpin ? "Fertig für heute" : spinning ? "Dreht..." : needsPay ? `Nochmal drehen (100 pts)` : "Drehen"}
+          </button>
+          <div style={{ fontSize:"10px", color:C.textLight, marginTop:"6px" }}>{spins}/{maxPaidSpins} Spins heute</div>
+
+          {result && <Card style={{ marginTop:"12px",padding:"14px",textAlign:"center",animation:"scaleIn 0.4s",maxWidth:"220px" }}><div style={{fontSize:"28px",marginBottom:"4px"}}>{result.value>0?"✨":result.value===-1?"⚡":"—"}</div><div style={{fontSize:"15px",fontWeight:"800",color:result.value>0?C.orange:C.text}}>{result.value>0?`+${result.value} pts!`:result.value===-1?"2x pts heute!":"Nächstes Mal!"}</div></Card>}
+        </div>
       </div>
     </div>
   );
@@ -360,7 +408,7 @@ const ScanTab = ({ user, setUser }) => {
   };
   useEffect(()=>()=>{if(scannerRef.current)try{scannerRef.current.stop()}catch(e){}},[]);
   return (
-    <div style={{ background:C.beige, display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center", padding:"30px 20px", minHeight:"75vh" }}>
+    <div style={{ background:C.beige, display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center", padding:"30px 20px", minHeight:"100%" }}>
       {!done?(<>
         <div style={{ fontSize:"10px", letterSpacing:"3px", color:C.textLight }}>qr code</div>
         <div style={{ fontSize:"24px", fontFamily:font.display, color:C.text, marginBottom:"24px", marginTop:"4px", fontWeight:"700" }}>punkte sammeln</div>
@@ -386,7 +434,7 @@ const VoteTab = ({ user }) => {
   const swipe=async d=>{ setDir(d); if(d==="right"){ setDishes(p=>p.map((x,i)=>i===idx?{...x,votes:x.votes+1}:x)); if(user.id) await supabase.from("dish_votes").upsert({user_id:user.id,dish_id:dishes[idx].id,vote:true}).catch(()=>{}); } setTimeout(()=>{setDir(null);setOff(0);setIdx(i=>i+1)},300); };
   const dish=dishes[idx];
   return (
-    <div style={{ background:C.beige, paddingBottom:"16px" }}>
+    <div style={{ background:C.beige, paddingBottom:"16px", background:C.beige, minHeight:"100%" }}>
       <div style={{ padding:"18px 20px 16px", textAlign:"center" }}>
         <div style={{ fontSize:"10px", letterSpacing:"3px", color:C.textLight }}>community vote</div>
         <div style={{ fontSize:"24px", fontFamily:font.display, color:C.text, fontWeight:"700" }}>nächste pizza?</div>
@@ -439,7 +487,7 @@ const ScoreTab = ({ user, setUser }) => {
     setRd(item); setTimeout(()=>setRd(null),2500);
   };
   return (
-    <div style={{ background:C.beige, paddingBottom:"16px" }}>
+    <div style={{ background:C.beige, paddingBottom:"16px", background:C.beige, minHeight:"100%" }}>
       <div style={{ padding:"18px 20px 16px", textAlign:"center" }}>
         <div style={{ fontSize:"10px", letterSpacing:"3px", color:C.textLight }}>rewards</div>
         <div style={{ fontSize:"24px", fontFamily:font.display, color:C.text, fontWeight:"700" }}>score</div>
@@ -465,7 +513,7 @@ const ProfileTab = ({ user, setUser, onLogout }) => {
   const [editing,setEditing]=useState(false); const [insta,setInsta]=useState(user.instagram||""); const [uname,setUname]=useState(user.name||"");
   const save=async()=>{ setUser(u=>({...u,name:uname,instagram:insta})); if(user.id) await db.updateProfile(user.id,{name:uname,instagram:insta}); setEditing(false); };
   return (
-    <div style={{ background:C.beige, paddingBottom:"16px" }}>
+    <div style={{ background:C.beige, paddingBottom:"16px", background:C.beige, minHeight:"100%" }}>
       <div style={{ padding:"24px 20px", textAlign:"center" }}>
         <div style={{ width:"64px",height:"64px",borderRadius:"50%",margin:"0 auto 10px",background:C.orange,display:"flex",alignItems:"center",justifyContent:"center",fontSize:"26px",border:`3px solid ${C.beige}` }}>🍒</div>
         <div style={{ fontSize:"20px", fontFamily:font.display, color:C.text, fontWeight:"700" }}>@{user.name||"user"}</div>
@@ -547,9 +595,20 @@ const AdminLogin = ({ onLogin, onBack }) => {
     try{
       const{data,error}=await db.signIn(email,pw);
       if(error){setErr("falsche zugangsdaten");setLoading(false);return}
+      // Wait a moment for session to establish, then check profile
+      await new Promise(r=>setTimeout(r,500));
       const profile=await db.getProfile(data.user.id);
-      if(profile?.is_admin) onLogin(profile); else{setErr("kein admin-zugang");await db.signOut()}
-    }catch(e){setErr("verbindungsfehler")}
+      console.log('Admin profile check:', profile);
+      if(profile && profile.is_admin) { onLogin(profile); }
+      else if(!profile) {
+        // Profile might not be readable yet, check via RPC or retry
+        await new Promise(r=>setTimeout(r,1000));
+        const retry = await db.getProfile(data.user.id);
+        if(retry?.is_admin) { onLogin(retry); }
+        else { setErr("kein admin-zugang oder profil nicht gefunden"); await db.signOut(); }
+      }
+      else { setErr("kein admin-zugang"); await db.signOut(); }
+    }catch(e){setErr("verbindungsfehler: "+e.message)}
     setLoading(false);
   };
   return (
@@ -609,7 +668,7 @@ export default function App() {
   if(adminMode==="panel") return <AdminPanel onClose={async()=>{await db.signOut();setAdminMode(false)}} />;
   if(!user) return <div style={{position:"fixed",inset:0,maxWidth:"430px",margin:"0 auto"}}><AuthScreen onLogin={setUser}/><div onClick={()=>setAdminMode("login")} style={{position:"fixed",bottom:"8px",left:"50%",transform:"translateX(-50%)",color:"rgba(0,0,0,0.06)",fontSize:"9px",cursor:"pointer",padding:"4px 10px"}}>admin</div></div>;
 
-  const nav=[{id:"home",icon:"🏠",l:"home"},{id:"wheel",icon:"🎰",l:"daily"},{id:"scan",icon:"📷",l:"scan"},{id:"vote",icon:"🔥",l:"vote"},{id:"score",icon:"🎁",l:"score"},{id:"profile",icon:"👤",l:"profil"}];
+  const nav=[{id:"home",icon:"🏠",l:"home"},{id:"missions",icon:"🎯",l:"missions"},{id:"scan",icon:"📷",l:"scan"},{id:"vote",icon:"🔥",l:"vote"},{id:"score",icon:"🎁",l:"score"},{id:"profile",icon:"👤",l:"profil"}];
 
   return (
     <div style={{position:"fixed",inset:0,maxWidth:"430px",margin:"0 auto",fontFamily:font.ui,background:C.bg,display:"flex",flexDirection:"column",overflow:"hidden"}}>
@@ -617,7 +676,7 @@ export default function App() {
       {showLevelUp && <LevelUpOverlay level={showLevelUp} onClose={()=>setShowLevelUp(null)} />}
       <div style={{flex:1,overflowY:"auto",overflowX:"hidden",WebkitOverflowScrolling:"touch",overscrollBehavior:"contain"}}>
         {tab==="home"&&<HomeTab user={user} setUser={setUser} setTab={setTab}/>}
-        {tab==="wheel"&&<WheelTab user={user} setUser={setUser}/>}
+        {tab==="missions"&&<WheelTab user={user} setUser={setUser}/>}
         {tab==="scan"&&<ScanTab user={user} setUser={setUser}/>}
         {tab==="vote"&&<VoteTab user={user}/>}
         {tab==="score"&&<ScoreTab user={user} setUser={setUser}/>}

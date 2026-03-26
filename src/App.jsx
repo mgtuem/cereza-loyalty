@@ -8,7 +8,7 @@ const C = {
   text: "#111111", textSub: "#463939", textLight: "#999999", textMuted: "#d1d1d1",
   white: "#ffffff", border: "#e3e3e3", cream: "#F5F0EB",
 };
-const font = { ui: "'Aileron', 'Source Sans Pro', 'Helvetica Neue', sans-serif", display: "'Gallica', Georgia, serif" };
+const font = { ui: "'Source Sans Pro', -apple-system, sans-serif", display: "'Playfair Display', Georgia, serif" };
 
 const ERAS = [
   { level: 1, name: "newbie", ptsNeeded: 0 }, { level: 2, name: "regular", ptsNeeded: 500 },
@@ -64,9 +64,7 @@ const MOCK_LB = [
 
 // ─── CSS ────────────────────────────────────────────────────────
 const CSS = `
-  @import url('https://fonts.googleapis.com/css2?family=Source+Sans+Pro:wght@400;600;700&display=swap');
-  @font-face { font-family: 'Aileron'; src: url('https://fonts.cdnfonts.com/css/aileron'); font-display: swap; }
-  @font-face { font-family: 'Gallica'; src: url('https://fonts.cdnfonts.com/css/galica'); font-display: swap; }
+  @import url('https://fonts.googleapis.com/css2?family=Source+Sans+Pro:wght@400;600;700&family=Playfair+Display:wght@400;700;900&display=swap');
   *,*::before,*::after{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
   html,body,#root{height:100%;width:100%;overflow:hidden;position:fixed;inset:0;background:${C.bg};overscroll-behavior:none;user-select:none;-webkit-user-select:none}
   input,textarea{user-select:text;-webkit-user-select:text}
@@ -439,26 +437,25 @@ const VoteTab = ({ user }) => {
   const swipe=async d=>{ setDir(d); if(d==="right"){ setDishes(p=>p.map((x,i)=>i===idx?{...x,votes:x.votes+1}:x)); if(user.id) await supabase.from("dish_votes").upsert({user_id:user.id,dish_id:dishes[idx].id,vote:true}).catch(()=>{}); } setTimeout(()=>{setDir(null);setOff(0);setIdx(i=>i+1)},300); };
   const dish=dishes[idx];
   return (
-    <div style={{ background:C.beige, paddingBottom:"16px", background:C.beige, minHeight:"100%" }}>
+    <div style={{ background:C.beige, paddingBottom:"16px", minHeight:"100%" }}>
       <div style={{ padding:"18px 20px 16px", textAlign:"center" }}>
-        <div style={{ fontSize:"10px", letterSpacing:"3px", color:C.textLight }}>community vote</div>
-        <div style={{ fontSize:"24px", fontFamily:font.display, color:C.text, fontWeight:"700" }}>nächste pizza?</div>
+        <div style={{ fontSize:"10px", letterSpacing:"3px", color:C.textLight }}>cinder</div>
+        <div style={{ fontSize:"24px", fontFamily:font.display, color:C.text, fontWeight:"700" }}>Nächste Pizza?</div>
       </div>
       <div style={{ padding:"10px 14px" }}>
-        {dish?(<>
+        {loading ? <div style={{textAlign:"center",padding:"40px",color:C.textLight}}>Lädt...</div> : dish?(<>
           <div onTouchStart={e=>setTs(e.touches[0].clientX)} onTouchMove={e=>{if(ts!==null)setOff(e.touches[0].clientX-ts)}} onTouchEnd={()=>{if(Math.abs(off)>80)swipe(off>0?"right":"left");else{setOff(0);setTs(null)}}}>
             <Card style={{ padding:0, overflow:"hidden", maxWidth:"340px", margin:"0 auto", transform:dir==="left"?"translateX(-120%) rotate(-15deg)":dir==="right"?"translateX(120%) rotate(15deg)":`translateX(${off}px) rotate(${off*0.04}deg)`, opacity:dir?0:1-Math.abs(off)*0.002, transition:dir?"all 0.3s":"none" }}>
-              <div style={{ height:"170px", background:`linear-gradient(135deg, ${C.beigeDark}, ${C.beige})`, display:"flex", alignItems:"center", justifyContent:"center", fontSize:"60px", position:"relative" }}>🍕
-                <div style={{ position:"absolute",bottom:"8px",right:"10px",background:C.text,color:C.white,borderRadius:"12px",padding:"3px 9px",fontSize:"11px",fontWeight:"700" }}>♥ {dish.votes}</div>
-                {off>40 && <div style={{position:"absolute",top:"10px",left:"10px",color:C.green,fontSize:"28px",fontWeight:"900",transform:"rotate(-15deg)"}}>like</div>}
-                {off<-40 && <div style={{position:"absolute",top:"10px",right:"10px",color:C.orange,fontSize:"28px",fontWeight:"900",transform:"rotate(15deg)"}}>nope</div>}
+              <div style={{ height:"170px", background:`linear-gradient(135deg, ${C.beigeDark}, ${C.beige})`, display:"flex", alignItems:"center", justifyContent:"center", fontSize:"48px", position:"relative" }}>
+                {dish.image_url ? <img src={dish.image_url} style={{width:"100%",height:"100%",objectFit:"cover"}} /> : <span style={{fontSize:"48px",color:C.textLight}}>?</span>}
+                <div style={{ position:"absolute",bottom:"8px",right:"10px",background:C.text,color:C.white,borderRadius:"12px",padding:"3px 9px",fontSize:"11px",fontWeight:"700" }}>{dish.votes} votes</div>
               </div>
               <div style={{ padding:"14px" }}><div style={{ fontSize:"18px",fontFamily:font.display,color:C.text,fontWeight:"700" }}>{dish.name}</div><div style={{ fontSize:"12px",color:C.textLight,marginTop:"3px" }}>{dish.description}</div></div>
             </Card>
           </div>
-          <div style={{ display:"flex",justifyContent:"center",gap:"14px",marginTop:"14px" }}>
-            <button onClick={()=>swipe("left")} style={{ width:"48px",height:"48px",borderRadius:"50%",background:C.white,border:`2px solid ${C.border}`,color:C.text,fontSize:"18px",cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center" }}>✕</button>
-            <button onClick={()=>swipe("right")} style={{ width:"48px",height:"48px",borderRadius:"50%",background:"rgba(226,74,40,0.1)",border:`2px solid ${C.orange}`,color:C.orange,fontSize:"18px",cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center" }}>♥</button>
+          <div style={{ display:"flex",justifyContent:"center",gap:"20px",marginTop:"16px" }}>
+            <button onClick={(e)=>{e.preventDefault();e.stopPropagation();swipe("left")}} style={{ width:"52px",height:"52px",borderRadius:"50%",background:C.white,border:`2px solid ${C.border}`,color:C.textSub,fontSize:"20px",cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center" }}>✕</button>
+            <button onClick={(e)=>{e.preventDefault();e.stopPropagation();swipe("right")}} style={{ width:"52px",height:"52px",borderRadius:"50%",background:C.orange,border:"none",color:C.white,fontSize:"20px",cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",boxShadow:"0 4px 12px rgba(226,74,40,0.3)" }}>♥</button>
           </div>
           <div style={{ textAlign:"center",color:C.textLight,fontSize:"10px",marginTop:"8px" }}>← swipe oder buttons →</div>
         </>):(
@@ -512,44 +509,81 @@ const ScoreTab = ({ user, setUser }) => {
   );
 };
 
-// ─── Profile ────────────────────────────────────────────────────
+// ─── Profile (includes Score + Share + Invite) ──────────────────
 const ProfileTab = ({ user, setUser, onLogout }) => {
   const era=ERAS.find(e=>e.level===(user.level||1))||ERAS[0];
   const [editing,setEditing]=useState(false); const [insta,setInsta]=useState(user.instagram||""); const [uname,setUname]=useState(user.name||"");
+  const [items,setItems]=useState(MOCK_SHOP); const [rd,setRd]=useState(null); const [showShare,setShowShare]=useState(false);
   const save=async()=>{ setUser(u=>({...u,name:uname,instagram:insta})); if(user.id) await db.updateProfile(user.id,{name:uname,instagram:insta}); setEditing(false); };
+  useEffect(()=>{db.getShopItems().then(d=>{if(d.length)setItems(d)});},[]);
+  const redeem=async item=>{ if((user.pts||0)<item.cost||(user.level||1)<item.min_level)return; const np=(user.pts||0)-item.cost; setUser(u=>({...u,pts:np})); if(user.id){await db.updateProfile(user.id,{pts:np});await supabase.from("redemptions").insert({user_id:user.id,item_id:item.id});} setRd(item);setTimeout(()=>setRd(null),2500); };
+  const shareCard=()=>{
+    if(navigator.share){navigator.share({title:"Cereza Loyalty",text:`Ich bin ${era.name} (Level ${user.level||1}) bei Cereza Pizza mit ${user.pts||0} Punkten! Werde auch Member:`,url:"https://cereza-loyalty.vercel.app"});}
+    else{setShowShare(true);setTimeout(()=>setShowShare(false),3000);}
+  };
+  const inviteFriend=()=>{
+    const link=`https://cereza-loyalty.vercel.app?ref=${user.name||"friend"}`;
+    if(navigator.share){navigator.share({title:"Cereza Pizza",text:"Tritt dem Cereza Loyalty Club bei! Wir bekommen beide XP:",url:link});}
+    else{navigator.clipboard?.writeText(link);alert("Link kopiert!");}
+  };
   return (
-    <div style={{ background:C.beige, paddingBottom:"16px", background:C.beige, minHeight:"100%" }}>
+    <div style={{ background:C.beige, paddingBottom:"16px", minHeight:"100%" }}>
+      {rd && <div style={{position:"fixed",inset:0,zIndex:999,background:"rgba(0,0,0,0.9)",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",animation:"scaleIn 0.3s"}}><div style={{fontSize:"40px",color:C.white}}>✓</div><div style={{color:C.white,fontSize:"18px",fontWeight:"700",marginTop:"10px"}}>Eingelöst!</div><div style={{color:"rgba(255,255,255,0.5)",fontSize:"11px",marginTop:"4px"}}>Zeige dies an der Kasse</div></div>}
+      {showShare && <div style={{position:"fixed",top:"20px",left:"50%",transform:"translateX(-50%)",background:C.green,color:C.white,padding:"10px 20px",borderRadius:"10px",fontSize:"13px",fontWeight:"600",zIndex:999,animation:"fadeUp 0.3s"}}>Link kopiert!</div>}
       <div style={{ padding:"24px 20px", textAlign:"center" }}>
-        <div style={{ width:"64px",height:"64px",borderRadius:"50%",margin:"0 auto 10px",background:C.orange,display:"flex",alignItems:"center",justifyContent:"center",fontSize:"26px",border:`3px solid ${C.beige}` }}>🍒</div>
+        <div style={{ width:"64px",height:"64px",borderRadius:"50%",margin:"0 auto 10px",background:C.orange,display:"flex",alignItems:"center",justifyContent:"center",fontSize:"22px",color:C.white,fontFamily:font.display,fontWeight:"700",border:`3px solid ${C.beige}` }}>{(user.name||"U")[0].toUpperCase()}</div>
         <div style={{ fontSize:"20px", fontFamily:font.display, color:C.text, fontWeight:"700" }}>@{user.name||"user"}</div>
-        <div style={{ color:C.textLight, fontSize:"11px", marginTop:"3px" }}>{era.name} · level {user.level||1}</div>
+        <div style={{ color:C.textLight, fontSize:"11px", marginTop:"3px" }}>{era.name} · Level {user.level||1}</div>
+        {/* Share + Invite buttons */}
+        <div style={{display:"flex",gap:"8px",justifyContent:"center",marginTop:"12px"}}>
+          <button onClick={shareCard} style={{padding:"8px 16px",background:C.white,border:`1px solid ${C.border}`,borderRadius:"20px",fontSize:"11px",fontWeight:"600",cursor:"pointer",fontFamily:font.ui,color:C.text}}>↗ Teilen</button>
+          <button onClick={inviteFriend} style={{padding:"8px 16px",background:C.orange,border:"none",borderRadius:"20px",fontSize:"11px",fontWeight:"600",cursor:"pointer",fontFamily:font.ui,color:C.white}}>+ Freunde einladen</button>
+        </div>
       </div>
       <div style={{ padding:"10px 14px" }}>
         <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr 1fr", gap:"8px", marginBottom:"10px" }}>
-          {[{v:user.pts||0,l:"pts"},{v:user.total_visits||0,l:"besuche"},{v:`${user.streak||0}🔥`,l:"streak"}].map((s,i)=><Card key={i} style={{padding:"12px",textAlign:"center"}}><div style={{fontSize:"17px",fontWeight:"800"}}>{s.v}</div><div style={{fontSize:"9px",color:C.textLight,marginTop:"2px"}}>{s.l}</div></Card>)}
+          {[{v:user.pts||0,l:"Punkte"},{v:user.total_visits||0,l:"Besuche"},{v:user.streak||0,l:"Streak"}].map((s,i)=><Card key={i} style={{padding:"12px",textAlign:"center"}}><div style={{fontSize:"17px",fontWeight:"800"}}>{s.v}</div><div style={{fontSize:"9px",color:C.textLight,marginTop:"2px"}}>{s.l}</div></Card>)}
         </div>
+
+        {/* Score / Rewards Section */}
+        <div style={{marginBottom:"10px"}}>
+          <div style={{fontSize:"13px",fontWeight:"700",color:C.text,marginBottom:"8px",padding:"0 2px"}}>Score — Einlösen</div>
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"6px"}}>
+            {items.map((item,i)=>{const ok=(user.pts||0)>=item.cost&&(user.level||1)>=item.min_level;const locked=(user.level||1)<item.min_level;
+              return <Card key={item.id} onClick={()=>ok&&redeem(item)} style={{padding:"12px 8px",textAlign:"center",opacity:locked?0.4:1,cursor:ok?"pointer":"default",border:ok?`2px solid ${C.orange}`:`1px solid ${C.border}`}}>
+                <div style={{fontSize:"22px",marginBottom:"4px"}}>{item.icon}</div>
+                <div style={{fontSize:"11px",fontWeight:"700"}}>{item.name}</div>
+                <div style={{marginTop:"6px",display:"inline-block",padding:"2px 8px",borderRadius:"10px",fontSize:"9px",fontWeight:"700",background:ok?C.orange:C.greyBg,color:ok?C.white:C.textLight}}>{locked?`Lvl ${item.min_level}`:`${item.cost} pts`}</div>
+              </Card>;
+            })}
+          </div>
+        </div>
+
+        {/* Profile Info */}
         <Card style={{ marginBottom:"10px" }}>
           {editing?(<>
-            <div style={{fontSize:"10px",fontWeight:"700",letterSpacing:"1px",marginBottom:"8px",color:C.textSub}}>profil bearbeiten</div>
-            <input value={uname} onChange={e=>setUname(e.target.value)} placeholder="username" style={{width:"100%",padding:"10px 12px",border:`1px solid ${C.border}`,borderRadius:"10px",fontSize:"14px",marginBottom:"8px",outline:"none",boxSizing:"border-box",fontFamily:font.ui}} />
+            <div style={{fontSize:"10px",fontWeight:"700",letterSpacing:"1px",marginBottom:"8px",color:C.textSub}}>Profil bearbeiten</div>
+            <input value={uname} onChange={e=>setUname(e.target.value)} placeholder="Username" style={{width:"100%",padding:"10px 12px",border:`1px solid ${C.border}`,borderRadius:"10px",fontSize:"14px",marginBottom:"8px",outline:"none",boxSizing:"border-box",fontFamily:font.ui}} />
             <input value={insta} onChange={e=>setInsta(e.target.value)} placeholder="@instagram" style={{width:"100%",padding:"10px 12px",border:`1px solid ${C.border}`,borderRadius:"10px",fontSize:"14px",marginBottom:"10px",outline:"none",boxSizing:"border-box",fontFamily:font.ui}} />
-            <button onClick={save} style={{width:"100%",padding:"11px",background:C.orange,border:"none",borderRadius:"10px",color:C.white,fontSize:"13px",fontWeight:"700",cursor:"pointer",fontFamily:font.ui}}>speichern</button>
+            <button onClick={save} style={{width:"100%",padding:"11px",background:C.orange,border:"none",borderRadius:"10px",color:C.white,fontSize:"13px",fontWeight:"700",cursor:"pointer",fontFamily:font.ui}}>Speichern</button>
           </>):(<>
-            {[{icon:"👤",label:"username",value:`@${user.name||"user"}`},{icon:"📧",label:"e-mail",value:user.email},{icon:"📸",label:"instagram",value:user.instagram||"—"},{icon:"📱",label:"telefon",value:user.phone||"—"},{icon:"🛡️",label:"dsgvo",value:"akzeptiert ✓"}].map((r,i)=>(
-              <div key={i} style={{display:"flex",alignItems:"center",gap:"8px",padding:"7px 0",borderBottom:i<4?`1px solid ${C.greyBg}`:"none"}}>
-                <span style={{fontSize:"13px"}}>{r.icon}</span><div style={{flex:1}}><div style={{fontSize:"9px",color:C.textLight}}>{r.label}</div><div style={{fontSize:"12px",fontWeight:"500"}}>{r.value}</div></div>
+            {[{label:"Username",value:`@${user.name||"user"}`},{label:"E-Mail",value:user.email},{label:"Instagram",value:user.instagram||"—"},{label:"Telefon",value:user.phone||"—"}].map((r,i)=>(
+              <div key={i} style={{display:"flex",alignItems:"center",gap:"8px",padding:"7px 0",borderBottom:i<3?`1px solid ${C.greyBg}`:"none"}}>
+                <div style={{flex:1}}><div style={{fontSize:"9px",color:C.textLight}}>{r.label}</div><div style={{fontSize:"12px",fontWeight:"500"}}>{r.value}</div></div>
               </div>
             ))}
-            <button onClick={()=>setEditing(true)} style={{width:"100%",marginTop:"10px",padding:"10px",background:C.beige,border:`1px solid ${C.border}`,borderRadius:"10px",color:C.text,fontSize:"12px",fontWeight:"600",cursor:"pointer",fontFamily:font.ui}}>✏️ profil bearbeiten</button>
+            <button onClick={()=>setEditing(true)} style={{width:"100%",marginTop:"10px",padding:"10px",background:C.beige,border:`1px solid ${C.border}`,borderRadius:"10px",color:C.text,fontSize:"12px",fontWeight:"600",cursor:"pointer",fontFamily:font.ui}}>Profil bearbeiten</button>
           </>)}
         </Card>
+
+        {/* Era Journey */}
         <Card>
-          <div style={{fontSize:"10px",fontWeight:"700",letterSpacing:"1.5px",marginBottom:"8px",color:C.textSub}}>era journey</div>
+          <div style={{fontSize:"10px",fontWeight:"700",letterSpacing:"1.5px",marginBottom:"8px",color:C.textSub}}>Era Journey</div>
           <div style={{display:"flex",gap:"5px",justifyContent:"center"}}>
-            {ERAS.map((e,i)=><div key={i} style={{width:"42px",height:"42px",borderRadius:"50%",background:(user.level||1)>=e.level?C.orange:C.greyBg,display:"flex",alignItems:"center",justifyContent:"center",fontSize:(user.level||1)>=e.level?"13px":"10px",fontWeight:"800",color:(user.level||1)>=e.level?C.white:C.textLight,border:(user.level||1)===e.level?`3px solid ${C.text}`:"none"}}>{(user.level||1)>=e.level?e.level:"🔒"}</div>)}
+            {ERAS.map((e,i)=><div key={i} style={{width:"42px",height:"42px",borderRadius:"50%",background:(user.level||1)>=e.level?C.orange:C.greyBg,display:"flex",alignItems:"center",justifyContent:"center",fontSize:(user.level||1)>=e.level?"13px":"10px",fontWeight:"800",color:(user.level||1)>=e.level?C.white:C.textLight,border:(user.level||1)===e.level?`3px solid ${C.text}`:"none"}}>{(user.level||1)>=e.level?e.level:"—"}</div>)}
           </div>
         </Card>
-        <button onClick={onLogout} style={{width:"100%",marginTop:"12px",padding:"11px",background:"transparent",border:`1px solid ${C.border}`,borderRadius:"10px",color:C.textLight,fontSize:"12px",cursor:"pointer",fontFamily:font.ui}}>ausloggen</button>
+        <button onClick={onLogout} style={{width:"100%",marginTop:"12px",padding:"11px",background:"transparent",border:`1px solid ${C.border}`,borderRadius:"10px",color:C.textLight,fontSize:"12px",cursor:"pointer",fontFamily:font.ui}}>Ausloggen</button>
       </div>
     </div>
   );
@@ -673,7 +707,7 @@ export default function App() {
   if(adminMode==="panel") return <AdminPanel onClose={async()=>{await db.signOut();setAdminMode(false)}} />;
   if(!user) return <div style={{position:"fixed",inset:0,maxWidth:"430px",margin:"0 auto"}}><AuthScreen onLogin={setUser}/><div onClick={()=>setAdminMode("login")} style={{position:"fixed",bottom:"8px",left:"50%",transform:"translateX(-50%)",color:"rgba(0,0,0,0.06)",fontSize:"9px",cursor:"pointer",padding:"4px 10px"}}>admin</div></div>;
 
-  const nav=[{id:"home",icon:"🏠",l:"home"},{id:"missions",icon:"🎯",l:"missions"},{id:"scan",icon:"📷",l:"scan"},{id:"vote",icon:"🔥",l:"vote"},{id:"score",icon:"🎁",l:"score"},{id:"profile",icon:"👤",l:"profil"}];
+  const nav=[{id:"home",icon:"⌂",l:"home"},{id:"missions",icon:"◎",l:"missions"},{id:"scan",icon:"⊞",l:"scan"},{id:"cinder",icon:"♡",l:"cinder"},{id:"profile",icon:"○",l:"profil"}];
 
   return (
     <div style={{position:"fixed",inset:0,maxWidth:"430px",margin:"0 auto",fontFamily:font.ui,background:C.bg,display:"flex",flexDirection:"column",overflow:"hidden"}}>
@@ -683,17 +717,16 @@ export default function App() {
         {tab==="home"&&<HomeTab user={user} setUser={setUser} setTab={setTab}/>}
         {tab==="missions"&&<WheelTab user={user} setUser={setUser}/>}
         {tab==="scan"&&<ScanTab user={user} setUser={setUser}/>}
-        {tab==="vote"&&<VoteTab user={user}/>}
-        {tab==="score"&&<ScoreTab user={user} setUser={setUser}/>}
+        {tab==="cinder"&&<VoteTab user={user}/>}
         {tab==="profile"&&<ProfileTab user={user} setUser={setUser} onLogout={async()=>{await db.signOut();setUser(null)}}/>}
       </div>
-      {/* iOS-style Tab Bar */}
+      {/* Tab Bar */}
       <div style={{flexShrink:0,background:"rgba(255,255,255,0.97)",backdropFilter:"blur(20px)",WebkitBackdropFilter:"blur(20px)",borderTop:"0.5px solid rgba(0,0,0,0.12)",paddingBottom:"env(safe-area-inset-bottom, 8px)"}}>
-        <div style={{display:"grid",gridTemplateColumns:"repeat(6, 1fr)",alignItems:"end",padding:"6px 0 2px",maxWidth:"400px",margin:"0 auto"}}>
+        <div style={{display:"grid",gridTemplateColumns:"repeat(5, 1fr)",alignItems:"end",padding:"8px 0 3px",maxWidth:"400px",margin:"0 auto"}}>
           {nav.map(n=>{const a=tab===n.id;
-            return <button key={n.id} onClick={()=>setTab(n.id)} style={{display:"flex",flexDirection:"column",alignItems:"center",gap:"2px",background:"none",border:"none",cursor:"pointer",padding:"4px 0"}}>
-              <div style={{fontSize:"22px",lineHeight:"1",opacity:a?1:0.4,transition:"all 0.2s"}}>{n.icon}</div>
-              <span style={{fontSize:"10px",fontWeight:a?"600":"400",color:a?C.orange:C.textLight,transition:"all 0.2s"}}>{n.l}</span>
+            return <button key={n.id} onClick={()=>setTab(n.id)} style={{display:"flex",flexDirection:"column",alignItems:"center",gap:"3px",background:"none",border:"none",cursor:"pointer",padding:"4px 0"}}>
+              <div style={{fontSize:"20px",lineHeight:"1",opacity:a?1:0.3,transition:"all 0.2s",color:a?C.orange:C.textLight,fontWeight:a?"700":"400"}}>{n.icon}</div>
+              <span style={{fontSize:"9px",fontWeight:a?"700":"400",color:a?C.orange:C.textLight,transition:"all 0.2s",letterSpacing:"0.3px"}}>{n.l}</span>
             </button>;
           })}
         </div>

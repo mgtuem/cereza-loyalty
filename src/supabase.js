@@ -25,7 +25,8 @@ export const db = {
 
   // Profile
   getProfile: async (uid) => {
-    const { data } = await supabase.from('profiles').select('*').eq('id', uid).single()
+    const { data, error } = await supabase.from('profiles').select('*').eq('id', uid).single()
+    if (error) console.error('getProfile error:', error.message)
     return data
   },
   updateProfile: async (uid, updates) => {

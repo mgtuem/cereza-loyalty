@@ -570,10 +570,29 @@ export default function App() {
   const [adminMode,setAdminMode]=useState(false); const [loading,setLoading]=useState(true);
 
   useEffect(()=>{
-    db.getSession().then(async({data:{session}})=>{
-      if(session?.user){ const p=await db.getProfile(session.user.id); if(p)setUser(p); }
+    // Try restore session
+    const restore = async () => {
+      try {
+        const { data: { session } } = await db.getSession();
+        if (session?.user) {
+          const p = await db.getProfile(session.user.id);
+          if (p) { setUser(p); }
+          else {
+            // Profile missing but session exists - create fallback profile from session
+            console.warn('Session exists but profile missing, using session data');
+            setUser({ id: session.user.id, name: session.user.user_metadata?.name || session.user.email?.split('@')[0], email: session.user.email, pts: 0, level: 1, streak: 0, total_visits: 0, treat_count: 0, treat_goal: 8, wheel_spun_today: false, is_abo_member: false, is_admin: false });
+          }
+        }
+      } catch(e) { console.error('Session restore error:', e); }
       setLoading(false);
-    }).catch(()=>setLoading(false));
+    };
+    restore();
+
+    // Listen for auth changes (login/logout)
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
+      if (event === 'SIGNED_OUT') { setUser(null); }
+    });
+    return () => subscription?.unsubscribe();
   },[]);
 
   useEffect(()=>{

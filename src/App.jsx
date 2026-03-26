@@ -448,8 +448,6 @@ const ScanTab = ({ user, setUser }) => {
       const{Html5Qrcode}=await import("html5-qrcode"); const scanner=new Html5Qrcode("qr-reader"); scannerRef.current=scanner;
       await scanner.start({facingMode:"environment"},{fps:10,qrbox:{width:200,height:200}},
         async()=>{ await scanner.stop(); setScanning(false); await awardPts(Math.floor(Math.random()*100)+50); },()=>{});
-          setScanning(false); setDone(true);
-        },()=>{});
     }catch(e){
       setScanning(false); await awardPts(Math.floor(Math.random()*100)+50);
     }

@@ -45,10 +45,10 @@ export const db = {
     return data || []
   },
 
-  // Missions
+  // Missions - load all active
   getMissions: async () => {
-    const week = Math.ceil((Date.now() - new Date(new Date().getFullYear(), 0, 1)) / 604800000)
-    const { data } = await supabase.from('missions').select('*').eq('active', true).eq('week_number', week)
+    const { data, error } = await supabase.from('missions').select('*').eq('active', true).order('id', { ascending: false })
+    if (error) console.error('getMissions error:', error.message)
     return data || []
   },
   getUserMissions: async (uid) => {
@@ -69,7 +69,8 @@ export const db = {
 
   // Dishes
   getDishes: async () => {
-    const { data } = await supabase.from('dishes').select('*, dish_votes(vote)').eq('active', true)
+    const { data, error } = await supabase.from('dishes').select('*, dish_votes(vote)').eq('active', true)
+    if (error) console.error('getDishes error:', error.message)
     return (data || []).map(d => ({ ...d, votes: d.dish_votes?.filter(v => v.vote).length || 0 }))
   },
   voteDish: async (uid, dishId, vote) => {

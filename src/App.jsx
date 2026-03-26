@@ -186,9 +186,10 @@ const HomeTab = ({ user, setUser, setTab }) => {
   const pct = next ? Math.min(100,Math.round(((user.pts-era.ptsNeeded)/(next.ptsNeeded-era.ptsNeeded))*100)) : 100;
   const [fi,setFi] = useState(0);
   const [lb,setLb] = useState(MOCK_LB);
+  const [missions,setMissions] = useState(MOCK_MISSIONS);
 
   useEffect(()=>{ const t=setInterval(()=>setFi(i=>(i+1)%FUN_FACTS.length),5000); return()=>clearInterval(t); },[]);
-  useEffect(()=>{ db.getLeaderboard().then(d=>{if(d.length)setLb(d)}); },[]);
+  useEffect(()=>{ db.getLeaderboard().then(d=>{if(d.length)setLb(d)}); db.getMissions().then(d=>{if(d.length)setMissions(d)}); },[]);
 
   return (
     <div style={{ paddingBottom:"16px", background:C.beige, minHeight:"100%", minHeight:"100%" }}>
@@ -264,7 +265,7 @@ const HomeTab = ({ user, setUser, setTab }) => {
             <div style={{ fontSize:"14px", fontWeight:"700", color:C.text }}>⊚ missions</div>
             <div style={{ fontSize:"11px", color:C.textLight }}>week {Math.ceil((Date.now()-new Date(new Date().getFullYear(),0,1))/604800000)}</div>
           </div>
-          {MOCK_MISSIONS.map((m,i)=>(
+          {missions.map((m,i)=>(
             <Card key={m.id} style={{ marginBottom:"6px", padding:"12px 14px", display:"flex", alignItems:"center", gap:"10px", animation:`fadeUp 0.3s ease ${i*0.05}s both` }}>
               <div style={{ width:"34px", height:"34px", borderRadius:"50%", background:C.beige, display:"flex", alignItems:"center", justifyContent:"center", fontSize:"15px" }}>{m.icon}</div>
               <div style={{ flex:1 }}>
@@ -302,10 +303,13 @@ const HomeTab = ({ user, setUser, setTab }) => {
 // ─── Missions + Wheel Tab ────────────────────────────────────────
 const WheelTab = ({ user, setUser }) => {
   const [spinning,setSpinning]=useState(false); const [rot,setRot]=useState(0); const [result,setResult]=useState(null);
-  const [spins,setSpins]=useState(user.wheel_spun_today ? 1 : 0); // 0, 1, or 2 spins used
+  const [spins,setSpins]=useState(user.wheel_spun_today ? 1 : 0);
+  const [missions,setMissions]=useState(MOCK_MISSIONS);
   const maxFreeSpins = 1; const maxPaidSpins = 2;
   const canSpin = spins < maxPaidSpins;
   const needsPay = spins >= maxFreeSpins;
+
+  useEffect(()=>{ db.getMissions().then(d=>{if(d.length)setMissions(d)}); },[]);
 
   const spin = async()=>{
     if(spinning || spins >= maxPaidSpins) return;
@@ -342,7 +346,7 @@ const WheelTab = ({ user, setUser }) => {
           <div style={{ fontSize:"16px", fontWeight:"700", color:C.text }}>Missions</div>
           <div style={{ fontSize:"11px", color:C.textLight }}>Week {Math.ceil((Date.now()-new Date(new Date().getFullYear(),0,1))/604800000)}</div>
         </div>
-        {MOCK_MISSIONS.map((m,i)=>(
+        {missions.map((m,i)=>(
           <Card key={m.id} style={{ marginBottom:"6px", padding:"12px 14px", display:"flex", alignItems:"center", gap:"10px", animation:`fadeUp 0.3s ease ${i*0.05}s both` }}>
             <div style={{ width:"34px", height:"34px", borderRadius:"50%", background:C.beige, display:"flex", alignItems:"center", justifyContent:"center", fontSize:"15px" }}>{m.icon}</div>
             <div style={{ flex:1 }}>
@@ -430,7 +434,8 @@ const ScanTab = ({ user, setUser }) => {
 
 // ─── Vote ───────────────────────────────────────────────────────
 const VoteTab = ({ user }) => {
-  const [idx,setIdx]=useState(0); const [dir,setDir]=useState(null); const [dishes,setDishes]=useState(MOCK_DISHES); const [ts,setTs]=useState(null); const [off,setOff]=useState(0);
+  const [idx,setIdx]=useState(0); const [dir,setDir]=useState(null); const [dishes,setDishes]=useState([]); const [ts,setTs]=useState(null); const [off,setOff]=useState(0); const [loading,setLoading]=useState(true);
+  useEffect(()=>{ db.getDishes().then(d=>{setDishes(d.length?d:MOCK_DISHES);setLoading(false)}).catch(()=>{setDishes(MOCK_DISHES);setLoading(false)}); },[]);
   const swipe=async d=>{ setDir(d); if(d==="right"){ setDishes(p=>p.map((x,i)=>i===idx?{...x,votes:x.votes+1}:x)); if(user.id) await supabase.from("dish_votes").upsert({user_id:user.id,dish_id:dishes[idx].id,vote:true}).catch(()=>{}); } setTimeout(()=>{setDir(null);setOff(0);setIdx(i=>i+1)},300); };
   const dish=dishes[idx];
   return (
@@ -552,9 +557,9 @@ const ProfileTab = ({ user, setUser, onLogout }) => {
 
 // ─── Admin ──────────────────────────────────────────────────────
 const AdminPanel = ({ onClose }) => {
-  const [tab,setTab]=useState("users"); const [users,setUsers]=useState([]);
-  const tabs=[{id:"users",l:"👥 user"},{id:"points",l:"⚙️ punkte"},{id:"missions",l:"🎯 missionen"},{id:"glow",l:"⚡ glow"},{id:"dishes",l:"🍕 gerichte"},{id:"abo",l:"💎 abos"}];
-  useEffect(()=>{db.getAllProfiles().then(d=>setUsers(d))},[]);
+  const [tab,setTab]=useState("users"); const [users,setUsers]=useState([]); const [missions,setMissions]=useState([]); const [dishes,setDishes]=useState([]);
+  const tabs=[{id:"users",l:"user"},{id:"points",l:"punkte"},{id:"missions",l:"missionen"},{id:"glow",l:"glow"},{id:"dishes",l:"gerichte"},{id:"abo",l:"abos"}];
+  useEffect(()=>{db.getAllProfiles().then(d=>setUsers(d)); db.getMissions().then(d=>setMissions(d.length?d:MOCK_MISSIONS)); db.getDishes().then(d=>setDishes(d.length?d:MOCK_DISHES)); },[]);
   const addPts=async(uid,amt)=>{ const u=users.find(x=>x.id===uid); if(!u)return; await db.updateProfile(uid,{pts:(u.pts||0)+amt}); setUsers(p=>p.map(x=>x.id===uid?{...x,pts:(x.pts||0)+amt}:x)); };
   return (
     <div style={{position:"fixed",inset:0,zIndex:9999,background:C.beige,overflow:"auto",fontFamily:font.ui}}>
@@ -579,9 +584,9 @@ const AdminPanel = ({ onClose }) => {
           </Card>)}
         </>)}
         {tab==="points"&&ERAS.map((e,i)=><Card key={i} style={{marginBottom:"5px",padding:"10px",display:"flex",alignItems:"center",gap:"8px"}}><div style={{width:"26px",height:"26px",borderRadius:"50%",background:C.orange,color:C.white,display:"flex",alignItems:"center",justifyContent:"center",fontSize:"11px",fontWeight:"800"}}>{e.level}</div><div style={{flex:1}}><div style={{fontWeight:"700",fontSize:"13px"}}>{e.name}</div><div style={{fontSize:"10px",color:C.textLight}}>{e.ptsNeeded} pts</div></div></Card>)}
-        {tab==="missions"&&MOCK_MISSIONS.map(m=><Card key={m.id} style={{marginBottom:"5px",padding:"10px",display:"flex",alignItems:"center",gap:"8px"}}><span style={{fontSize:"18px"}}>{m.icon}</span><div style={{flex:1}}><div style={{fontSize:"12px",fontWeight:"700"}}>{m.title}</div><div style={{fontSize:"9px",color:C.textLight}}>{m.description}</div></div><div style={{color:C.orange,fontSize:"11px",fontWeight:"700"}}>+{m.pts_reward}</div></Card>)}
+        {tab==="missions"&&missions.map(m=><Card key={m.id} style={{marginBottom:"5px",padding:"10px",display:"flex",alignItems:"center",gap:"8px"}}><span style={{fontSize:"18px"}}>{m.icon}</span><div style={{flex:1}}><div style={{fontSize:"12px",fontWeight:"700"}}>{m.title}</div><div style={{fontSize:"9px",color:C.textLight}}>{m.description}</div></div><div style={{color:C.orange,fontSize:"11px",fontWeight:"700"}}>+{m.pts_reward}</div></Card>)}
         {tab==="glow"&&["montag 12:00–14:00","mittwoch 18:00–20:00","freitag 12:00–14:00"].map((d,i)=><Card key={i} style={{marginBottom:"5px",padding:"10px",display:"flex",justifyContent:"space-between",alignItems:"center"}}><div><div style={{fontWeight:"700",fontSize:"13px"}}>{d.split(" ")[0]}</div><div style={{color:C.textLight,fontSize:"11px"}}>{d.split(" ")[1]}</div></div><span style={{fontSize:"11px",color:C.orange,fontWeight:"700"}}>2x pts</span></Card>)}
-        {tab==="dishes"&&MOCK_DISHES.map(d=><Card key={d.id} style={{marginBottom:"5px",padding:"10px",display:"flex",alignItems:"center",gap:"8px"}}><span style={{fontSize:"22px"}}>🍕</span><div style={{flex:1}}><div style={{fontWeight:"700",fontSize:"12px"}}>{d.name}</div><div style={{fontSize:"9px",color:C.textLight}}>{d.description}</div></div><div style={{background:C.orange,color:C.white,borderRadius:"8px",padding:"2px 7px",fontSize:"10px",fontWeight:"700"}}>♥ {d.votes}</div></Card>)}
+        {tab==="dishes"&&dishes.map(d=><Card key={d.id} style={{marginBottom:"5px",padding:"10px",display:"flex",alignItems:"center",gap:"8px"}}><span style={{fontSize:"22px"}}>🍕</span><div style={{flex:1}}><div style={{fontWeight:"700",fontSize:"12px"}}>{d.name}</div><div style={{fontSize:"9px",color:C.textLight}}>{d.description}</div></div><div style={{background:C.orange,color:C.white,borderRadius:"8px",padding:"2px 7px",fontSize:"10px",fontWeight:"700"}}>♥ {d.votes}</div></Card>)}
         {tab==="abo"&&<Card><div style={{fontSize:"16px",fontFamily:font.display,color:C.green,marginBottom:"8px",fontWeight:"700"}}>matcha society</div>{[{l:"preis",v:"29,99€/mo"},{l:"members",v:"—"},{l:"zahlung",v:"stripe + paypal"}].map((r,i)=><div key={i} style={{display:"flex",justifyContent:"space-between",padding:"4px 0",borderBottom:i<2?`1px solid ${C.greyBg}`:"none",fontSize:"12px"}}><span style={{color:C.textLight}}>{r.l}</span><span style={{fontWeight:"700"}}>{r.v}</span></div>)}</Card>}
       </div>
     </div>

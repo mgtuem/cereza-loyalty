@@ -301,21 +301,44 @@ const HomeTab = ({ user, setUser, setTab }) => {
 // ─── Missions + Wheel Tab ────────────────────────────────────────
 const WheelTab = ({ user, setUser }) => {
   const [spinning,setSpinning]=useState(false); const [rot,setRot]=useState(0); const [result,setResult]=useState(null);
-  const [spins,setSpins]=useState(user.wheel_spun_today ? 1 : 0);
+  const [spins,setSpins]=useState(0); const [loading,setLoading]=useState(true);
   const [missions,setMissions]=useState(MOCK_MISSIONS);
   const maxFreeSpins = 1; const maxPaidSpins = 2;
+
+  // Load fresh state from DB on mount
+  useEffect(()=>{
+    const init=async()=>{
+      if(user.id){
+        const fresh=await db.getProfile(user.id);
+        if(fresh){
+          setSpins(fresh.wheel_spun_today ? 1 : 0);
+          setUser(u=>({...u,...fresh}));
+        }
+      } else { setSpins(user.wheel_spun_today ? 1 : 0); }
+      db.getMissions().then(d=>{if(d.length)setMissions(d)});
+      setLoading(false);
+    };
+    init();
+  },[]);
+
   const canSpin = spins < maxPaidSpins;
   const needsPay = spins >= maxFreeSpins;
 
-  useEffect(()=>{ db.getMissions().then(d=>{if(d.length)setMissions(d)}); },[]);
-
   const spin = async()=>{
-    if(spinning || spins >= maxPaidSpins) return;
-    if(needsPay && (user.pts||0) < 100) { return; } // not enough pts for 2nd spin
+    if(spinning || !canSpin) return;
+    // Double-check from DB that user hasn't already spun
+    if(user.id){
+      const fresh=await db.getProfile(user.id);
+      if(fresh && fresh.wheel_spun_today && spins < 1){ setSpins(1); return; }
+    }
+    if(needsPay && (user.pts||0) < 100) { return; }
     setSpinning(true); setResult(null);
     // Deduct 100 pts for 2nd spin
     if(needsPay) {
-      const np = (user.pts||0) - 100;
+      const freshProfile = user.id ? await db.getProfile(user.id) : null;
+      const currentPts = freshProfile ? freshProfile.pts : (user.pts||0);
+      if(currentPts < 100){ setSpinning(false); return; }
+      const np = currentPts - 100;
       setUser(u=>({...u, pts: np}));
       if(user.id) await db.updateProfile(user.id, { pts: np });
     }
@@ -324,8 +347,17 @@ const WheelTab = ({ user, setUser }) => {
     setTimeout(async()=>{
       setSpinning(false); const newSpins = spins + 1; setSpins(newSpins);
       const prize=WHEEL_PRIZES[idx]; setResult(prize);
-      if(prize.value>0){ const np=(user.pts||0)+prize.value; setUser(u=>({...u,pts:np,wheel_spun_today:true})); if(user.id) await db.updateProfile(user.id,{pts:np,wheel_spun_today:true}); }
-      else{ if(user.id) await db.updateProfile(user.id,{wheel_spun_today:true}); setUser(u=>({...u,wheel_spun_today:true})); }
+      // Get fresh pts from DB before adding
+      const freshProfile = user.id ? await db.getProfile(user.id) : null;
+      const currentPts = freshProfile ? freshProfile.pts : (user.pts||0);
+      if(prize.value>0){
+        const np=currentPts+prize.value;
+        setUser(u=>({...u,pts:np,wheel_spun_today:true}));
+        if(user.id) await db.updateProfile(user.id,{pts:np,wheel_spun_today:true});
+      } else {
+        if(user.id) await db.updateProfile(user.id,{wheel_spun_today:true});
+        setUser(u=>({...u,wheel_spun_today:true}));
+      }
     },5000);
   };
 
@@ -393,19 +425,33 @@ const WheelTab = ({ user, setUser }) => {
 // ─── Scan ───────────────────────────────────────────────────────
 const ScanTab = ({ user, setUser }) => {
   const [scanning,setScanning]=useState(false); const [done,setDone]=useState(false); const [pts,setPts]=useState(0); const scannerRef=useRef(null);
+  const awardPts = async(p) => {
+    setPts(p);
+    // Always get fresh data from DB
+    const fresh = user.id ? await db.getProfile(user.id) : null;
+    const currentPts = fresh ? fresh.pts : (user.pts||0);
+    const currentVisits = fresh ? fresh.total_visits : (user.total_visits||0);
+    const currentTreat = fresh ? fresh.treat_count : (user.treat_count||0);
+    const np = currentPts + p;
+    const nv = currentVisits + 1;
+    const nt = Math.min(currentTreat + 1, user.treat_goal||8);
+    setUser(u=>({...u, pts:np, total_visits:nv, treat_count:nt}));
+    if(user.id){
+      await db.updateProfile(user.id, {pts:np, total_visits:nv, treat_count:nt, last_visit:new Date().toISOString().split('T')[0]});
+      await supabase.from("scan_log").insert({user_id:user.id, pts_earned:p, was_glow_hour:false});
+    }
+    setDone(true);
+  };
   const startScan = async()=>{
     setScanning(true);
     try{
       const{Html5Qrcode}=await import("html5-qrcode"); const scanner=new Html5Qrcode("qr-reader"); scannerRef.current=scanner;
       await scanner.start({facingMode:"environment"},{fps:10,qrbox:{width:200,height:200}},
-        async()=>{ await scanner.stop(); const p=Math.floor(Math.random()*100)+50; setPts(p); const np=(user.pts||0)+p;
-          setUser(u=>({...u,pts:np,total_visits:(u.total_visits||0)+1,treat_count:Math.min((u.treat_count||0)+1,u.treat_goal||8)}));
-          if(user.id){ await db.updateProfile(user.id,{pts:np,total_visits:(user.total_visits||0)+1,treat_count:Math.min((user.treat_count||0)+1,user.treat_goal||8)}); }
+        async()=>{ await scanner.stop(); setScanning(false); await awardPts(Math.floor(Math.random()*100)+50); },()=>{});
           setScanning(false); setDone(true);
         },()=>{});
     }catch(e){
-      setScanning(false); const p=Math.floor(Math.random()*100)+50; setPts(p); const np=(user.pts||0)+p;
-      setUser(u=>({...u,pts:np})); if(user.id) await db.updateProfile(user.id,{pts:np}); setDone(true);
+      setScanning(false); await awardPts(Math.floor(Math.random()*100)+50);
     }
   };
   useEffect(()=>()=>{if(scannerRef.current)try{scannerRef.current.stop()}catch(e){}},[]);
@@ -433,8 +479,34 @@ const ScanTab = ({ user, setUser }) => {
 // ─── Vote ───────────────────────────────────────────────────────
 const VoteTab = ({ user }) => {
   const [idx,setIdx]=useState(0); const [dir,setDir]=useState(null); const [dishes,setDishes]=useState([]); const [ts,setTs]=useState(null); const [off,setOff]=useState(0); const [loading,setLoading]=useState(true);
-  useEffect(()=>{ db.getDishes().then(d=>{setDishes(d.length?d:MOCK_DISHES);setLoading(false)}).catch(()=>{setDishes(MOCK_DISHES);setLoading(false)}); },[]);
-  const swipe=async d=>{ setDir(d); if(d==="right"){ setDishes(p=>p.map((x,i)=>i===idx?{...x,votes:x.votes+1}:x)); if(user.id) await supabase.from("dish_votes").upsert({user_id:user.id,dish_id:dishes[idx].id,vote:true}).catch(()=>{}); } setTimeout(()=>{setDir(null);setOff(0);setIdx(i=>i+1)},300); };
+  useEffect(()=>{
+    const init=async()=>{
+      let allDishes = await db.getDishes();
+      if(!allDishes.length) allDishes = MOCK_DISHES;
+      // Load user's existing votes to filter out already voted dishes
+      if(user.id){
+        const{data:myVotes}=await supabase.from("dish_votes").select("dish_id").eq("user_id",user.id);
+        const votedIds=new Set((myVotes||[]).map(v=>v.dish_id));
+        const unvoted=allDishes.filter(d=>!votedIds.has(d.id));
+        setDishes(allDishes); // keep all for results
+        setIdx(allDishes.length - unvoted.length); // skip to first unvoted
+        if(unvoted.length===0) setIdx(allDishes.length); // all voted
+      } else { setDishes(allDishes); }
+      setLoading(false);
+    };
+    init();
+  },[]);
+  const swipe=async d=>{
+    setDir(d);
+    if(d==="right"){
+      setDishes(p=>p.map((x,i)=>i===idx?{...x,votes:x.votes+1}:x));
+      if(user.id) await supabase.from("dish_votes").upsert({user_id:user.id,dish_id:dishes[idx].id,vote:true}).catch(()=>{});
+    } else {
+      // Also record "skip" vote to prevent re-voting
+      if(user.id) await supabase.from("dish_votes").upsert({user_id:user.id,dish_id:dishes[idx].id,vote:false}).catch(()=>{});
+    }
+    setTimeout(()=>{setDir(null);setOff(0);setIdx(i=>i+1)},300);
+  };
   const dish=dishes[idx];
   return (
     <div style={{ background:C.beige, paddingBottom:"16px", minHeight:"100%" }}>
@@ -516,7 +588,20 @@ const ProfileTab = ({ user, setUser, onLogout }) => {
   const [items,setItems]=useState(MOCK_SHOP); const [rd,setRd]=useState(null); const [showShare,setShowShare]=useState(false);
   const save=async()=>{ setUser(u=>({...u,name:uname,instagram:insta})); if(user.id) await db.updateProfile(user.id,{name:uname,instagram:insta}); setEditing(false); };
   useEffect(()=>{db.getShopItems().then(d=>{if(d.length)setItems(d)});},[]);
-  const redeem=async item=>{ if((user.pts||0)<item.cost||(user.level||1)<item.min_level)return; const np=(user.pts||0)-item.cost; setUser(u=>({...u,pts:np})); if(user.id){await db.updateProfile(user.id,{pts:np});await supabase.from("redemptions").insert({user_id:user.id,item_id:item.id});} setRd(item);setTimeout(()=>setRd(null),2500); };
+  const redeem=async item=>{
+    // Always fetch fresh pts from DB
+    const fresh = user.id ? await db.getProfile(user.id) : null;
+    const currentPts = fresh ? fresh.pts : (user.pts||0);
+    const currentLevel = fresh ? fresh.level : (user.level||1);
+    if(currentPts < item.cost || currentLevel < item.min_level) return;
+    const np = currentPts - item.cost;
+    setUser(u=>({...u, pts:np}));
+    if(user.id){
+      await db.updateProfile(user.id, {pts:np});
+      await supabase.from("redemptions").insert({user_id:user.id, item_id:item.id});
+    }
+    setRd(item); setTimeout(()=>setRd(null),2500);
+  };
   const shareCard=()=>{
     if(navigator.share){navigator.share({title:"Cereza Loyalty",text:`Ich bin ${era.name} (Level ${user.level||1}) bei Cereza Pizza mit ${user.pts||0} Punkten! Werde auch Member:`,url:"https://cereza-loyalty.vercel.app"});}
     else{setShowShare(true);setTimeout(()=>setShowShare(false),3000);}

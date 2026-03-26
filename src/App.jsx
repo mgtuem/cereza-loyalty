@@ -122,7 +122,6 @@ const AuthScreen = ({ onLogin }) => {
           const profile = await db.getProfile(data.user.id).catch(() => null);
           onLogin(profile || { id: data.user.id, name: username, email, phone, pts: 0, level: 1, streak: 0, total_visits: 0, treat_count: 0, treat_goal: 8, wheel_spun_today: false, is_abo_member: false, is_admin: false });
         }
-        }
       }
     } catch (e) { setErr("verbindungsfehler: " + e.message); }
     setLoading(false);

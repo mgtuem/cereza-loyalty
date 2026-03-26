@@ -3,10 +3,10 @@ import supabase, { db } from "./supabase";
 
 // ─── Brand System (Cereza Design Guide) ─────────────────────────
 const C = {
-  beige: "#e6dcca", beigeDark: "#e5d2b5", greyBg: "#f5f5f5",
+  bg: "#C1272D", beige: "#e6dcca", beigeDark: "#e5d2b5", greyBg: "#f5f5f5",
   orange: "#e24a28", salmon: "#fa8072", green: "#2d472a",
   text: "#111111", textSub: "#463939", textLight: "#999999", textMuted: "#d1d1d1",
-  white: "#ffffff", border: "#e3e3e3",
+  white: "#ffffff", border: "#e3e3e3", cream: "#F5F0EB",
 };
 const font = { ui: "'Aileron', 'Source Sans Pro', 'Helvetica Neue', sans-serif", display: "'Gallica', Georgia, serif" };
 
@@ -68,7 +68,7 @@ const CSS = `
   @font-face { font-family: 'Aileron'; src: url('https://fonts.cdnfonts.com/css/aileron'); font-display: swap; }
   @font-face { font-family: 'Gallica'; src: url('https://fonts.cdnfonts.com/css/galica'); font-display: swap; }
   *,*::before,*::after{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
-  html,body,#root{height:100%;width:100%;overflow:hidden;position:fixed;inset:0;background:${C.beige};overscroll-behavior:none;user-select:none;-webkit-user-select:none}
+  html,body,#root{height:100%;width:100%;overflow:hidden;position:fixed;inset:0;background:${C.bg};overscroll-behavior:none;user-select:none;-webkit-user-select:none}
   input,textarea{user-select:text;-webkit-user-select:text}
   input::placeholder{color:${C.textLight}}
   ::-webkit-scrollbar{display:none}
@@ -94,7 +94,7 @@ const AuthScreen = ({ onLogin }) => {
 
   const inp = (ph, val, set, type="text") => (
     <input type={type} placeholder={ph} value={val} onChange={e=>set(e.target.value)}
-      style={{ width:"100%", padding:"13px 16px", background:C.white, border:`1px solid ${C.border}`, borderRadius:"12px", color:C.text, fontSize:"15px", outline:"none", fontFamily:font.ui, marginBottom:"10px", boxSizing:"border-box" }} />
+      style={{ width:"100%", padding:"13px 16px", background:"rgba(255,255,255,0.12)", border:"1px solid rgba(255,255,255,0.2)", borderRadius:"12px", color:C.white, fontSize:"15px", outline:"none", fontFamily:font.ui, marginBottom:"10px", boxSizing:"border-box" }} />
   );
 
   const submit = async () => {
@@ -109,7 +109,11 @@ const AuthScreen = ({ onLogin }) => {
         const { data, error } = await db.signIn(email, pw);
         if (error) { setErr("falsche e-mail oder passwort"); setLoading(false); return; }
         const profile = await db.getProfile(data.user.id);
-        if (profile) onLogin(profile); else setErr("profil nicht gefunden");
+        if (profile) { onLogin(profile); }
+        else {
+          // Fallback: create profile from auth data
+          onLogin({ id: data.user.id, name: data.user.user_metadata?.name || email.split('@')[0], email, pts: 0, level: 1, streak: 0, total_visits: 0, treat_count: 0, treat_goal: 8, wheel_spun_today: false, is_abo_member: false, is_admin: false });
+        }
       } else {
         const { data, error } = await db.signUp(email, pw, username);
         if (error) { setErr(error.message); setLoading(false); return; }
@@ -128,11 +132,11 @@ const AuthScreen = ({ onLogin }) => {
   };
 
   return (
-    <div style={{ minHeight:"100vh", display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center", padding:"24px", background:C.beige, fontFamily:font.ui }}>
+    <div style={{ minHeight:"100vh", display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center", padding:"24px", background:C.bg, fontFamily:font.ui }}>
       <style>{CSS}</style>
       <div style={{ animation:"fadeUp 0.6s ease", marginBottom:"36px", textAlign:"center" }}>
-        <div style={{ fontSize:"56px", fontFamily:font.display, color:C.text, letterSpacing:"2px", fontWeight:"700" }}>cereza</div>
-        <div style={{ fontSize:"11px", letterSpacing:"4px", color:C.textLight, marginTop:"6px" }}>loyalty club</div>
+        <div style={{ fontSize:"56px", fontFamily:font.display, color:C.green, letterSpacing:"2px", fontWeight:"700" }}>cereza</div>
+        <div style={{ fontSize:"11px", letterSpacing:"4px", color:"rgba(255,255,255,0.5)", marginTop:"6px" }}>loyalty club</div>
       </div>
       <div style={{ width:"100%", maxWidth:"340px", animation:"fadeUp 0.6s ease 0.1s both" }}>
         {mode === "register" && inp("username", username, setUsername)}
@@ -140,18 +144,18 @@ const AuthScreen = ({ onLogin }) => {
         {inp("passwort (min. 6 zeichen)", pw, setPw, "password")}
         {mode === "register" && inp("handynummer", phone, setPhone, "tel")}
         {mode === "register" && (
-          <div onClick={()=>setDsgvo(!dsgvo)} style={{ display:"flex", alignItems:"flex-start", gap:"10px", marginBottom:"14px", cursor:"pointer", color:C.textSub, fontSize:"11px", lineHeight:1.4 }}>
+          <div onClick={()=>setDsgvo(!dsgvo)} style={{ display:"flex", alignItems:"flex-start", gap:"10px", marginBottom:"14px", cursor:"pointer", color:"rgba(255,255,255,0.6)", fontSize:"11px", lineHeight:1.4 }}>
             <div style={{ width:"18px", height:"18px", borderRadius:"4px", flexShrink:0, marginTop:"1px", border:`2px solid ${dsgvo ? C.orange : C.border}`, background:dsgvo ? C.orange : "transparent", display:"flex", alignItems:"center", justifyContent:"center", color:C.white, fontSize:"11px", fontWeight:"700" }}>{dsgvo && "✓"}</div>
             ich stimme der datenschutzerklärung zu und akzeptiere die verarbeitung meiner daten gemäß dsgvo.
           </div>
         )}
-        {err && <div style={{ color:C.orange, fontSize:"12px", marginBottom:"10px", textAlign:"center", lineHeight:1.4 }}>{err}</div>}
-        <button onClick={submit} disabled={loading} style={{ width:"100%", padding:"14px", background:C.orange, border:"none", borderRadius:"12px", color:C.white, fontSize:"15px", fontWeight:"700", cursor:loading?"wait":"pointer", fontFamily:font.ui, opacity:loading?0.7:1 }}>
+        {err && <div style={{ color:"#ffcccc", fontSize:"12px", marginBottom:"10px", textAlign:"center", lineHeight:1.4 }}>{err}</div>}
+        <button onClick={submit} disabled={loading} style={{ width:"100%", padding:"14px", background:C.cream, border:"none", borderRadius:"12px", color:C.text, fontSize:"15px", fontWeight:"700", cursor:loading?"wait":"pointer", fontFamily:font.ui, opacity:loading?0.7:1 }}>
           {loading ? "..." : mode==="login" ? "einloggen" : "registrieren"}
         </button>
-        <p style={{ textAlign:"center", marginTop:"18px", color:C.textLight, fontSize:"13px" }}>
+        <p style={{ textAlign:"center", marginTop:"18px", color:"rgba(255,255,255,0.5)", fontSize:"13px" }}>
           {mode==="login" ? "noch kein mitglied? " : "schon dabei? "}
-          <span onClick={()=>{setMode(mode==="login"?"register":"login");setErr("")}} style={{ color:C.orange, cursor:"pointer", textDecoration:"underline" }}>
+          <span onClick={()=>{setMode(mode==="login"?"register":"login");setErr("")}} style={{ color:C.cream, cursor:"pointer", textDecoration:"underline" }}>
             {mode==="login" ? "jetzt beitreten" : "einloggen"}
           </span>
         </p>
@@ -198,7 +202,7 @@ const HomeTab = ({ user, setUser, setTab }) => {
             <div style={{ background:C.white, borderRadius:"20px", padding:"5px 14px", fontSize:"15px", fontWeight:"700", fontFamily:font.ui, border:`1px solid ${C.border}` }}>{user.pts||0} <span style={{ fontSize:"10px", color:C.textLight }}>pts</span></div>
           </div>
         </div>
-        <div style={{ fontSize:"52px", fontFamily:font.display, color:C.text, letterSpacing:"2px", fontWeight:"700", lineHeight:1 }}>cereza</div>
+        <div style={{ fontSize:"52px", fontFamily:font.display, color:C.green, letterSpacing:"2px", fontWeight:"700", lineHeight:1 }}>cereza</div>
         {/* Fun Fact */}
         <div style={{ marginTop:"14px", background:C.white, borderRadius:"10px", padding:"10px 14px", border:`1px solid ${C.border}`, fontSize:"12px", color:C.textSub, fontFamily:font.ui }}>
           {FUN_FACTS[fi]}
@@ -600,7 +604,7 @@ export default function App() {
     if(ne&&ne.level>(user.level||1)){ setUser(u=>({...u,level:ne.level})); if(user.id) db.updateProfile(user.id,{level:ne.level}); setShowLevelUp(ne.level); }
   },[user?.pts]);
 
-  if(loading) return <div style={{position:"fixed",inset:0,background:C.beige,display:"flex",alignItems:"center",justifyContent:"center"}}><style>{CSS}</style><div style={{textAlign:"center"}}><div style={{fontSize:"42px",fontFamily:font.display,color:C.text,fontWeight:"700"}}>cereza</div><div style={{fontSize:"10px",color:C.textLight,letterSpacing:"3px",marginTop:"6px"}}>loading...</div></div></div>;
+  if(loading) return <div style={{position:"fixed",inset:0,background:C.bg,display:"flex",alignItems:"center",justifyContent:"center"}}><style>{CSS}</style><div style={{textAlign:"center"}}><div style={{fontSize:"42px",fontFamily:font.display,color:C.green,fontWeight:"700"}}>cereza</div><div style={{fontSize:"10px",color:"rgba(255,255,255,0.5)",letterSpacing:"3px",marginTop:"6px"}}>loading...</div></div></div>;
   if(adminMode==="login") return <AdminLogin onLogin={p=>{setAdminMode("panel")}} onBack={()=>setAdminMode(false)} />;
   if(adminMode==="panel") return <AdminPanel onClose={async()=>{await db.signOut();setAdminMode(false)}} />;
   if(!user) return <div style={{position:"fixed",inset:0,maxWidth:"430px",margin:"0 auto"}}><AuthScreen onLogin={setUser}/><div onClick={()=>setAdminMode("login")} style={{position:"fixed",bottom:"8px",left:"50%",transform:"translateX(-50%)",color:"rgba(0,0,0,0.06)",fontSize:"9px",cursor:"pointer",padding:"4px 10px"}}>admin</div></div>;
@@ -608,7 +612,7 @@ export default function App() {
   const nav=[{id:"home",icon:"🏠",l:"home"},{id:"wheel",icon:"🎰",l:"daily"},{id:"scan",icon:"📷",l:"scan"},{id:"vote",icon:"🔥",l:"vote"},{id:"score",icon:"🎁",l:"score"},{id:"profile",icon:"👤",l:"profil"}];
 
   return (
-    <div style={{position:"fixed",inset:0,maxWidth:"430px",margin:"0 auto",fontFamily:font.ui,background:C.beige,display:"flex",flexDirection:"column",overflow:"hidden"}}>
+    <div style={{position:"fixed",inset:0,maxWidth:"430px",margin:"0 auto",fontFamily:font.ui,background:C.bg,display:"flex",flexDirection:"column",overflow:"hidden"}}>
       <style>{CSS}</style>
       {showLevelUp && <LevelUpOverlay level={showLevelUp} onClose={()=>setShowLevelUp(null)} />}
       <div style={{flex:1,overflowY:"auto",overflowX:"hidden",WebkitOverflowScrolling:"touch",overscrollBehavior:"contain"}}>
@@ -619,14 +623,13 @@ export default function App() {
         {tab==="score"&&<ScoreTab user={user} setUser={setUser}/>}
         {tab==="profile"&&<ProfileTab user={user} setUser={setUser} onLogout={async()=>{await db.signOut();setUser(null)}}/>}
       </div>
-      <div style={{flexShrink:0,background:C.white,borderTop:`1px solid ${C.border}`,paddingBottom:"env(safe-area-inset-bottom, 6px)"}}>
-        <div style={{display:"flex",justifyContent:"space-around",alignItems:"center",padding:"6px 2px 2px"}}>
-          {nav.map(n=>{const a=tab===n.id; const sc=n.id==="scan";
-            return <button key={n.id} onClick={()=>setTab(n.id)} style={{display:"flex",flexDirection:"column",alignItems:"center",gap:"1px",background:"none",border:"none",cursor:"pointer",padding:"2px 5px",position:"relative"}}>
-              {sc?<div style={{width:"42px",height:"42px",borderRadius:"50%",background:C.orange,display:"flex",alignItems:"center",justifyContent:"center",marginTop:"-18px",border:`3px solid ${C.white}`,fontSize:"17px",boxShadow:a?"0 0 12px rgba(226,74,40,0.4)":"none"}}>{n.icon}</div>
-              :<span style={{fontSize:"17px",opacity:a?1:0.35,transform:a?"scale(1.1)":"scale(1)",transition:"all 0.15s"}}>{n.icon}</span>}
-              <span style={{fontSize:"8px",fontWeight:a?"700":"500",color:a?C.text:C.textLight}}>{n.l}</span>
-              {a&&!sc&&<div style={{position:"absolute",top:"-1px",left:"50%",transform:"translateX(-50%)",width:"12px",height:"2px",borderRadius:"1px",background:C.orange}}/>}
+      {/* iOS-style Tab Bar */}
+      <div style={{flexShrink:0,background:"rgba(255,255,255,0.97)",backdropFilter:"blur(20px)",WebkitBackdropFilter:"blur(20px)",borderTop:"0.5px solid rgba(0,0,0,0.12)",paddingBottom:"env(safe-area-inset-bottom, 8px)"}}>
+        <div style={{display:"grid",gridTemplateColumns:"repeat(6, 1fr)",alignItems:"end",padding:"6px 0 2px",maxWidth:"400px",margin:"0 auto"}}>
+          {nav.map(n=>{const a=tab===n.id;
+            return <button key={n.id} onClick={()=>setTab(n.id)} style={{display:"flex",flexDirection:"column",alignItems:"center",gap:"2px",background:"none",border:"none",cursor:"pointer",padding:"4px 0"}}>
+              <div style={{fontSize:"22px",lineHeight:"1",opacity:a?1:0.4,transition:"all 0.2s"}}>{n.icon}</div>
+              <span style={{fontSize:"10px",fontWeight:a?"600":"400",color:a?C.orange:C.textLight,transition:"all 0.2s"}}>{n.l}</span>
             </button>;
           })}
         </div>

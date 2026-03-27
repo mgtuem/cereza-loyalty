@@ -1,41 +1,25 @@
 // src/FamTab.jsx
-// Fam Community Tab – Vibes, Cinder Results, Visit Mood, Thoughts
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect } from "react";
 import supabase from "./supabase";
 
-// ─── Shared design tokens (injected via window.C + window.font) ──
-// Die Komponente liest C und font aus dem globalen Scope der App.
-// Falls du sie standalone verwendest, setze diese vor dem Import.
-
-const URL_REGEX = /https?:\/\/[^\s]+|www\.[^\s]+|\.[a-z]{2,}\/[^\s]*/gi;
-
+const URL_REGEX = /https?:\/\/[^\s]+|www\.[^\s]+|\b\w+\.(com|de|net|org|io|at|ch)\b/gi;
 const hasLink = (text) => URL_REGEX.test(text);
 
-// ─── FamTab ──────────────────────────────────────────────────────
 export default function FamTab({ user, C, font }) {
   const ST = "env(safe-area-inset-top,0px)";
-  const [section, setSection] = useState("vibes"); // vibes | cinder | today | thoughts
+  const [section, setSection] = useState("vibes");
 
   return (
     <div style={{ background: C.beige, minHeight: "100%", paddingBottom: "24px" }}>
-      {/* Header */}
-      <div style={{
-        padding: `calc(${ST} + 18px) 20px 14px`,
-        background: C.beige,
-      }}>
+      <div style={{ padding: `calc(${ST} + 18px) 20px 14px` }}>
         <div style={{ fontSize: "11px", letterSpacing: "3px", color: C.textLight, fontWeight: "600", textTransform: "uppercase" }}>Community</div>
         <div style={{ fontSize: "28px", fontFamily: font.display, color: C.text, fontWeight: "700", marginTop: "2px" }}>The Fam</div>
       </div>
 
-      {/* Section Tabs */}
-      <div style={{ padding: "0 16px 12px" }}>
+      {/* Tabs */}
+      <div style={{ padding: "0 16px 14px" }}>
         <div style={{ display: "flex", gap: "4px", background: C.greyBg, borderRadius: "14px", padding: "3px" }}>
-          {[
-            { id: "vibes", l: "Vibes" },
-            { id: "cinder", l: "Cinder" },
-            { id: "today", l: "Heute" },
-            { id: "thoughts", l: "Gedanken" },
-          ].map(s => (
+          {[{id:"vibes",l:"Vibes"},{id:"cinder",l:"Cinder"},{id:"today",l:"Heute"},{id:"thoughts",l:"Gedanken"}].map(s => (
             <button key={s.id} onClick={() => setSection(s.id)} style={{
               flex: 1, padding: "9px 2px", borderRadius: "11px",
               background: section === s.id ? C.card : "transparent",
@@ -47,19 +31,20 @@ export default function FamTab({ user, C, font }) {
         </div>
       </div>
 
-      {section === "vibes"    && <VibesSection user={user} C={C} font={font} />}
-      {section === "cinder"   && <CinderSection user={user} C={C} font={font} />}
-      {section === "today"    && <TodaySection user={user} C={C} font={font} />}
+      {section === "vibes"    && <VibesSection    user={user} C={C} font={font} />}
+      {section === "cinder"   && <CinderSection   user={user} C={C} font={font} />}
+      {section === "today"    && <TodaySection    user={user} C={C} font={font} />}
       {section === "thoughts" && <ThoughtsSection user={user} C={C} font={font} />}
     </div>
   );
 }
 
-// ─── Vibes Section ───────────────────────────────────────────────
+// ─── Vibes ───────────────────────────────────────────────────────
 function VibesSection({ user, C, font }) {
   const [vibes, setVibes] = useState([]);
   const [loading, setLoading] = useState(true);
   const [uploading, setUploading] = useState(false);
+  const [err, setErr] = useState("");
 
   const load = async () => {
     const { data } = await supabase
@@ -73,76 +58,82 @@ function VibesSection({ user, C, font }) {
 
   useEffect(() => {
     load();
-    const ch = supabase.channel("vibes-rt")
+    const ch = supabase.channel("vibes-fam-rt")
       .on("postgres_changes", { event: "*", schema: "public", table: "vibe_photos" }, load)
       .subscribe();
     return () => supabase.removeChannel(ch);
   }, []);
 
   const upload = async (file) => {
-    if (!file || !user?.id) return;
+    if (!file || !user?.id) { setErr("Bitte einloggen"); return; }
+    if (file.size > 10 * 1024 * 1024) { setErr("Bild zu groß (max 10MB)"); return; }
+    setErr("");
     setUploading(true);
+
     try {
-      const ext = file.name.split(".").pop();
-      const path = `vibes/${user.id}_${Date.now()}.${ext}`;
-      const { error: upErr } = await supabase.storage.from("vibes").upload(path, file, { upsert: false, contentType: file.type });
+      const ext = (file.name.split('.').pop() || 'jpg').toLowerCase();
+      const safeName = `vibes/${user.id}_${Date.now()}.${ext}`;
+
+      // Upload in avatars bucket (existiert garantiert)
+      const { error: upErr } = await supabase.storage
+        .from('avatars')
+        .upload(safeName, file, { upsert: false, contentType: file.type || 'image/jpeg' });
+
       if (upErr) {
-        // Fallback: avatars bucket
-        const { error: upErr2 } = await supabase.storage.from("avatars").upload(path, file, { upsert: false, contentType: file.type });
-        if (upErr2) { alert("Upload fehlgeschlagen"); setUploading(false); return; }
-        const { data: urlData } = supabase.storage.from("avatars").getPublicUrl(path);
-        await supabase.from("vibe_photos").insert({ user_id: user.id, url: urlData.publicUrl, approved: false });
-      } else {
-        const { data: urlData } = supabase.storage.from("vibes").getPublicUrl(path);
-        await supabase.from("vibe_photos").insert({ user_id: user.id, url: urlData.publicUrl, approved: false });
+        console.error('Upload error:', upErr);
+        setErr("Upload fehlgeschlagen: " + upErr.message);
+        setUploading(false);
+        return;
       }
-      alert("Hochgeladen! Wird nach Freigabe durch den Admin sichtbar.");
+
+      const { data: urlData } = supabase.storage.from('avatars').getPublicUrl(safeName);
+      const url = urlData.publicUrl + '?t=' + Date.now();
+
+      const { error: dbErr } = await supabase.from('vibe_photos').insert({
+        user_id: user.id,
+        url,
+        approved: false,
+      });
+
+      if (dbErr) { setErr("Fehler beim Speichern: " + dbErr.message); }
+      else { setErr(""); alert("Hochgeladen! Wird nach Admin-Freigabe sichtbar."); }
     } catch (e) {
-      alert("Fehler: " + e.message);
+      setErr("Fehler: " + e.message);
     }
     setUploading(false);
   };
 
   return (
     <div style={{ padding: "0 16px" }}>
-      {/* Upload Button */}
       <label style={{
         display: "flex", alignItems: "center", justifyContent: "center", gap: "8px",
-        width: "100%", padding: "13px", background: C.orange, border: "none",
-        borderRadius: "14px", color: C.white, fontSize: "14px", fontWeight: "700",
-        cursor: "pointer", marginBottom: "14px", boxSizing: "border-box",
-        opacity: uploading ? 0.7 : 1,
+        width: "100%", padding: "13px", background: uploading ? C.greyBg : C.orange,
+        borderRadius: "14px", color: uploading ? C.textLight : C.white,
+        fontSize: "14px", fontWeight: "700", cursor: uploading ? "not-allowed" : "pointer",
+        marginBottom: err ? "8px" : "14px", boxSizing: "border-box",
       }}>
         {uploading ? "Wird hochgeladen..." : "📷 Vibe hochladen"}
-        <input type="file" accept="image/*" capture="environment" style={{ display: "none" }} onChange={e => { const f = e.target.files?.[0]; if (f) upload(f); }} disabled={uploading} />
+        <input type="file" accept="image/jpeg,image/png,image/webp,image/heic" style={{ display: "none" }}
+          disabled={uploading}
+          onChange={e => { const f = e.target.files?.[0]; if (f) upload(f); e.target.value = ''; }} />
       </label>
+      {err && <div style={{ color: C.orange, fontSize: "13px", marginBottom: "12px", textAlign: "center" }}>{err}</div>}
 
-      {loading && <div style={{ textAlign: "center", padding: "40px", color: C.textLight }}>Wird geladen...</div>}
+      {loading && <div style={{ textAlign: "center", padding: "40px", color: C.textLight }}>Laden...</div>}
       {!loading && vibes.length === 0 && (
-        <div style={{ textAlign: "center", padding: "40px" }}>
-          <div style={{ fontSize: "36px", marginBottom: "8px" }}>📷</div>
+        <div style={{ textAlign: "center", padding: "48px" }}>
+          <div style={{ fontSize: "40px", marginBottom: "10px" }}>📷</div>
           <div style={{ fontSize: "15px", fontWeight: "700", color: C.text }}>Noch keine Vibes</div>
           <div style={{ fontSize: "13px", color: C.textLight, marginTop: "4px" }}>Lade das erste Bild hoch!</div>
         </div>
       )}
 
-      {/* Masonry-style Grid */}
       <div style={{ columns: "2", columnGap: "8px" }}>
-        {vibes.map((v, i) => (
+        {vibes.map(v => (
           <div key={v.id} style={{ breakInside: "avoid", marginBottom: "8px", borderRadius: "16px", overflow: "hidden", position: "relative" }}>
-            <img
-              src={v.url}
-              style={{ width: "100%", display: "block", filter: "sepia(0.25) contrast(1.08) saturate(0.95)" }}
-              loading="lazy"
-            />
-            {/* Author Badge */}
-            <div style={{
-              position: "absolute", bottom: "8px", left: "8px",
-              background: "rgba(0,0,0,0.55)", backdropFilter: "blur(8px)",
-              borderRadius: "20px", padding: "3px 8px",
-              display: "flex", alignItems: "center", gap: "5px",
-            }}>
-              <div style={{ width: "16px", height: "16px", borderRadius: "50%", background: C.orange, display: "flex", alignItems: "center", justifyContent: "center", fontSize: "8px", color: C.white, fontWeight: "700" }}>
+            <img src={v.url} style={{ width: "100%", display: "block", filter: "sepia(0.2) contrast(1.06) saturate(0.95)" }} loading="lazy" />
+            <div style={{ position: "absolute", bottom: "8px", left: "8px", background: "rgba(0,0,0,0.55)", backdropFilter: "blur(8px)", borderRadius: "20px", padding: "3px 9px", display: "flex", alignItems: "center", gap: "5px" }}>
+              <div style={{ width: "16px", height: "16px", borderRadius: "50%", background: C.orange, display: "flex", alignItems: "center", justifyContent: "center", fontSize: "8px", color: "#fff", fontWeight: "700" }}>
                 {(v.profile?.name || "?")[0].toUpperCase()}
               </div>
               <div style={{ fontSize: "10px", color: "#fff", fontWeight: "600" }}>@{v.profile?.name || "anon"}</div>
@@ -154,29 +145,24 @@ function VibesSection({ user, C, font }) {
   );
 }
 
-// ─── Cinder Results Section ──────────────────────────────────────
+// ─── Cinder Results ───────────────────────────────────────────────
 function CinderSection({ user, C, font }) {
   const [dishes, setDishes] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [myVotes, setMyVotes] = useState({});
 
   const load = async () => {
-    const { data: d } = await supabase
+    const { data } = await supabase
       .from("dishes")
       .select("*, dish_votes(vote, user_id)")
       .eq("active", true)
       .order("id");
-
-    const mapped = (d || []).map(dish => {
-      const yes = (dish.dish_votes || []).filter(v => v.vote).length;
-      const no = (dish.dish_votes || []).filter(v => !v.vote).length;
+    const mapped = (data || []).map(d => {
+      const yes = (d.dish_votes || []).filter(v => v.vote).length;
+      const no  = (d.dish_votes || []).filter(v => !v.vote).length;
       const total = yes + no;
-      const myVote = (dish.dish_votes || []).find(v => v.user_id === user?.id);
-      return { ...dish, yes, no, total, pct: total ? Math.round((yes / total) * 100) : 0, myVote: myVote?.vote };
-    });
-
-    // Sortiert nach Beliebtheit
-    mapped.sort((a, b) => b.yes - a.yes);
+      const myVote = (d.dish_votes || []).find(v => v.user_id === user?.id);
+      return { ...d, yes, no, total, pct: total ? Math.round((yes / total) * 100) : 0, myVote: myVote?.vote };
+    }).sort((a, b) => b.yes - a.yes);
     setDishes(mapped);
     setLoading(false);
   };
@@ -193,59 +179,35 @@ function CinderSection({ user, C, font }) {
 
   return (
     <div style={{ padding: "0 16px" }}>
-      <div style={{ fontSize: "12px", color: C.textLight, marginBottom: "14px", lineHeight: 1.5 }}>
-        Live-Ergebnisse der Community-Votings – welches Gericht kommt auf die Karte?
+      <div style={{ fontSize: "13px", color: C.textLight, marginBottom: "14px", lineHeight: 1.5 }}>
+        Live-Ergebnisse – welches Gericht kommt auf die Karte?
       </div>
-
-      {loading && <div style={{ textAlign: "center", padding: "40px", color: C.textLight }}>Wird geladen...</div>}
-
+      {loading && <div style={{ textAlign: "center", padding: "40px", color: C.textLight }}>Laden...</div>}
       {dishes.map((d, i) => (
-        <div key={d.id} style={{
-          background: C.card, borderRadius: "18px", padding: "16px",
-          border: `1px solid ${i === 0 ? C.orange : C.border}`,
-          marginBottom: "10px",
-          boxShadow: i === 0 ? `0 4px 20px ${C.orange}22` : "none",
-        }}>
-          {/* Header */}
+        <div key={d.id} style={{ background: C.card, borderRadius: "18px", padding: "16px", border: `1px solid ${i===0?C.orange:C.border}`, marginBottom: "10px", boxShadow: i===0?`0 4px 20px ${C.orange}22`:"none" }}>
           <div style={{ display: "flex", alignItems: "flex-start", gap: "12px", marginBottom: "12px" }}>
-            <div style={{ fontSize: "22px", flexShrink: 0 }}>{medals[i] || `#${i + 1}`}</div>
+            <div style={{ fontSize: "22px", flexShrink: 0 }}>{medals[i] || `#${i+1}`}</div>
             <div style={{ flex: 1, minWidth: 0 }}>
               <div style={{ fontSize: "15px", fontWeight: "700", color: C.text }}>{d.name}</div>
               <div style={{ fontSize: "12px", color: C.textLight, marginTop: "2px" }}>{d.description}</div>
             </div>
-            {d.image_url && (
-              <img src={d.image_url} style={{ width: "52px", height: "52px", borderRadius: "12px", objectFit: "cover", flexShrink: 0 }} />
-            )}
+            {d.image_url && <img src={d.image_url} style={{ width: "50px", height: "50px", borderRadius: "12px", objectFit: "cover", flexShrink: 0 }} />}
           </div>
-
-          {/* Vote Bar */}
-          <div style={{ marginBottom: "8px" }}>
-            <div style={{ display: "flex", justifyContent: "space-between", marginBottom: "6px" }}>
-              <div style={{ fontSize: "12px", fontWeight: "700", color: C.green }}>♥ {d.yes} Likes</div>
-              <div style={{ fontSize: "12px", fontWeight: "700", color: C.orange }}>{d.pct}%</div>
-              <div style={{ fontSize: "12px", color: C.textLight }}>✕ {d.no} Nope</div>
-            </div>
-            <div style={{ height: "8px", background: C.greyBg, borderRadius: "4px", overflow: "hidden" }}>
-              <div style={{
-                height: "100%", width: `${d.pct}%`,
-                background: i === 0
-                  ? `linear-gradient(90deg, ${C.orange}, ${C.green})`
-                  : C.orange,
-                borderRadius: "4px", transition: "width 0.5s",
-              }} />
-            </div>
+          <div style={{ display: "flex", justifyContent: "space-between", marginBottom: "6px" }}>
+            <div style={{ fontSize: "12px", fontWeight: "700", color: C.green }}>♥ {d.yes}</div>
+            <div style={{ fontSize: "12px", fontWeight: "700", color: C.orange }}>{d.pct}%</div>
+            <div style={{ fontSize: "12px", color: C.textLight }}>✕ {d.no}</div>
           </div>
-
-          {/* My vote badge */}
+          <div style={{ height: "8px", background: C.greyBg, borderRadius: "4px", overflow: "hidden" }}>
+            <div style={{ height: "100%", width: `${d.pct}%`, background: i===0?`linear-gradient(90deg,${C.orange},${C.green})`:C.orange, borderRadius: "4px", transition: "width 0.5s" }} />
+          </div>
           {d.myVote !== undefined && (
-            <div style={{ fontSize: "11px", color: C.textLight }}>
-              Dein Vote: <span style={{ color: d.myVote ? C.green : C.orange, fontWeight: "600" }}>{d.myVote ? "♥ Liked" : "✕ Gepasst"}</span>
+            <div style={{ fontSize: "11px", color: C.textLight, marginTop: "8px" }}>
+              Dein Vote: <span style={{ color: d.myVote?C.green:C.orange, fontWeight: "600" }}>{d.myVote?"♥ Liked":"✕ Gepasst"}</span>
             </div>
           )}
-          {d.total === 0 && <div style={{ fontSize: "12px", color: C.textLight }}>Noch keine Votes</div>}
         </div>
       ))}
-
       {!loading && dishes.length === 0 && (
         <div style={{ textAlign: "center", padding: "40px" }}>
           <div style={{ fontSize: "36px" }}>🍕</div>
@@ -256,147 +218,113 @@ function CinderSection({ user, C, font }) {
   );
 }
 
-// ─── Today / Visit Section ───────────────────────────────────────
+// ─── Today / Visit ────────────────────────────────────────────────
+// #6: Keine Zahlen, nur Vibe/Indicator. Antwort wird für den Tag gespeichert.
 function TodaySection({ user, C, font }) {
-  const [stats, setStats] = useState({ yes: 0, no: 0, names: [] });
   const [myStatus, setMyStatus] = useState(null);
+  const [vibe, setVibe] = useState(null);
   const [loading, setLoading] = useState(true);
-
   const today = new Date().toISOString().split("T")[0];
 
-  const load = async () => {
-    const { data } = await supabase
-      .from("visit_intentions")
-      .select("status, profile:user_id(name, avatar_url)")
-      .eq("planned_date", today);
+  const computeVibe = (yes, no) => {
+    const total = yes + no;
+    if (total === 0) return { emoji: "🌙", title: "Noch niemand abgestimmt", sub: "Sei der Erste!", color: C.textLight };
+    const pct = yes / total;
+    if (yes >= 8) return { emoji: "🎉", title: "Cereza Party!", sub: "Es wird ein voller Abend!", color: C.orange };
+    if (yes >= 5) return { emoji: "🔥", title: "Heute brennt's!", sub: "Die Fam kommt zusammen", color: C.orange };
+    if (yes >= 3) return { emoji: "👋", title: "Schöner Abend wird's!", sub: "Einige aus der Family kommen", color: C.green };
+    if (yes === 2) return { emoji: "🤝", title: "Gemütliche Runde", sub: "Klein aber fein", color: C.green };
+    if (yes === 1) return { emoji: "☕", title: "Stille Stunde", sub: "Ruhige Atmosphäre heute", color: C.textSub };
+    if (pct < 0.3 && total >= 3) return { emoji: "🌿", title: "Ruhiger Tag", sub: "Chill-Vibe garantiert", color: C.green };
+    return { emoji: "✨", title: "Mal sehen...", sub: "Die Stimmung entwickelt sich noch", color: C.textSub };
+  };
 
-    const yes = (data || []).filter(d => d.status === "planned");
-    const no = (data || []).filter(d => d.status === "not");
-    setStats({ yes: yes.length, no: no.length, names: yes.map(d => d.profile) });
+  const loadAll = async () => {
+    // Eigene Antwort
+    if (user?.id) {
+      const { data } = await supabase.from("visit_intentions")
+        .select("status").eq("user_id", user.id).eq("planned_date", today).single();
+      if (data) setMyStatus(data.status);
+    }
+    // Statistik für Vibe (nur Anzahl, keine Namen)
+    const { data: stats } = await supabase.from("visit_intentions")
+      .select("status").eq("planned_date", today);
+    const yes = (stats || []).filter(d => d.status === "planned").length;
+    const no  = (stats || []).filter(d => d.status === "not").length;
+    setVibe(computeVibe(yes, no));
     setLoading(false);
   };
 
-  const loadMy = async () => {
-    if (!user?.id) return;
-    const { data } = await supabase
-      .from("visit_intentions")
-      .select("status")
-      .eq("user_id", user.id)
-      .eq("planned_date", today)
-      .single();
-    if (data) setMyStatus(data.status);
-  };
-
   useEffect(() => {
-    load();
-    loadMy();
+    loadAll();
     const ch = supabase.channel("today-fam-rt")
-      .on("postgres_changes", { event: "*", schema: "public", table: "visit_intentions" }, () => { load(); loadMy(); })
+      .on("postgres_changes", { event: "*", schema: "public", table: "visit_intentions" }, loadAll)
       .subscribe();
     return () => supabase.removeChannel(ch);
   }, []);
 
   const setVisit = async (status) => {
     setMyStatus(status);
-    await supabase.from("visit_intentions").upsert({ user_id: user.id, planned_date: today, status });
-    load();
+    if (user?.id) {
+      await supabase.from("visit_intentions").upsert({ user_id: user.id, planned_date: today, status });
+      loadAll();
+    }
   };
-
-  const total = stats.yes + stats.no;
-  const pct = total ? Math.round((stats.yes / total) * 100) : 0;
-
-  // Mood berechnen
-  const getMood = () => {
-    if (stats.yes >= 8) return { emoji: "🎉", title: "Cereza Party!", sub: `${stats.yes} Leute kommen heute – wird ein Abend!`, color: C.orange };
-    if (stats.yes >= 5) return { emoji: "🔥", title: "Voller Laden heute!", sub: `${stats.yes} aus der Family kommen vorbei`, color: C.orange };
-    if (stats.yes >= 3) return { emoji: "👋", title: "Wir freuen uns auf euch!", sub: `${stats.yes} Mitglieder kommen heute`, color: C.green };
-    if (stats.yes === 2) return { emoji: "🤝", title: "Ein gemütlicher Abend", sub: "Zu zweit macht's auch Spaß", color: C.green };
-    if (stats.yes === 1) return { emoji: "☕", title: "Stille Stunde", sub: "Perfekt für dich allein", color: C.textSub };
-    if (total === 0) return { emoji: "🌙", title: "Noch keine Votes", sub: "Sei der Erste!", color: C.textLight };
-    return { emoji: "🌿", title: "Ruhiger Tag", sub: "Chill-Atmosphäre garantiert", color: C.green };
-  };
-
-  const mood = getMood();
 
   return (
     <div style={{ padding: "0 16px" }}>
-      {/* Mood Card */}
-      <div style={{
-        background: `linear-gradient(135deg, ${mood.color}22, ${C.card})`,
-        border: `1.5px solid ${mood.color}44`,
-        borderRadius: "20px", padding: "24px 20px",
-        marginBottom: "14px", textAlign: "center",
-      }}>
-        <div style={{ fontSize: "52px", marginBottom: "10px" }}>{mood.emoji}</div>
-        <div style={{ fontSize: "22px", fontFamily: font.display, fontWeight: "700", color: C.text }}>{mood.title}</div>
-        <div style={{ fontSize: "14px", color: C.textSub, marginTop: "6px" }}>{mood.sub}</div>
-
-        {/* Progress Bar */}
-        {total > 0 && (
-          <div style={{ marginTop: "16px" }}>
-            <div style={{ display: "flex", justifyContent: "space-between", marginBottom: "6px" }}>
-              <div style={{ fontSize: "12px", color: C.green, fontWeight: "700" }}>✓ {stats.yes} kommen</div>
-              <div style={{ fontSize: "12px", color: C.textLight }}>✕ {stats.no} nicht</div>
-            </div>
-            <div style={{ height: "10px", background: C.greyBg, borderRadius: "5px", overflow: "hidden" }}>
-              <div style={{ height: "100%", width: `${pct}%`, background: `linear-gradient(90deg, ${C.green}, ${C.orange})`, borderRadius: "5px", transition: "width 0.6s" }} />
-            </div>
-            <div style={{ fontSize: "11px", color: C.textLight, marginTop: "6px" }}>{pct}% kommen heute</div>
-          </div>
-        )}
-      </div>
+      {/* Vibe Card */}
+      {vibe && (
+        <div style={{
+          background: `linear-gradient(135deg,${vibe.color}18,${C.card})`,
+          border: `1.5px solid ${vibe.color}44`,
+          borderRadius: "20px", padding: "28px 20px",
+          marginBottom: "14px", textAlign: "center",
+          animation: "fadeUp 0.4s ease",
+        }}>
+          <div style={{ fontSize: "56px", marginBottom: "12px" }}>{vibe.emoji}</div>
+          <div style={{ fontSize: "22px", fontFamily: font.display, fontWeight: "700", color: C.text }}>{vibe.title}</div>
+          <div style={{ fontSize: "14px", color: C.textSub, marginTop: "6px" }}>{vibe.sub}</div>
+        </div>
+      )}
 
       {/* Dein Vote */}
-      <div style={{ background: C.card, borderRadius: "18px", padding: "16px", border: `1px solid ${C.border}`, marginBottom: "14px" }}>
-        <div style={{ fontSize: "14px", fontWeight: "700", color: C.text, marginBottom: "12px" }}>Kommst du heute?</div>
+      <div style={{ background: C.card, borderRadius: "18px", padding: "18px", border: `1px solid ${C.border}`, marginBottom: "14px" }}>
+        <div style={{ fontSize: "15px", fontWeight: "700", color: C.text, marginBottom: "14px" }}>Kommst du heute?</div>
         <div style={{ display: "flex", gap: "8px" }}>
           {[
-            { v: "planned", l: "Ja, ich komme! 🙌", color: C.green },
-            { v: "not", l: "Nicht heute 😴", color: C.greyBg },
+            { v: "planned", l: "Ja, ich komme! 🙌" },
+            { v: "not",     l: "Nicht heute 😴" },
           ].map(o => (
             <button key={o.v} onClick={() => setVisit(o.v)} style={{
-              flex: 1, padding: "12px 8px", borderRadius: "12px", border: "none",
-              background: myStatus === o.v ? o.color : C.greyBg,
-              color: myStatus === o.v ? (o.v === "not" ? C.text : C.white) : C.textLight,
-              fontSize: "13px", fontWeight: "700", transition: "all 0.2s", cursor: "pointer",
+              flex: 1, padding: "13px 8px", borderRadius: "13px", border: "none",
+              background: myStatus === o.v ? C.orange : C.greyBg,
+              color: myStatus === o.v ? C.white : C.textLight,
+              fontSize: "13px", fontWeight: "700", transition: "all 0.25s", cursor: "pointer",
             }}>{o.l}</button>
           ))}
         </div>
+
+        {/* Feedback nach Abstimmung */}
         {myStatus === "planned" && (
-          <div style={{ marginTop: "10px", padding: "10px 14px", background: `${C.green}18`, borderRadius: "12px", fontSize: "13px", color: C.green, fontWeight: "600", textAlign: "center" }}>
-            🙌 Wir freuen uns auf dich!
+          <div style={{ marginTop: "12px", padding: "12px 16px", background: `${C.green}18`, borderRadius: "12px", textAlign: "center" }}>
+            <div style={{ fontSize: "20px", marginBottom: "4px" }}>🙌</div>
+            <div style={{ fontSize: "14px", fontWeight: "700", color: C.green }}>Wir freuen uns auf dich!</div>
+            <div style={{ fontSize: "12px", color: C.textSub, marginTop: "3px" }}>Bis heute Abend!</div>
           </div>
         )}
         {myStatus === "not" && (
-          <div style={{ marginTop: "10px", padding: "10px 14px", background: C.greyBg, borderRadius: "12px", fontSize: "13px", color: C.textSub, textAlign: "center" }}>
-            Schade! Nächstes Mal 🍕
+          <div style={{ marginTop: "12px", padding: "12px 16px", background: C.greyBg, borderRadius: "12px", textAlign: "center" }}>
+            <div style={{ fontSize: "20px", marginBottom: "4px" }}>🌙</div>
+            <div style={{ fontSize: "14px", fontWeight: "600", color: C.textSub }}>Schade! Nächstes Mal 🍕</div>
           </div>
         )}
       </div>
-
-      {/* Wer kommt */}
-      {stats.names.length > 0 && (
-        <div style={{ background: C.card, borderRadius: "18px", padding: "16px", border: `1px solid ${C.border}` }}>
-          <div style={{ fontSize: "13px", fontWeight: "700", color: C.text, marginBottom: "12px" }}>
-            Kommen heute ({stats.yes})
-          </div>
-          <div style={{ display: "flex", flexWrap: "wrap", gap: "8px" }}>
-            {stats.names.filter(Boolean).map((p, i) => (
-              <div key={i} style={{ display: "flex", alignItems: "center", gap: "6px", background: C.greyBg, borderRadius: "20px", padding: "5px 10px" }}>
-                <div style={{ width: "22px", height: "22px", borderRadius: "50%", background: C.orange, display: "flex", alignItems: "center", justifyContent: "center", fontSize: "10px", color: C.white, fontWeight: "700" }}>
-                  {(p?.name || "?")[0].toUpperCase()}
-                </div>
-                <div style={{ fontSize: "12px", fontWeight: "600", color: C.text }}>@{p?.name || "User"}</div>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
     </div>
   );
 }
 
-// ─── Thoughts Section ─────────────────────────────────────────────
+// ─── Thoughts ─────────────────────────────────────────────────────
 function ThoughtsSection({ user, C, font }) {
   const [thoughts, setThoughts] = useState([]);
   const [text, setText] = useState("");
@@ -407,34 +335,24 @@ function ThoughtsSection({ user, C, font }) {
   const MAX = 280;
 
   const load = async () => {
-    const { data } = await supabase
-      .from("thoughts")
+    const { data } = await supabase.from("thoughts")
       .select("*, profile:user_id(name, avatar_url)")
       .order("upvotes", { ascending: false })
       .order("created_at", { ascending: false })
       .limit(50);
     setThoughts(data || []);
     setLoading(false);
-
     if (user?.id) {
-      const { data: votes } = await supabase
-        .from("thought_votes")
-        .select("thought_id")
-        .eq("user_id", user.id);
+      const { data: votes } = await supabase.from("thought_votes").select("thought_id").eq("user_id", user.id);
       setMyVotes(new Set((votes || []).map(v => v.thought_id)));
     }
   };
 
   useEffect(() => {
     load();
-    const ch = supabase.channel("thoughts-rt")
+    const ch = supabase.channel("thoughts-fam-rt")
       .on("postgres_changes", { event: "*", schema: "public", table: "thoughts" }, load)
-      .on("postgres_changes", { event: "*", schema: "public", table: "thought_votes" }, async () => {
-        if (user?.id) {
-          const { data: votes } = await supabase.from("thought_votes").select("thought_id").eq("user_id", user.id);
-          setMyVotes(new Set((votes || []).map(v => v.thought_id)));
-        }
-      })
+      .on("postgres_changes", { event: "*", schema: "public", table: "thought_votes" }, load)
       .subscribe();
     return () => supabase.removeChannel(ch);
   }, []);
@@ -445,144 +363,85 @@ function ThoughtsSection({ user, C, font }) {
     if (hasLink(text)) { setErr("Keine Links erlaubt 🚫"); return; }
     if (text.length > MAX) { setErr(`Max. ${MAX} Zeichen.`); return; }
     if (!user?.id) { setErr("Bitte einloggen."); return; }
-
     setPosting(true);
     const { error } = await supabase.from("thoughts").insert({ user_id: user.id, text: text.trim(), upvotes: 0 });
-    if (error) { setErr("Fehler: " + error.message); }
+    if (error) setErr("Fehler: " + error.message);
     else { setText(""); load(); }
     setPosting(false);
   };
 
-  const upvote = async (thoughtId) => {
+  const upvote = async (id) => {
     if (!user?.id) return;
-    const already = myVotes.has(thoughtId);
-
-    // Optimistic update
-    setThoughts(prev => prev.map(t => t.id === thoughtId
-      ? { ...t, upvotes: Math.max(0, (t.upvotes || 0) + (already ? -1 : 1)) }
-      : t
-    ));
-    setMyVotes(prev => {
-      const next = new Set(prev);
-      already ? next.delete(thoughtId) : next.add(thoughtId);
-      return next;
-    });
-
-    // DB update via RPC
-    await supabase.rpc("toggle_thought_upvote", { p_thought_id: thoughtId, p_user_id: user.id });
+    const already = myVotes.has(id);
+    setThoughts(prev => prev.map(t => t.id === id ? { ...t, upvotes: Math.max(0, (t.upvotes||0) + (already?-1:1)) } : t));
+    setMyVotes(prev => { const n=new Set(prev); already?n.delete(id):n.add(id); return n; });
+    await supabase.rpc("toggle_thought_upvote", { p_thought_id: id, p_user_id: user.id });
   };
 
-  const deleteThought = async (thoughtId) => {
-    await supabase.from("thoughts").delete().eq("id", thoughtId).eq("user_id", user.id);
-    setThoughts(prev => prev.filter(t => t.id !== thoughtId));
+  const del = async (id) => {
+    await supabase.from("thoughts").delete().eq("id", id).eq("user_id", user.id);
+    setThoughts(prev => prev.filter(t => t.id !== id));
   };
 
-  const formatTime = (ts) => {
-    const d = new Date(ts);
-    const now = new Date();
-    const diff = Math.floor((now - d) / 1000);
+  const fmt = ts => {
+    const diff = Math.floor((Date.now() - new Date(ts)) / 1000);
     if (diff < 60) return "Gerade eben";
-    if (diff < 3600) return `vor ${Math.floor(diff / 60)}m`;
-    if (diff < 86400) return `vor ${Math.floor(diff / 3600)}h`;
-    return d.toLocaleDateString("de-DE", { day: "2-digit", month: "2-digit" });
+    if (diff < 3600) return `vor ${Math.floor(diff/60)}m`;
+    if (diff < 86400) return `vor ${Math.floor(diff/3600)}h`;
+    return new Date(ts).toLocaleDateString("de-DE", { day:"2-digit", month:"2-digit" });
   };
 
   return (
     <div style={{ padding: "0 16px" }}>
-      {/* Compose Box */}
+      {/* Compose */}
       <div style={{ background: C.card, borderRadius: "18px", padding: "16px", border: `1px solid ${C.border}`, marginBottom: "14px" }}>
-        <textarea
-          value={text}
-          onChange={e => { setText(e.target.value); setErr(""); }}
-          placeholder="Was denkst du gerade? ✍️"
-          maxLength={MAX + 10}
-          style={{
-            width: "100%", minHeight: "80px", padding: "0", border: "none",
-            background: "transparent", fontSize: "15px", color: C.text,
-            outline: "none", resize: "none", fontFamily: font.ui, lineHeight: 1.5,
-            boxSizing: "border-box",
-          }}
+        <textarea value={text} onChange={e => { setText(e.target.value); setErr(""); }}
+          placeholder="Was denkst du gerade? ✍️" maxLength={MAX+10}
+          style={{ width:"100%", minHeight:"72px", padding:"0", border:"none", background:"transparent", fontSize:"15px", color:C.text, outline:"none", resize:"none", fontFamily:font.ui, lineHeight:1.5, boxSizing:"border-box" }}
         />
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: "10px" }}>
-          <div style={{ fontSize: "11px", color: text.length > MAX ? C.orange : C.textLight }}>
-            {text.length}/{MAX}
-          </div>
-          {err && <div style={{ fontSize: "12px", color: C.orange, fontWeight: "600" }}>{err}</div>}
-          <button onClick={post} disabled={posting || !text.trim()} style={{
-            padding: "9px 20px", background: text.trim() && !posting ? C.orange : C.greyBg,
-            borderRadius: "20px", color: text.trim() && !posting ? C.white : C.textLight,
-            fontSize: "13px", fontWeight: "700", border: "none",
-            transition: "all 0.2s", cursor: text.trim() ? "pointer" : "not-allowed",
-          }}>
-            {posting ? "..." : "Posten"}
+        <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginTop:"8px" }}>
+          <div style={{ fontSize:"11px", color:text.length>MAX?C.orange:C.textLight }}>{text.length}/{MAX}</div>
+          {err && <div style={{ fontSize:"12px", color:C.orange, fontWeight:"600" }}>{err}</div>}
+          <button onClick={post} disabled={posting||!text.trim()} style={{ padding:"9px 20px", background:text.trim()&&!posting?C.orange:C.greyBg, borderRadius:"20px", color:text.trim()&&!posting?C.white:C.textLight, fontSize:"13px", fontWeight:"700", border:"none", cursor:text.trim()?"pointer":"not-allowed", transition:"all 0.2s" }}>
+            {posting?"...":"Posten"}
           </button>
         </div>
-        <div style={{ fontSize: "10px", color: C.textLight, marginTop: "6px" }}>
-          Keine Links · Respektvoller Umgang
-        </div>
+        <div style={{ fontSize:"10px", color:C.textLight, marginTop:"6px" }}>Keine Links · Respektvoller Umgang</div>
       </div>
 
-      {loading && <div style={{ textAlign: "center", padding: "40px", color: C.textLight }}>Wird geladen...</div>}
-
-      {!loading && thoughts.length === 0 && (
-        <div style={{ textAlign: "center", padding: "40px" }}>
-          <div style={{ fontSize: "36px", marginBottom: "8px" }}>💭</div>
-          <div style={{ fontSize: "15px", fontWeight: "700", color: C.text }}>Noch keine Gedanken</div>
-          <div style={{ fontSize: "13px", color: C.textLight, marginTop: "4px" }}>Teile dein erstes Gedanken!</div>
+      {loading && <div style={{ textAlign:"center", padding:"40px", color:C.textLight }}>Laden...</div>}
+      {!loading && thoughts.length===0 && (
+        <div style={{ textAlign:"center", padding:"40px" }}>
+          <div style={{ fontSize:"36px", marginBottom:"8px" }}>💭</div>
+          <div style={{ fontSize:"15px", fontWeight:"700", color:C.text }}>Noch keine Gedanken</div>
+          <div style={{ fontSize:"13px", color:C.textLight, marginTop:"4px" }}>Sei der Erste!</div>
         </div>
       )}
 
       {thoughts.map((t, i) => {
         const voted = myVotes.has(t.id);
         const isOwn = t.user_id === user?.id;
-
         return (
-          <div key={t.id} style={{
-            background: C.card, borderRadius: "18px", padding: "16px",
-            border: `1px solid ${i === 0 && t.upvotes > 0 ? C.orange + "44" : C.border}`,
-            marginBottom: "8px", animation: "fadeUp 0.3s ease",
-          }}>
-            {/* Author */}
-            <div style={{ display: "flex", alignItems: "center", gap: "10px", marginBottom: "10px" }}>
-              <div style={{ width: "34px", height: "34px", borderRadius: "50%", background: C.orange, display: "flex", alignItems: "center", justifyContent: "center", fontSize: "13px", color: C.white, fontWeight: "700", flexShrink: 0 }}>
-                {(t.profile?.name || "?")[0].toUpperCase()}
+          <div key={t.id} style={{ background:C.card, borderRadius:"18px", padding:"16px", border:`1px solid ${i===0&&t.upvotes>0?C.orange+"44":C.border}`, marginBottom:"8px", animation:"fadeUp 0.3s ease" }}>
+            <div style={{ display:"flex", alignItems:"center", gap:"10px", marginBottom:"10px" }}>
+              <div style={{ width:"34px", height:"34px", borderRadius:"50%", background:C.orange, display:"flex", alignItems:"center", justifyContent:"center", fontSize:"13px", color:C.white, fontWeight:"700", flexShrink:0 }}>
+                {(t.profile?.name||"?")[0].toUpperCase()}
               </div>
-              <div style={{ flex: 1 }}>
-                <div style={{ fontSize: "13px", fontWeight: "700", color: C.text }}>@{t.profile?.name || "user"}</div>
-                <div style={{ fontSize: "11px", color: C.textLight }}>{formatTime(t.created_at)}</div>
+              <div style={{ flex:1 }}>
+                <div style={{ fontSize:"13px", fontWeight:"700", color:C.text }}>@{t.profile?.name||"user"}</div>
+                <div style={{ fontSize:"11px", color:C.textLight }}>{fmt(t.created_at)}</div>
               </div>
-              {i === 0 && t.upvotes > 2 && (
-                <div style={{ fontSize: "10px", fontWeight: "700", color: C.orange, background: `${C.orange}18`, padding: "3px 8px", borderRadius: "8px" }}>🔥 Trend</div>
-              )}
-              {isOwn && (
-                <button onClick={() => deleteThought(t.id)} style={{ background: "none", border: "none", color: C.textLight, fontSize: "16px", cursor: "pointer", padding: "4px" }}>✕</button>
-              )}
+              {i===0&&t.upvotes>2&&<div style={{ fontSize:"10px", fontWeight:"700", color:C.orange, background:`${C.orange}18`, padding:"3px 8px", borderRadius:"8px" }}>🔥 Trend</div>}
+              {isOwn&&<button onClick={()=>del(t.id)} style={{ background:"none", border:"none", color:C.textLight, fontSize:"16px", cursor:"pointer", padding:"4px" }}>✕</button>}
             </div>
-
-            {/* Text */}
-            <div style={{ fontSize: "15px", color: C.text, lineHeight: 1.55, marginBottom: "12px", wordBreak: "break-word" }}>
-              {t.text}
-            </div>
-
-            {/* Upvote */}
-            <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
-              <button onClick={() => upvote(t.id)} style={{
-                display: "flex", alignItems: "center", gap: "6px",
-                padding: "8px 16px", borderRadius: "20px", border: "none",
-                background: voted ? C.orange : C.greyBg,
-                color: voted ? C.white : C.textSub,
-                fontSize: "13px", fontWeight: "700", cursor: "pointer",
-                transition: "all 0.2s", transform: voted ? "scale(1.05)" : "scale(1)",
-              }}>
-                <span>{voted ? "♥" : "♡"}</span>
-                <span>{t.upvotes || 0}</span>
-              </button>
-            </div>
+            <div style={{ fontSize:"15px", color:C.text, lineHeight:1.55, marginBottom:"12px", wordBreak:"break-word" }}>{t.text}</div>
+            <button onClick={()=>upvote(t.id)} style={{ display:"flex", alignItems:"center", gap:"6px", padding:"8px 16px", borderRadius:"20px", border:"none", background:voted?C.orange:C.greyBg, color:voted?C.white:C.textSub, fontSize:"13px", fontWeight:"700", cursor:"pointer", transition:"all 0.2s", transform:voted?"scale(1.04)":"scale(1)" }}>
+              <span>{voted?"♥":"♡"}</span><span>{t.upvotes||0}</span>
+            </button>
           </div>
         );
       })}
-
-      <div style={{ height: "8px" }} />
+      <div style={{ height:"8px" }} />
     </div>
   );
 }

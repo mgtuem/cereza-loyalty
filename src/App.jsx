@@ -23,11 +23,11 @@ const T = {
     name:"Beige",
   },
   red: {
-    bg:"#8B0000", surface:"#c0392b", card:"#ffffff",
-    accent:"#ff6b35", green:"#27ae60",
-    text:"#ffffff", textSub:"rgba(255,255,255,0.8)", textLight:"rgba(255,255,255,0.55)",
-    white:"#ffffff", border:"rgba(255,255,255,0.2)", grey:"rgba(255,255,255,0.1)",
-    navBg:"rgba(139,0,0,0.97)", navBorder:"rgba(255,255,255,0.1)",
+    bg:"#8B0000", surface:"#f9f0f0", card:"#ffffff",
+    accent:"#e24a28", green:"#2d6a2d",
+    text:"#1a0000", textSub:"#5a2020", textLight:"#a06060",
+    white:"#ffffff", border:"#f0d0d0", grey:"#fdf4f4",
+    navBg:"rgba(255,255,255,0.96)", navBorder:"rgba(200,100,100,0.1)",
     name:"Rot",
   },
   rosa: {
@@ -278,38 +278,52 @@ const HomeTab = ({ user, setUser, setTab }) => {
   const [missions,setMissions]=useState(MOCK_MISSIONS);
   const [facts,setFacts]=useState(FUN_FACTS_DEF);
   const [visit,setVisitLocal]=useState(null);
-  // #5: Besucher-Statistik für Indikator
-  const [visitorStats,setVisitorStats]=useState({yes:0,no:0});
+  // #3: Gestartete Missionen für Home-Filter
+  const [startedMissions,setStartedMissions]=useState(new Set());
+  // #6: Vibe ohne Zahlen
+  const [visitorVibe,setVisitorVibe]=useState(null);
+
+  const computeVibe=(yes,no)=>{
+    const total=yes+no;
+    if(total===0)return null;
+    const p=yes/total;
+    if(yes>=8)return{emoji:"🎉",text:"Cereza Party heute!",color:C.orange};
+    if(yes>=5)return{emoji:"🔥",text:"Heute brennt's!",color:C.orange};
+    if(yes>=3)return{emoji:"👋",text:"Schöner Abend wird's!",color:C.green};
+    if(yes===2)return{emoji:"🤝",text:"Gemütliche Runde heute",color:C.green};
+    if(yes===1)return{emoji:"☕",text:"Stille Stunde – chill",color:C.textSub};
+    if(p<0.3&&total>=3)return{emoji:"🌿",text:"Ruhiger Tag heute",color:C.green};
+    return null;
+  };
 
   useEffect(()=>{
     db.getLeaderboard().then(d=>{if(d.length)setLb(d)});
     db.getMissions().then(d=>{if(d.length)setMissions(d)});
     db.getFunFacts().then(d=>{if(d.length)setFacts(d.map(f=>f.text))});
-    // Besucher-Statistik laden
-    const loadStats=async()=>{
+    // Gestartete Missionen laden
+    if(user?.id){
+      db.getStartedMissions(user.id).then(set=>setStartedMissions(set));
+    }
+    // Besucher-Vibe laden
+    const loadVibe=async()=>{
       const today=new Date().toISOString().split('T')[0];
       const{data}=await supabase.from('visit_intentions').select('status').eq('planned_date',today);
       if(data){
         const yes=(data||[]).filter(d=>d.status==='planned').length;
         const no=(data||[]).filter(d=>d.status==='not').length;
-        setVisitorStats({yes,no});
+        setVisitorVibe(computeVibe(yes,no));
       }
     };
-    loadStats();
-    if(user.id){
+    loadVibe();
+    if(user?.id){
       const today=new Date().toISOString().split('T')[0];
       db.getVisitIntention(user.id,today).then(d=>{if(d)setVisitLocal(d.status)}).catch(()=>{});
     }
-    // Realtime
     const ch=supabase.channel('home-rt')
       .on('postgres_changes',{event:'*',schema:'public',table:'missions'},()=>db.getMissions().then(d=>{if(d.length)setMissions(d)}))
       .on('postgres_changes',{event:'*',schema:'public',table:'fun_facts'},()=>db.getFunFacts().then(d=>{if(d.length)setFacts(d.map(f=>f.text))}))
-      .on('postgres_changes',{event:'*',schema:'public',table:'visit_intentions'},()=>{
-        const today=new Date().toISOString().split('T')[0];
-        supabase.from('visit_intentions').select('status').eq('planned_date',today).then(({data})=>{
-          if(data){setVisitorStats({yes:(data||[]).filter(d=>d.status==='planned').length,no:(data||[]).filter(d=>d.status==='not').length});}
-        });
-      })
+      .on('postgres_changes',{event:'*',schema:'public',table:'mission_starts'},()=>{if(user?.id)db.getStartedMissions(user.id).then(setStartedMissions)})
+      .on('postgres_changes',{event:'*',schema:'public',table:'visit_intentions'},()=>loadVibe())
       .subscribe();
     return()=>supabase.removeChannel(ch);
   },[]);
@@ -321,21 +335,10 @@ const HomeTab = ({ user, setUser, setTab }) => {
 
   const setVisit=async(status)=>{
     setVisitLocal(status);
-    if(user.id){const today=new Date().toISOString().split('T')[0];await db.setVisitIntention(user.id,today,status);}
+    if(user?.id){const today=new Date().toISOString().split('T')[0];await db.setVisitIntention(user.id,today,status);}
   };
 
-  // #5: Indikator-Text basierend auf Statistik
-  const getVisitorMood=()=>{
-    const total=visitorStats.yes+visitorStats.no;
-    if(total===0)return null;
-    const pct=visitorStats.yes/total;
-    if(visitorStats.yes>=8)return{emoji:"🎉",text:"Cereza Party heute!",color:"#e24a28"};
-    if(visitorStats.yes>=4)return{emoji:"🍕",text:`${visitorStats.yes} aus der Cereza Family kommen!`,color:C.orange};
-    if(pct<0.3&&total>3)return{emoji:"🌱",text:"Ruhiger Tag – perfekt für dich",color:C.green};
-    if(visitorStats.yes>0)return{emoji:"👋",text:`${visitorStats.yes} Freunde kommen heute`,color:C.orange};
-    return null;
-  };
-  const mood=getVisitorMood();
+  const mood=visitorVibe;
 
   return(
     <div style={{ background:C.beige,paddingBottom:"24px",minHeight:"100%" }}>
@@ -394,7 +397,7 @@ const HomeTab = ({ user, setUser, setTab }) => {
           </button>
         </Card>
 
-        {/* #5: Heute kommen? mit coolem Indikator */}
+        {/* #5: Heute kommen? – #6 keine Zahlen, nur Vibe */}
         <Card style={{ marginBottom:"12px" }}>
           <div style={{ fontSize:"14px",fontWeight:"700",color:C.text,marginBottom:"12px" }}>Kommst du heute vorbei?</div>
           <div style={{ display:"flex",gap:"8px",marginBottom:mood?"10px":"0" }}>
@@ -404,23 +407,30 @@ const HomeTab = ({ user, setUser, setTab }) => {
               </button>
             ))}
           </div>
-          {/* Indikator */}
+          {/* #6: Nur Emoji + Text, keine Zahlen */}
           {mood&&(
             <div style={{ display:"flex",alignItems:"center",gap:"10px",padding:"10px 12px",background:`${mood.color}12`,borderRadius:"12px",animation:"fadeUp 0.4s" }}>
-              <span style={{ fontSize:"20px" }}>{mood.emoji}</span>
-              <div>
-                <div style={{ fontSize:"13px",fontWeight:"700",color:mood.color }}>{mood.text}</div>
-                <div style={{ fontSize:"11px",color:C.textLight,marginTop:"2px" }}>{visitorStats.yes} kommen · {visitorStats.no} nicht</div>
-              </div>
+              <span style={{ fontSize:"22px" }}>{mood.emoji}</span>
+              <div style={{ fontSize:"13px",fontWeight:"700",color:mood.color }}>{mood.text}</div>
+            </div>
+          )}
+          {/* Feedback nach eigenem Vote */}
+          {visit==="planned"&&(
+            <div style={{ marginTop:"8px",padding:"10px 12px",background:`${C.green}12`,borderRadius:"12px",textAlign:"center",fontSize:"13px",fontWeight:"600",color:C.green }}>
+              🙌 Wir freuen uns auf dich!
             </div>
           )}
         </Card>
 
-        {/* Missionen – #7: anklickbar, startbar */}
-        <div style={{ fontSize:"12px",fontWeight:"700",letterSpacing:"1px",color:C.textSub,marginBottom:"10px",textTransform:"uppercase" }}>Aktive Missionen</div>
-        {missions.slice(0,3).map((m,i)=>(
-          <MissionCard key={m.id||i} mission={m} user={user} setUser={setUser}/>
-        ))}
+        {/* #3: Nur gestartete Missionen im Home */}
+        {startedMissions.size>0&&(
+          <>
+            <div style={{ fontSize:"12px",fontWeight:"700",letterSpacing:"1px",color:C.textSub,marginBottom:"10px",textTransform:"uppercase" }}>Meine Missionen</div>
+            {missions.filter(m=>startedMissions.has(m.id)).slice(0,3).map((m,i)=>(
+              <MissionCard key={m.id||i} mission={m} user={user} setUser={setUser}/>
+            ))}
+          </>
+        )}
 
         {/* Bestenliste */}
         <Card style={{ marginTop:"6px" }}>
@@ -455,51 +465,128 @@ const HomeTab = ({ user, setUser, setTab }) => {
   );
 };
 
-// #7: Mission Card – anklickbar, startbar
+// MissionCard – Accordion mit Stempelkarte (Anti-Cheat via DB-Funktion)
 const MissionCard = ({ mission: m, user, setUser }) => {
-  const [started,setStarted]=useState(false);
-  const [progress,setProgress]=useState(m.progress||0);
+  const [open,    setOpen]    = useState(false);
+  const [started, setStarted] = useState(false);
+  const [progress,setProgress]= useState(0);
+  const [stamping,setStamping]= useState(false);
+  const [msg,     setMsg]     = useState("");
 
   useEffect(()=>{
-    if(!user.id)return;
-    supabase.from('mission_starts').select('id').eq('user_id',user.id).eq('mission_id',m.id).single()
-      .then(({data})=>{if(data)setStarted(true);});
-  },[]);
+    if(!user?.id)return;
+    // Gestartet?
+    supabase.from('mission_starts').select('id').eq('user_id',user.id).eq('mission_id',m.id).maybeSingle()
+      .then(({data})=>{ if(data) setStarted(true); });
+    // Fortschritt (Stempel zählen)
+    supabase.from('mission_stamps').select('id',{count:'exact',head:true}).eq('user_id',user.id).eq('mission_id',m.id)
+      .then(({count})=>{ setProgress(count||0); });
+  },[m.id,user?.id]);
 
-  const start=async()=>{
-    if(!user.id||started)return;
+  const goal = m.goal||1;
+  const done = progress >= goal;
+
+  const startMission = async(e)=>{
+    e.stopPropagation();
+    if(!user?.id||started||done)return;
     Sound.tap();
     await supabase.from('mission_starts').upsert({user_id:user.id,mission_id:m.id},{onConflict:'user_id,mission_id'});
     setStarted(true);
+    setMsg("Mission gestartet!");
+    setTimeout(()=>setMsg(""),2000);
   };
 
-  const done=progress>=(m.goal||1);
+  const stamp = async(e)=>{
+    e.stopPropagation();
+    if(!user?.id||stamping||done)return;
+    setStamping(true); setMsg("");
+    // Anti-Cheat: über DB-Funktion stempeln
+    const{data,error}=await supabase.rpc('stamp_mission',{p_user_id:user.id,p_mission_id:m.id});
+    if(error||!data?.ok){
+      setMsg(data?.error||error?.message||"Fehler");
+    }else{
+      setProgress(data.progress);
+      if(data.completed){
+        Sound.win();
+        setMsg(`+${m.pts_reward} XP! Mission abgeschlossen! 🎉`);
+        setUser(u=>({...u,pts:(u.pts||0)+m.pts_reward}));
+      }else{
+        Sound.tap();
+        setMsg(`Stempel ${data.progress}/${data.goal} ✓`);
+      }
+    }
+    setStamping(false);
+    setTimeout(()=>setMsg(""),3000);
+  };
 
   return(
-    <Card style={{ marginBottom:"8px",padding:"14px",cursor:"pointer",opacity:done?0.7:1 }} onClick={start}>
-      <div style={{ display:"flex",alignItems:"center",gap:"14px" }}>
+    <Card style={{ marginBottom:"8px",padding:0,overflow:"hidden",cursor:"pointer" }}>
+      {/* Header – immer sichtbar */}
+      <div onClick={()=>setOpen(o=>!o)} style={{ padding:"14px",display:"flex",alignItems:"center",gap:"14px" }}>
         <div style={{ width:"40px",height:"40px",borderRadius:"12px",background:done?C.green:started?`${C.orange}22`:C.greyBg,display:"flex",alignItems:"center",justifyContent:"center",fontSize:"18px",flexShrink:0,transition:"background 0.3s" }}>
-          {done?<span style={{ color:C.white }}>{I.check}</span>:m.icon}
+          {done?<span style={{ color:C.white,display:"flex" }}>{I.check}</span>:m.icon}
         </div>
         <div style={{ flex:1 }}>
-          <div style={{ display:"flex",alignItems:"center",gap:"8px" }}>
+          <div style={{ display:"flex",alignItems:"center",gap:"8px",flexWrap:"wrap" }}>
             <div style={{ fontSize:"14px",fontWeight:"700",color:C.text }}>{m.title}</div>
-            {started&&!done&&<div style={{ fontSize:"9px",fontWeight:"700",background:`${C.orange}20`,color:C.orange,padding:"2px 7px",borderRadius:"8px" }}>Läuft</div>}
-            {done&&<div style={{ fontSize:"9px",fontWeight:"700",background:`${C.green}20`,color:C.green,padding:"2px 7px",borderRadius:"8px" }}>Fertig</div>}
+            {started&&!done&&<div style={{ fontSize:"9px",fontWeight:"700",background:`${C.orange}18`,color:C.orange,padding:"2px 7px",borderRadius:"8px" }}>Läuft</div>}
+            {done&&<div style={{ fontSize:"9px",fontWeight:"700",background:`${C.green}18`,color:C.green,padding:"2px 7px",borderRadius:"8px" }}>✓ Fertig</div>}
           </div>
           <div style={{ fontSize:"12px",color:C.textLight,marginTop:"2px" }}>{m.description}</div>
-          {m.goal>1&&(
+          {/* Fortschrittsbalken */}
+          {goal>1&&(
             <div style={{ height:"4px",background:C.greyBg,borderRadius:"2px",marginTop:"8px",overflow:"hidden" }}>
-              <div style={{ height:"100%",width:`${Math.min(100,(progress/(m.goal||1))*100)}%`,background:done?C.green:C.orange,borderRadius:"2px",transition:"width 0.4s" }}/>
+              <div style={{ height:"100%",width:`${Math.min(100,(progress/goal)*100)}%`,background:done?C.green:C.orange,borderRadius:"2px",transition:"width 0.4s" }}/>
             </div>
           )}
         </div>
-        <div style={{ textAlign:"right",flexShrink:0 }}>
-          <div style={{ fontSize:"13px",fontWeight:"700",color:done?C.green:C.orange }}>{done?"✓":`+${m.pts_reward}`}</div>
-          {m.goal>1&&<div style={{ fontSize:"10px",color:C.textLight }}>{progress}/{m.goal}</div>}
-          {!started&&!done&&<div style={{ fontSize:"10px",color:C.orange,marginTop:"2px" }}>Starten →</div>}
+        <div style={{ display:"flex",flexDirection:"column",alignItems:"flex-end",gap:"4px",flexShrink:0 }}>
+          <div style={{ fontSize:"13px",fontWeight:"700",color:done?C.green:C.orange }}>{done?"✓":`+${m.pts_reward} XP`}</div>
+          {goal>1&&<div style={{ fontSize:"10px",color:C.textLight }}>{progress}/{goal}</div>}
+          <div style={{ fontSize:"16px",color:C.textLight,transform:open?"rotate(180deg)":"rotate(0deg)",transition:"transform 0.25s" }}>⌄</div>
         </div>
       </div>
+
+      {/* Accordion Body */}
+      {open&&(
+        <div style={{ borderTop:`1px solid ${C.greyBg}`,padding:"14px",background:`${C.greyBg}55` }}>
+          {/* Stempelkarte */}
+          {goal>1&&(
+            <div style={{ marginBottom:"14px" }}>
+              <div style={{ fontSize:"11px",fontWeight:"700",color:C.textSub,marginBottom:"8px",letterSpacing:"0.5px" }}>STEMPELKARTE</div>
+              <div style={{ display:"flex",gap:"6px",flexWrap:"wrap" }}>
+                {[...Array(goal)].map((_,i)=>(
+                  <div key={i} style={{ width:"36px",height:"36px",borderRadius:"10px",background:i<progress?C.orange:C.card,border:`2px solid ${i<progress?C.orange:C.border}`,display:"flex",alignItems:"center",justifyContent:"center",transition:"all 0.3s" }}>
+                    {i<progress
+                      ?<span style={{ color:C.white,fontSize:"16px" }}>✓</span>
+                      :<span style={{ color:C.textLight,fontSize:"12px",fontWeight:"700" }}>{i+1}</span>
+                    }
+                  </div>
+                ))}
+              </div>
+              <div style={{ fontSize:"11px",color:C.textLight,marginTop:"8px" }}>
+                Anti-Cheat: max. 1 Stempel pro Stunde · Stempelung durch Mitarbeiter
+              </div>
+            </div>
+          )}
+
+          {/* Feedback */}
+          {msg&&<div style={{ padding:"10px 14px",background:`${C.orange}18`,borderRadius:"10px",fontSize:"13px",fontWeight:"600",color:C.orange,marginBottom:"12px",textAlign:"center" }}>{msg}</div>}
+
+          {/* Buttons */}
+          {!done&&!started&&(
+            <button onClick={startMission} style={{ width:"100%",padding:"12px",background:C.orange,border:"none",borderRadius:"12px",color:C.white,fontSize:"14px",fontWeight:"700",cursor:"pointer" }}>
+              Mission starten →
+            </button>
+          )}
+          {!done&&started&&(
+            <button onClick={stamp} disabled={stamping} style={{ width:"100%",padding:"12px",background:stamping?C.greyBg:C.green,border:"none",borderRadius:"12px",color:stamping?C.textLight:C.white,fontSize:"14px",fontWeight:"700",cursor:stamping?"not-allowed":"pointer",transition:"all 0.2s" }}>
+              {stamping?"...":"Stempel eintragen ✓"}
+            </button>
+          )}
+          {done&&<div style={{ textAlign:"center",fontSize:"14px",fontWeight:"700",color:C.green,padding:"8px" }}>Mission abgeschlossen! 🎉</div>}
+        </div>
+      )}
     </Card>
   );
 };

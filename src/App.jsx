@@ -1,14 +1,80 @@
 import { useState, useEffect, useRef } from "react";
 import supabase, { db } from "./supabase";
 
-// ─── Brand System (Cereza Design Guide) ─────────────────────────
-const C = {
-  bg: "#C1272D", beige: "#e6dcca", beigeDark: "#e5d2b5", greyBg: "#f5f5f5",
-  orange: "#e24a28", salmon: "#fa8072", green: "#2d472a",
-  text: "#111111", textSub: "#463939", textLight: "#999999", textMuted: "#d1d1d1",
-  white: "#ffffff", border: "#e3e3e3", cream: "#F5F0EB",
+// ─── Theme System ───────────────────────────────────────────────
+const themes = {
+  light: {
+    bg: "#C1272D", surface: "#e6dcca", surfaceAlt: "#e5d2b5", card: "#ffffff",
+    accent: "#e24a28", accentSoft: "#fa8072", green: "#2d472a",
+    text: "#111111", textSub: "#463939", textLight: "#999999", textMuted: "#d1d1d1",
+    white: "#ffffff", border: "#e3e3e3", greyBg: "#f5f5f5",
+    navBg: "rgba(255,255,255,0.97)", navBorder: "rgba(0,0,0,0.12)",
+    inputBg: "rgba(255,255,255,0.12)", inputBorder: "rgba(255,255,255,0.2)", inputText: "#ffffff",
+    authBg: "#C1272D", logoColor: "#2d472a",
+  },
+  dark: {
+    bg: "#0a0a0a", surface: "#1a1a1a", surfaceAlt: "#222222", card: "#1e1e1e",
+    accent: "#e24a28", accentSoft: "#fa8072", green: "#4CAF50",
+    text: "#f0f0f0", textSub: "#b0b0b0", textLight: "#666666", textMuted: "#444444",
+    white: "#ffffff", border: "#2a2a2a", greyBg: "#252525",
+    navBg: "rgba(18,18,18,0.97)", navBorder: "rgba(255,255,255,0.06)",
+    inputBg: "rgba(255,255,255,0.06)", inputBorder: "rgba(255,255,255,0.12)", inputText: "#f0f0f0",
+    authBg: "#0a0a0a", logoColor: "#e24a28",
+  },
+  glowRosa: {
+    bg: "#f8e8ee", surface: "#fdf2f6", surfaceAlt: "#f9dce6", card: "#ffffff",
+    accent: "#d4618c", accentSoft: "#f0a0b8", green: "#2d472a",
+    text: "#3a1a2a", textSub: "#6a4a5a", textLight: "#a888a0", textMuted: "#d4b8c8",
+    white: "#ffffff", border: "#f0d0e0", greyBg: "#fef6f9",
+    navBg: "rgba(255,245,250,0.97)", navBorder: "rgba(200,150,170,0.15)",
+    inputBg: "rgba(212,97,140,0.08)", inputBorder: "rgba(212,97,140,0.2)", inputText: "#3a1a2a",
+    authBg: "#f8e8ee", logoColor: "#d4618c",
+  },
+  glowGruen: {
+    bg: "#e8f5e9", surface: "#f1f8f2", surfaceAlt: "#dcedc8", card: "#ffffff",
+    accent: "#4CAF50", accentSoft: "#81C784", green: "#2E7D32",
+    text: "#1a3a1a", textSub: "#4a6a4a", textLight: "#88a888", textMuted: "#b8d0b8",
+    white: "#ffffff", border: "#c8e6c9", greyBg: "#f6faf6",
+    navBg: "rgba(245,255,245,0.97)", navBorder: "rgba(150,200,150,0.15)",
+    inputBg: "rgba(76,175,80,0.08)", inputBorder: "rgba(76,175,80,0.2)", inputText: "#1a3a1a",
+    authBg: "#e8f5e9", logoColor: "#2E7D32",
+  },
 };
-const font = { ui: "'Source Sans Pro', -apple-system, sans-serif", display: "'Playfair Display', Georgia, serif" };
+
+const useTheme = () => {
+  const [mode, setMode] = useState(()=>localStorage.getItem("cereza-theme")||"light");
+  const [glowColor, setGlowColor] = useState(()=>localStorage.getItem("cereza-glow")||"rosa");
+  const [isGlowHour, setIsGlowHour] = useState(false);
+
+  useEffect(()=>{
+    localStorage.setItem("cereza-theme", mode);
+  },[mode]);
+  useEffect(()=>{
+    localStorage.setItem("cereza-glow", glowColor);
+  },[glowColor]);
+  useEffect(()=>{
+    // Check glow hour every minute
+    const check=async()=>{
+      try{ const g=await db.isGlowHourNow(); setIsGlowHour(g); }catch(e){}
+    };
+    check(); const t=setInterval(check,60000); return()=>clearInterval(t);
+  },[]);
+
+  const activeTheme = isGlowHour ? (glowColor==="rosa"?"glowRosa":"glowGruen") : mode;
+  const t = themes[activeTheme] || themes.light;
+  return { t, mode, setMode, glowColor, setGlowColor, isGlowHour, isDark: mode==="dark" };
+};
+
+// Keep C as alias - will be mutated by theme hook
+let C = {...themes.light, beige: themes.light.surface, beigeDark: themes.light.surfaceAlt, orange: themes.light.accent, cream: themes.light.card};
+const font = { ui: "'Source Sans Pro', -apple-system, 'SF Pro Display', sans-serif", display: "'Playfair Display', Georgia, serif" };
+
+const applyTheme = (t) => {
+  C.bg = t.bg; C.beige = t.surface; C.beigeDark = t.surfaceAlt; C.card = t.card;
+  C.orange = t.accent; C.salmon = t.accentSoft; C.green = t.green;
+  C.text = t.text; C.textSub = t.textSub; C.textLight = t.textLight; C.textMuted = t.textMuted;
+  C.white = t.white; C.border = t.border; C.greyBg = t.greyBg; C.cream = t.card;
+};
 
 const ERAS = [
   { level: 1, name: "newbie", ptsNeeded: 0 }, { level: 2, name: "regular", ptsNeeded: 500 },
@@ -63,24 +129,26 @@ const MOCK_LB = [
 ];
 
 // ─── CSS ────────────────────────────────────────────────────────
-const CSS = `
+const getCSS = (t) => `
   @import url('https://fonts.googleapis.com/css2?family=Source+Sans+Pro:wght@400;600;700&family=Playfair+Display:wght@400;700;900&display=swap');
   *,*::before,*::after{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
-  html,body,#root{height:100%;width:100%;overflow:hidden;position:fixed;inset:0;background:${C.bg};overscroll-behavior:none;user-select:none;-webkit-user-select:none}
+  html,body,#root{height:100%;width:100%;overflow:hidden;position:fixed;inset:0;background:${t.bg};overscroll-behavior:none;user-select:none;-webkit-user-select:none;transition:background 0.3s}
   input,textarea{user-select:text;-webkit-user-select:text}
-  input::placeholder{color:${C.textLight}}
+  input::placeholder{color:${t.textLight}}
   ::-webkit-scrollbar{display:none}
   @keyframes fadeUp{from{opacity:0;transform:translateY(14px)}to{opacity:1;transform:translateY(0)}}
   @keyframes fadeIn{from{opacity:0}to{opacity:1}}
   @keyframes scaleIn{from{transform:scale(0.7);opacity:0}to{transform:scale(1);opacity:1}}
   @keyframes confetti{0%{transform:translateY(0) rotate(0);opacity:1}100%{transform:translateY(500px) rotate(720deg);opacity:0}}
-  @keyframes glow{0%,100%{box-shadow:0 0 8px rgba(226,74,40,0.2)}50%{box-shadow:0 0 20px rgba(226,74,40,0.5)}}
+  @keyframes glow{0%,100%{box-shadow:0 0 8px ${t.accent}33}50%{box-shadow:0 0 20px ${t.accent}66}}
   @keyframes scanLine{0%,100%{top:12%}50%{top:82%}}
 `;
 
-const Card = ({ children, style, onClick }) => (
-  <div onClick={onClick} style={{ background: C.white, borderRadius: "16px", padding: "18px", color: C.text, border: `1px solid ${C.border}`, ...style }}>{children}</div>
-);
+const Card = ({ children, style, onClick, t: thm }) => {
+  const bg = thm ? thm.card : "#ffffff";
+  const border = thm ? thm.border : "#e3e3e3";
+  return <div onClick={onClick} style={{ background: bg, borderRadius: "16px", padding: "18px", color: thm?.text || "#111", border: `1px solid ${border}`, transition: "all 0.3s", ...style }}>{children}</div>;
+};
 
 // ─── Auth ───────────────────────────────────────────────────────
 const AuthScreen = ({ onLogin }) => {
@@ -580,7 +648,8 @@ const ScoreTab = ({ user, setUser }) => {
 };
 
 // ─── Profile (includes Score + Share + Invite) ──────────────────
-const ProfileTab = ({ user, setUser, onLogout }) => {
+const ProfileTab = ({ user, setUser, onLogout, theme }) => {
+  const {mode,setMode,glowColor,setGlowColor,isGlowHour} = theme || {mode:"light",setMode:()=>{},glowColor:"rosa",setGlowColor:()=>{},isGlowHour:false};
   const era=ERAS.find(e=>e.level===(user.level||1))||ERAS[0];
   const [editing,setEditing]=useState(false); const [insta,setInsta]=useState(user.instagram||""); const [uname,setUname]=useState(user.name||"");
   const [items,setItems]=useState(MOCK_SHOP); const [rd,setRd]=useState(null); const [showShare,setShowShare]=useState(false);
@@ -666,6 +735,26 @@ const ProfileTab = ({ user, setUser, onLogout }) => {
             {ERAS.map((e,i)=><div key={i} style={{width:"42px",height:"42px",borderRadius:"50%",background:(user.level||1)>=e.level?C.orange:C.greyBg,display:"flex",alignItems:"center",justifyContent:"center",fontSize:(user.level||1)>=e.level?"13px":"10px",fontWeight:"800",color:(user.level||1)>=e.level?C.white:C.textLight,border:(user.level||1)===e.level?`3px solid ${C.text}`:"none"}}>{(user.level||1)>=e.level?e.level:"—"}</div>)}
           </div>
         </Card>
+        {/* Settings */}
+        <Card style={{marginBottom:"10px"}}>
+          <div style={{fontSize:"10px",fontWeight:"700",letterSpacing:"1.5px",marginBottom:"10px",color:C.textSub}}>Einstellungen</div>
+          {/* Dark/Light Toggle */}
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"8px 0",borderBottom:`1px solid ${C.greyBg}`}}>
+            <div style={{fontSize:"13px",color:C.text}}>Dark Mode</div>
+            <div onClick={()=>setMode(mode==="dark"?"light":"dark")} style={{width:"44px",height:"24px",borderRadius:"12px",background:mode==="dark"?C.orange:C.greyBg,cursor:"pointer",position:"relative",transition:"all 0.3s"}}>
+              <div style={{width:"20px",height:"20px",borderRadius:"50%",background:C.white,position:"absolute",top:"2px",left:mode==="dark"?"22px":"2px",transition:"all 0.3s",boxShadow:"0 1px 3px rgba(0,0,0,0.2)"}} />
+            </div>
+          </div>
+          {/* Glow Hour Color */}
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"8px 0"}}>
+            <div><div style={{fontSize:"13px",color:C.text}}>Glow Hour Farbe</div>{isGlowHour && <div style={{fontSize:"9px",color:C.orange,fontWeight:"700"}}>Glow Hour aktiv!</div>}</div>
+            <div style={{display:"flex",gap:"6px"}}>
+              <div onClick={()=>setGlowColor("rosa")} style={{width:"28px",height:"28px",borderRadius:"50%",background:"#f8e8ee",border:glowColor==="rosa"?`2px solid #d4618c`:`2px solid ${C.border}`,cursor:"pointer"}} />
+              <div onClick={()=>setGlowColor("gruen")} style={{width:"28px",height:"28px",borderRadius:"50%",background:"#e8f5e9",border:glowColor==="gruen"?`2px solid #4CAF50`:`2px solid ${C.border}`,cursor:"pointer"}} />
+            </div>
+          </div>
+        </Card>
+
         <button onClick={onLogout} style={{width:"100%",marginTop:"12px",padding:"11px",background:"transparent",border:`1px solid ${C.border}`,borderRadius:"10px",color:C.textLight,fontSize:"12px",cursor:"pointer",fontFamily:font.ui}}>Ausloggen</button>
       </div>
     </div>
@@ -753,6 +842,12 @@ const AdminLogin = ({ onLogin, onBack }) => {
 export default function App() {
   const [user,setUser]=useState(null); const [tab,setTab]=useState("home"); const [showLevelUp,setShowLevelUp]=useState(null);
   const [adminMode,setAdminMode]=useState(false); const [loading,setLoading]=useState(true);
+  const theme = useTheme();
+  const { t, mode, setMode, glowColor, setGlowColor, isGlowHour } = theme;
+
+  // Apply theme to global C object so all components get it
+  applyTheme(t);
+  const CSS = getCSS(t);
 
   useEffect(()=>{
     // Try restore session
@@ -785,7 +880,7 @@ export default function App() {
     if(ne&&ne.level>(user.level||1)){ setUser(u=>({...u,level:ne.level})); if(user.id) db.updateProfile(user.id,{level:ne.level}); setShowLevelUp(ne.level); }
   },[user?.pts]);
 
-  if(loading) return <div style={{position:"fixed",inset:0,background:C.bg,display:"flex",alignItems:"center",justifyContent:"center"}}><style>{CSS}</style><div style={{textAlign:"center"}}><div style={{fontSize:"42px",fontFamily:font.display,color:C.green,fontWeight:"700"}}>cereza</div><div style={{fontSize:"10px",color:"rgba(255,255,255,0.5)",letterSpacing:"3px",marginTop:"6px"}}>loading...</div></div></div>;
+  if(loading) return <div style={{position:"fixed",inset:0,background:t.bg,display:"flex",alignItems:"center",justifyContent:"center"}}><style>{CSS}</style><div style={{textAlign:"center"}}><div style={{fontSize:"42px",fontFamily:font.display,color:t.logoColor,fontWeight:"700"}}>cereza</div><div style={{fontSize:"10px",color:t.textLight,letterSpacing:"3px",marginTop:"6px"}}>loading...</div></div></div>;
   if(adminMode==="login") return <AdminLogin onLogin={p=>{setAdminMode("panel")}} onBack={()=>setAdminMode(false)} />;
   if(adminMode==="panel") return <AdminPanel onClose={async()=>{await db.signOut();setAdminMode(false)}} />;
   if(!user) return <div style={{position:"fixed",inset:0,maxWidth:"430px",margin:"0 auto"}}><AuthScreen onLogin={setUser}/><div onClick={()=>setAdminMode("login")} style={{position:"fixed",bottom:"8px",left:"50%",transform:"translateX(-50%)",color:"rgba(0,0,0,0.06)",fontSize:"9px",cursor:"pointer",padding:"4px 10px"}}>admin</div></div>;
@@ -793,7 +888,7 @@ export default function App() {
   const nav=[{id:"home",icon:"⌂",l:"home"},{id:"missions",icon:"◎",l:"missions"},{id:"scan",icon:"⊞",l:"scan"},{id:"cinder",icon:"♡",l:"cinder"},{id:"profile",icon:"○",l:"profil"}];
 
   return (
-    <div style={{position:"fixed",inset:0,maxWidth:"430px",margin:"0 auto",fontFamily:font.ui,background:C.bg,display:"flex",flexDirection:"column",overflow:"hidden"}}>
+    <div style={{position:"fixed",inset:0,maxWidth:"430px",margin:"0 auto",fontFamily:font.ui,background:t.bg,display:"flex",flexDirection:"column",overflow:"hidden",transition:"background 0.3s"}}>
       <style>{CSS}</style>
       {showLevelUp && <LevelUpOverlay level={showLevelUp} onClose={()=>setShowLevelUp(null)} />}
       <div style={{flex:1,overflowY:"auto",overflowX:"hidden",WebkitOverflowScrolling:"touch",overscrollBehavior:"contain"}}>
@@ -801,15 +896,15 @@ export default function App() {
         {tab==="missions"&&<WheelTab user={user} setUser={setUser}/>}
         {tab==="scan"&&<ScanTab user={user} setUser={setUser}/>}
         {tab==="cinder"&&<VoteTab user={user}/>}
-        {tab==="profile"&&<ProfileTab user={user} setUser={setUser} onLogout={async()=>{await db.signOut();setUser(null)}}/>}
+        {tab==="profile"&&<ProfileTab user={user} setUser={setUser} onLogout={async()=>{await db.signOut();setUser(null)}} theme={theme}/>}
       </div>
       {/* Tab Bar */}
-      <div style={{flexShrink:0,background:"rgba(255,255,255,0.97)",backdropFilter:"blur(20px)",WebkitBackdropFilter:"blur(20px)",borderTop:"0.5px solid rgba(0,0,0,0.12)",paddingBottom:"env(safe-area-inset-bottom, 8px)"}}>
+      <div style={{flexShrink:0,background:t.navBg,backdropFilter:"blur(20px)",WebkitBackdropFilter:"blur(20px)",borderTop:`0.5px solid ${t.navBorder}`,paddingBottom:"env(safe-area-inset-bottom, 8px)",transition:"all 0.3s"}}>
         <div style={{display:"grid",gridTemplateColumns:"repeat(5, 1fr)",alignItems:"end",padding:"8px 0 3px",maxWidth:"400px",margin:"0 auto"}}>
           {nav.map(n=>{const a=tab===n.id;
             return <button key={n.id} onClick={()=>setTab(n.id)} style={{display:"flex",flexDirection:"column",alignItems:"center",gap:"3px",background:"none",border:"none",cursor:"pointer",padding:"4px 0"}}>
-              <div style={{fontSize:"20px",lineHeight:"1",opacity:a?1:0.3,transition:"all 0.2s",color:a?C.orange:C.textLight,fontWeight:a?"700":"400"}}>{n.icon}</div>
-              <span style={{fontSize:"9px",fontWeight:a?"700":"400",color:a?C.orange:C.textLight,transition:"all 0.2s",letterSpacing:"0.3px"}}>{n.l}</span>
+              <div style={{fontSize:"20px",lineHeight:"1",opacity:a?1:0.3,transition:"all 0.2s",color:a?t.accent:t.textLight,fontWeight:a?"700":"400"}}>{n.icon}</div>
+              <span style={{fontSize:"9px",fontWeight:a?"700":"400",color:a?t.accent:t.textLight,transition:"all 0.2s",letterSpacing:"0.3px"}}>{n.l}</span>
             </button>;
           })}
         </div>

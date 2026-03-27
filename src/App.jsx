@@ -145,10 +145,13 @@ const getCSS = (t) => `
 `;
 
 const Card = ({ children, style, onClick, t: thm }) => {
-  const bg = thm ? thm.card : "#ffffff";
-  const border = thm ? thm.border : "#e3e3e3";
-  return <div onClick={onClick} style={{ background: bg, borderRadius: "16px", padding: "18px", color: thm?.text || "#111", border: `1px solid ${border}`, transition: "all 0.3s", ...style }}>{children}</div>;
+  const bg = thm ? thm.card : C.card || "#ffffff";
+  const border = thm ? thm.border : C.border || "#e3e3e3";
+  return <div onClick={onClick} style={{ background: bg, borderRadius: "16px", padding: "18px", color: C.text || "#111", border: `1px solid ${border}`, transition: "all 0.3s", ...style }}>{children}</div>;
 };
+
+// Default CSS for components outside theme context
+const defaultCSS = getCSS(themes.light);
 
 // ─── Auth ───────────────────────────────────────────────────────
 const AuthScreen = ({ onLogin }) => {
@@ -199,7 +202,7 @@ const AuthScreen = ({ onLogin }) => {
 
   return (
     <div style={{ minHeight:"100vh", display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center", padding:"24px", background:C.bg, fontFamily:font.ui }}>
-      <style>{CSS}</style>
+      <style>{defaultCSS}</style>
       <div style={{ animation:"fadeUp 0.6s ease", marginBottom:"36px", textAlign:"center" }}>
         <div style={{ fontSize:"56px", fontFamily:font.display, color:C.green, letterSpacing:"2px", fontWeight:"700" }}>cereza</div>
         <div style={{ fontSize:"11px", letterSpacing:"4px", color:"rgba(255,255,255,0.5)", marginTop:"6px" }}>loyalty club</div>
@@ -1021,7 +1024,7 @@ const AdminPanel = ({ onClose }) => {
   const addPts=async(uid,amt)=>{ const u=users.find(x=>x.id===uid); if(!u)return; await db.updateProfile(uid,{pts:(u.pts||0)+amt}); setUsers(p=>p.map(x=>x.id===uid?{...x,pts:(x.pts||0)+amt}:x)); };
   return (
     <div style={{position:"fixed",inset:0,zIndex:9999,background:C.beige,overflow:"auto",fontFamily:font.ui}}>
-      <style>{CSS}</style>
+      <style>{defaultCSS}</style>
       <div style={{padding:"12px 14px",borderBottom:`1px solid ${C.border}`,display:"flex",justifyContent:"space-between",alignItems:"center",position:"sticky",top:0,background:C.beige,zIndex:10}}>
         <div><div style={{fontSize:"15px",fontWeight:"700",color:C.text}}>admin panel</div><div style={{fontSize:"10px",color:C.textLight}}>cereza pizza · frankfurt</div></div>
         <button onClick={onClose} style={{background:C.white,border:`1px solid ${C.border}`,borderRadius:"8px",padding:"6px 12px",color:C.text,cursor:"pointer",fontSize:"12px"}}>✕</button>
@@ -1102,7 +1105,7 @@ const AdminLogin = ({ onLogin, onBack }) => {
   };
   return (
     <div style={{minHeight:"100vh",background:C.beige,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",padding:"24px",fontFamily:font.ui}}>
-      <style>{CSS}</style>
+      <style>{defaultCSS}</style>
       <div style={{fontSize:"11px",color:C.textLight,letterSpacing:"3px",marginBottom:"6px"}}>admin</div>
       <div style={{fontSize:"24px",fontFamily:font.display,color:C.text,marginBottom:"28px",fontWeight:"700"}}>login</div>
       <div style={{width:"100%",maxWidth:"300px"}}>

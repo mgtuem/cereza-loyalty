@@ -669,14 +669,129 @@ const ProfileTab = ({ user, setUser, onLogout, theme }) => {
     }
     setRd(item); setTimeout(()=>setRd(null),2500);
   };
-  const shareCard=()=>{
-    if(navigator.share){navigator.share({title:"Cereza Loyalty",text:`Ich bin ${era.name} (Level ${user.level||1}) bei Cereza Pizza mit ${user.pts||0} Punkten! Werde auch Member:`,url:"https://cereza-loyalty.vercel.app"});}
-    else{setShowShare(true);setTimeout(()=>setShowShare(false),3000);}
+  const canvasRef = useRef(null);
+  const [socialTab, setSocialTab] = useState("score"); // score | friends | gifts
+  const [friends, setFriends] = useState([]);
+  const [gifts, setGifts] = useState([]);
+  const [searchQ, setSearchQ] = useState("");
+  const [searchResults, setSearchResults] = useState([]);
+  const [giftTarget, setGiftTarget] = useState(null);
+  const [giftAmount, setGiftAmount] = useState(50);
+  const [giftMsg, setGiftMsg] = useState("");
+
+  useEffect(()=>{
+    if(user.id){
+      db.getFriendRequests(user.id).then(setFriends);
+      db.getMyGifts(user.id).then(setGifts);
+    }
+  },[socialTab]);
+
+  const generateStoryCard = () => {
+    const canvas = document.createElement("canvas");
+    canvas.width = 1080; canvas.height = 1920;
+    const ctx = canvas.getContext("2d");
+    // Background gradient
+    const grad = ctx.createLinearGradient(0,0,0,1920);
+    grad.addColorStop(0, "#C1272D"); grad.addColorStop(0.5, "#8B1A1A"); grad.addColorStop(1, "#C1272D");
+    ctx.fillStyle = grad; ctx.fillRect(0,0,1080,1920);
+    // Decorative circles
+    ctx.globalAlpha = 0.06;
+    ctx.fillStyle = "#fff"; ctx.beginPath(); ctx.arc(200,400,300,0,Math.PI*2); ctx.fill();
+    ctx.beginPath(); ctx.arc(880,1500,250,0,Math.PI*2); ctx.fill();
+    ctx.globalAlpha = 1;
+    // Logo
+    ctx.fillStyle = "#2d472a"; ctx.font = "bold 120px Playfair Display, Georgia, serif";
+    ctx.textAlign = "center"; ctx.fillText("cereza", 540, 500);
+    ctx.fillStyle = "rgba(255,255,255,0.5)"; ctx.font = "400 28px Source Sans Pro, sans-serif";
+    ctx.fillText("LOYALTY CLUB", 540, 560);
+    // User info card
+    ctx.fillStyle = "rgba(255,255,255,0.12)"; ctx.beginPath();
+    ctx.roundRect(140, 700, 800, 500, 40); ctx.fill();
+    ctx.strokeStyle = "rgba(255,255,255,0.15)"; ctx.lineWidth = 2; ctx.stroke();
+    // Avatar circle
+    ctx.fillStyle = "#e24a28"; ctx.beginPath(); ctx.arc(540, 820, 60, 0, Math.PI*2); ctx.fill();
+    ctx.fillStyle = "#fff"; ctx.font = "bold 48px Playfair Display, serif";
+    ctx.fillText((user.name||"U")[0].toUpperCase(), 540, 838);
+    // Name
+    ctx.fillStyle = "#fff"; ctx.font = "bold 48px Source Sans Pro, sans-serif";
+    ctx.fillText(`@${user.name||"user"}`, 540, 940);
+    // Era + Level
+    ctx.fillStyle = "rgba(255,255,255,0.7)"; ctx.font = "400 32px Source Sans Pro, sans-serif";
+    ctx.fillText(`${era.name} · Level ${user.level||1}`, 540, 1000);
+    // Stats
+    ctx.fillStyle = "#fff"; ctx.font = "bold 64px Source Sans Pro, sans-serif";
+    ctx.fillText(`${user.pts||0}`, 540, 1100);
+    ctx.fillStyle = "rgba(255,255,255,0.6)"; ctx.font = "400 24px Source Sans Pro, sans-serif";
+    ctx.fillText("PUNKTE", 540, 1140);
+    // Bottom CTA
+    ctx.fillStyle = "rgba(255,255,255,0.4)"; ctx.font = "400 24px Source Sans Pro, sans-serif";
+    ctx.fillText("cereza-loyalty.vercel.app", 540, 1700);
+    ctx.fillText("Werde auch Member!", 540, 1740);
+    // Download or share
+    canvas.toBlob(async(blob) => {
+      if(navigator.share && navigator.canShare){
+        try{
+          const file = new File([blob], "cereza-card.png", {type:"image/png"});
+          if(navigator.canShare({files:[file]})){
+            await navigator.share({files:[file], title:"Cereza Loyalty", text:`Ich bin ${era.name} bei Cereza!`});
+            return;
+          }
+        }catch(e){}
+      }
+      // Fallback: download
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a"); a.href = url; a.download = "cereza-story.png"; a.click();
+      URL.revokeObjectURL(url);
+    }, "image/png");
   };
+
+  const searchUsers = async(q) => {
+    setSearchQ(q);
+    if(q.length < 2) { setSearchResults([]); return; }
+    const results = await db.searchUsers(q);
+    setSearchResults(results.filter(r => r.id !== user.id));
+  };
+
+  const sendRequest = async(targetId) => {
+    await db.sendFriendRequest(user.id, targetId);
+    setSearchResults([]);
+    setSearchQ("");
+    db.getFriendRequests(user.id).then(setFriends);
+  };
+
+  const respondRequest = async(id, status) => {
+    await db.respondFriendRequest(id, status);
+    db.getFriendRequests(user.id).then(setFriends);
+  };
+
+  const sendGiftPts = async() => {
+    if(!giftTarget || giftAmount < 10 || giftAmount > 200) return;
+    const fresh = user.id ? await db.getProfile(user.id) : null;
+    const currentPts = fresh ? fresh.pts : (user.pts||0);
+    if(currentPts < giftAmount) return;
+    await db.sendGift(user.id, giftTarget.id, "pts", giftAmount, null, giftMsg);
+    await db.updateProfile(user.id, { pts: currentPts - giftAmount });
+    setUser(u=>({...u, pts: currentPts - giftAmount}));
+    setGiftTarget(null); setGiftAmount(50); setGiftMsg("");
+    db.getMyGifts(user.id).then(setGifts);
+  };
+
+  const claimGift = async(giftId) => {
+    await db.claimGift(giftId, user.id);
+    const fresh = await db.getProfile(user.id);
+    if(fresh) setUser(u=>({...u,...fresh}));
+    db.getMyGifts(user.id).then(setGifts);
+  };
+
+  const myFriends = friends.filter(f=>f.status==="accepted");
+  const pendingReceived = friends.filter(f=>f.status==="pending"&&f.receiver_id===user.id);
+  const pendingSent = friends.filter(f=>f.status==="pending"&&f.sender_id===user.id);
+
+  const shareCard=()=>generateStoryCard();
   const inviteFriend=()=>{
     const link=`https://cereza-loyalty.vercel.app?ref=${user.name||"friend"}`;
     if(navigator.share){navigator.share({title:"Cereza Pizza",text:"Tritt dem Cereza Loyalty Club bei! Wir bekommen beide XP:",url:link});}
-    else{navigator.clipboard?.writeText(link);alert("Link kopiert!");}
+    else{navigator.clipboard?.writeText(link);setShowShare(true);setTimeout(()=>setShowShare(false),2000);}
   };
   return (
     <div style={{ background:C.beige, paddingBottom:"16px", minHeight:"100%" }}>
@@ -687,9 +802,10 @@ const ProfileTab = ({ user, setUser, onLogout, theme }) => {
         <div style={{ fontSize:"20px", fontFamily:font.display, color:C.text, fontWeight:"700" }}>@{user.name||"user"}</div>
         <div style={{ color:C.textLight, fontSize:"11px", marginTop:"3px" }}>{era.name} · Level {user.level||1}</div>
         {/* Share + Invite buttons */}
-        <div style={{display:"flex",gap:"8px",justifyContent:"center",marginTop:"12px"}}>
-          <button onClick={shareCard} style={{padding:"8px 16px",background:C.white,border:`1px solid ${C.border}`,borderRadius:"20px",fontSize:"11px",fontWeight:"600",cursor:"pointer",fontFamily:font.ui,color:C.text}}>↗ Teilen</button>
-          <button onClick={inviteFriend} style={{padding:"8px 16px",background:C.orange,border:"none",borderRadius:"20px",fontSize:"11px",fontWeight:"600",cursor:"pointer",fontFamily:font.ui,color:C.white}}>+ Freunde einladen</button>
+        <div style={{display:"flex",gap:"6px",justifyContent:"center",marginTop:"12px",flexWrap:"wrap"}}>
+          <button onClick={generateStoryCard} style={{padding:"8px 14px",background:C.white,border:`1px solid ${C.border}`,borderRadius:"20px",fontSize:"11px",fontWeight:"600",cursor:"pointer",fontFamily:font.ui,color:C.text}}>Story Card</button>
+          <button onClick={shareCard} style={{padding:"8px 14px",background:C.white,border:`1px solid ${C.border}`,borderRadius:"20px",fontSize:"11px",fontWeight:"600",cursor:"pointer",fontFamily:font.ui,color:C.text}}>↗ Teilen</button>
+          <button onClick={inviteFriend} style={{padding:"8px 14px",background:C.orange,border:"none",borderRadius:"20px",fontSize:"11px",fontWeight:"600",cursor:"pointer",fontFamily:font.ui,color:C.white}}>+ Einladen</button>
         </div>
       </div>
       <div style={{ padding:"10px 14px" }}>
@@ -697,19 +813,103 @@ const ProfileTab = ({ user, setUser, onLogout, theme }) => {
           {[{v:user.pts||0,l:"Punkte"},{v:user.total_visits||0,l:"Besuche"},{v:user.streak||0,l:"Streak"}].map((s,i)=><Card key={i} style={{padding:"12px",textAlign:"center"}}><div style={{fontSize:"17px",fontWeight:"800"}}>{s.v}</div><div style={{fontSize:"9px",color:C.textLight,marginTop:"2px"}}>{s.l}</div></Card>)}
         </div>
 
-        {/* Score / Rewards Section */}
-        <div style={{marginBottom:"10px"}}>
-          <div style={{fontSize:"13px",fontWeight:"700",color:C.text,marginBottom:"8px",padding:"0 2px"}}>Score — Einlösen</div>
-          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"6px"}}>
-            {items.map((item,i)=>{const ok=(user.pts||0)>=item.cost&&(user.level||1)>=item.min_level;const locked=(user.level||1)<item.min_level;
-              return <Card key={item.id} onClick={()=>ok&&redeem(item)} style={{padding:"12px 8px",textAlign:"center",opacity:locked?0.4:1,cursor:ok?"pointer":"default",border:ok?`2px solid ${C.orange}`:`1px solid ${C.border}`}}>
-                <div style={{fontSize:"22px",marginBottom:"4px"}}>{item.icon}</div>
-                <div style={{fontSize:"11px",fontWeight:"700"}}>{item.name}</div>
-                <div style={{marginTop:"6px",display:"inline-block",padding:"2px 8px",borderRadius:"10px",fontSize:"9px",fontWeight:"700",background:ok?C.orange:C.greyBg,color:ok?C.white:C.textLight}}>{locked?`Lvl ${item.min_level}`:`${item.cost} pts`}</div>
+        {/* Social Tabs */}
+        <div style={{display:"flex",gap:"4px",marginBottom:"10px",background:C.greyBg,borderRadius:"12px",padding:"3px"}}>
+          {[{id:"score",l:"Score"},{id:"friends",l:"Freunde"},{id:"gifts",l:"Geschenke"}].map(st=>(
+            <button key={st.id} onClick={()=>setSocialTab(st.id)} style={{flex:1,padding:"8px",borderRadius:"10px",border:"none",background:socialTab===st.id?C.card:"transparent",color:socialTab===st.id?C.text:C.textLight,fontSize:"12px",fontWeight:socialTab===st.id?"700":"500",cursor:"pointer",fontFamily:font.ui,transition:"all 0.2s"}}>{st.l}</button>
+          ))}
+        </div>
+
+        {socialTab==="score"&&(
+          <div style={{marginBottom:"10px"}}>
+            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"6px"}}>
+              {items.map((item,i)=>{const ok=(user.pts||0)>=item.cost&&(user.level||1)>=item.min_level;const locked=(user.level||1)<item.min_level;
+                return <Card key={item.id} onClick={()=>ok&&redeem(item)} style={{padding:"12px 8px",textAlign:"center",opacity:locked?0.4:1,cursor:ok?"pointer":"default",border:ok?`2px solid ${C.orange}`:`1px solid ${C.border}`}}>
+                  <div style={{fontSize:"22px",marginBottom:"4px"}}>{item.icon}</div>
+                  <div style={{fontSize:"11px",fontWeight:"700"}}>{item.name}</div>
+                  <div style={{marginTop:"6px",display:"inline-block",padding:"2px 8px",borderRadius:"10px",fontSize:"9px",fontWeight:"700",background:ok?C.orange:C.greyBg,color:ok?C.white:C.textLight}}>{locked?`Lvl ${item.min_level}`:`${item.cost} pts`}</div>
+                </Card>;
+              })}
+            </div>
+          </div>
+        )}
+
+        {socialTab==="friends"&&(
+          <div style={{marginBottom:"10px"}}>
+            {/* Search */}
+            <input value={searchQ} onChange={e=>searchUsers(e.target.value)} placeholder="User suchen..." style={{width:"100%",padding:"10px 14px",border:`1px solid ${C.border}`,borderRadius:"10px",fontSize:"13px",marginBottom:"8px",outline:"none",boxSizing:"border-box",fontFamily:font.ui,background:C.card,color:C.text}} />
+            {searchResults.map(r=>(
+              <Card key={r.id} style={{marginBottom:"4px",padding:"10px 12px",display:"flex",alignItems:"center",gap:"8px"}}>
+                <div style={{width:"32px",height:"32px",borderRadius:"50%",background:C.orange,display:"flex",alignItems:"center",justifyContent:"center",color:C.white,fontSize:"13px",fontWeight:"700"}}>{(r.name||"?")[0].toUpperCase()}</div>
+                <div style={{flex:1}}><div style={{fontSize:"13px",fontWeight:"600",color:C.text}}>@{r.name}</div><div style={{fontSize:"10px",color:C.textLight}}>Level {r.level||1}</div></div>
+                <button onClick={()=>sendRequest(r.id)} style={{padding:"6px 12px",background:C.orange,border:"none",borderRadius:"8px",color:C.white,fontSize:"10px",fontWeight:"700",cursor:"pointer"}}>Anfrage</button>
+              </Card>
+            ))}
+            {/* Pending Received */}
+            {pendingReceived.length>0&&<div style={{fontSize:"11px",fontWeight:"700",color:C.textSub,marginTop:"8px",marginBottom:"6px"}}>Anfragen an dich</div>}
+            {pendingReceived.map(f=>(
+              <Card key={f.id} style={{marginBottom:"4px",padding:"10px 12px",display:"flex",alignItems:"center",gap:"8px"}}>
+                <div style={{flex:1}}><div style={{fontSize:"13px",fontWeight:"600",color:C.text}}>@{f.sender?.name}</div></div>
+                <button onClick={()=>respondRequest(f.id,"accepted")} style={{padding:"5px 10px",background:C.green,border:"none",borderRadius:"6px",color:C.white,fontSize:"10px",fontWeight:"700",cursor:"pointer"}}>Annehmen</button>
+                <button onClick={()=>respondRequest(f.id,"rejected")} style={{padding:"5px 10px",background:C.greyBg,border:"none",borderRadius:"6px",color:C.textLight,fontSize:"10px",fontWeight:"600",cursor:"pointer"}}>Ablehnen</button>
+              </Card>
+            ))}
+            {/* Pending Sent */}
+            {pendingSent.length>0&&<div style={{fontSize:"11px",fontWeight:"700",color:C.textSub,marginTop:"8px",marginBottom:"6px"}}>Gesendet</div>}
+            {pendingSent.map(f=>(
+              <Card key={f.id} style={{marginBottom:"4px",padding:"10px 12px",display:"flex",alignItems:"center",gap:"8px"}}>
+                <div style={{flex:1}}><div style={{fontSize:"13px",fontWeight:"600",color:C.text}}>@{f.receiver?.name}</div><div style={{fontSize:"10px",color:C.textLight}}>Warten auf Antwort...</div></div>
+              </Card>
+            ))}
+            {/* Accepted Friends */}
+            {myFriends.length>0&&<div style={{fontSize:"11px",fontWeight:"700",color:C.textSub,marginTop:"8px",marginBottom:"6px"}}>Freunde ({myFriends.length})</div>}
+            {myFriends.map(f=>{
+              const friend = f.sender_id===user.id ? f.receiver : f.sender;
+              return <Card key={f.id} style={{marginBottom:"4px",padding:"10px 12px",display:"flex",alignItems:"center",gap:"8px"}}>
+                <div style={{width:"32px",height:"32px",borderRadius:"50%",background:C.orange,display:"flex",alignItems:"center",justifyContent:"center",color:C.white,fontSize:"13px",fontWeight:"700"}}>{(friend?.name||"?")[0].toUpperCase()}</div>
+                <div style={{flex:1}}><div style={{fontSize:"13px",fontWeight:"600",color:C.text}}>@{friend?.name}</div></div>
+                <button onClick={()=>setGiftTarget(friend)} style={{padding:"5px 10px",background:C.beige,border:`1px solid ${C.border}`,borderRadius:"6px",color:C.text,fontSize:"10px",fontWeight:"600",cursor:"pointer"}}>Schenken</button>
+              </Card>;
+            })}
+            {myFriends.length===0&&pendingReceived.length===0&&searchResults.length===0&&<div style={{textAlign:"center",padding:"20px",color:C.textLight,fontSize:"12px"}}>Suche nach Usern um Freunde hinzuzufügen</div>}
+          </div>
+        )}
+
+        {socialTab==="gifts"&&(
+          <div style={{marginBottom:"10px"}}>
+            {/* Gift modal */}
+            {giftTarget&&(
+              <Card style={{marginBottom:"10px",border:`2px solid ${C.orange}`}}>
+                <div style={{fontSize:"12px",fontWeight:"700",color:C.textSub,marginBottom:"8px"}}>Punkte an @{giftTarget.name} senden</div>
+                <div style={{display:"flex",gap:"6px",marginBottom:"8px"}}>
+                  {[25,50,100,200].map(a=>(
+                    <button key={a} onClick={()=>setGiftAmount(a)} style={{flex:1,padding:"8px",borderRadius:"8px",border:giftAmount===a?`2px solid ${C.orange}`:`1px solid ${C.border}`,background:giftAmount===a?"rgba(226,74,40,0.1)":C.card,color:giftAmount===a?C.orange:C.text,fontSize:"12px",fontWeight:"700",cursor:"pointer"}}>{a}</button>
+                  ))}
+                </div>
+                <input value={giftMsg} onChange={e=>setGiftMsg(e.target.value)} placeholder="Nachricht (optional)" style={{width:"100%",padding:"8px 12px",border:`1px solid ${C.border}`,borderRadius:"8px",fontSize:"12px",marginBottom:"8px",outline:"none",boxSizing:"border-box",fontFamily:font.ui,background:C.card,color:C.text}} />
+                <div style={{display:"flex",gap:"6px"}}>
+                  <button onClick={sendGiftPts} style={{flex:1,padding:"10px",background:C.orange,border:"none",borderRadius:"8px",color:C.white,fontSize:"12px",fontWeight:"700",cursor:"pointer"}}>{giftAmount} pts senden</button>
+                  <button onClick={()=>setGiftTarget(null)} style={{padding:"10px 14px",background:C.greyBg,border:"none",borderRadius:"8px",color:C.textLight,fontSize:"12px",cursor:"pointer"}}>X</button>
+                </div>
+              </Card>
+            )}
+            {/* Gift history */}
+            {gifts.length===0&&<div style={{textAlign:"center",padding:"20px",color:C.textLight,fontSize:"12px"}}>Noch keine Geschenke</div>}
+            {gifts.map(g=>{
+              const isSender = g.sender_id===user.id;
+              const canClaim = !isSender && g.status==="pending";
+              return <Card key={g.id} style={{marginBottom:"4px",padding:"10px 12px",display:"flex",alignItems:"center",gap:"8px"}}>
+                <div style={{width:"32px",height:"32px",borderRadius:"50%",background:isSender?C.salmon:C.green,display:"flex",alignItems:"center",justifyContent:"center",color:C.white,fontSize:"14px",fontWeight:"700"}}>{isSender?"↑":"↓"}</div>
+                <div style={{flex:1}}>
+                  <div style={{fontSize:"12px",fontWeight:"600",color:C.text}}>{isSender?`An @${g.receiver?.name}`:`Von @${g.sender?.name}`}</div>
+                  <div style={{fontSize:"10px",color:C.textLight}}>{g.amount} pts {g.message&&`· "${g.message}"`}</div>
+                </div>
+                {canClaim?<button onClick={()=>claimGift(g.id)} style={{padding:"5px 10px",background:C.green,border:"none",borderRadius:"6px",color:C.white,fontSize:"10px",fontWeight:"700",cursor:"pointer"}}>Annehmen</button>
+                :<div style={{fontSize:"10px",color:g.status==="claimed"?C.green:C.textLight,fontWeight:"600"}}>{g.status==="claimed"?"Eingelöst":"Gesendet"}</div>}
               </Card>;
             })}
           </div>
-        </div>
+        )}
 
         {/* Profile Info */}
         <Card style={{ marginBottom:"10px" }}>

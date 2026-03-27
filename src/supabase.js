@@ -103,4 +103,43 @@ export const db = {
     const { data } = await supabase.from('profiles').select('*').eq('is_admin', false).order('pts', { ascending: false })
     return data || []
   },
+
+  // Search users by name
+  searchUsers: async (query) => {
+    const { data } = await supabase.from('profiles').select('id, name, email, level, pts').ilike('name', `%${query}%`).limit(10)
+    return data || []
+  },
+
+  // Friendships
+  sendFriendRequest: async (senderId, receiverId) => {
+    const { data, error } = await supabase.from('friendships').insert({ sender_id: senderId, receiver_id: receiverId, status: 'pending' })
+    return { data, error }
+  },
+  getFriendRequests: async (uid) => {
+    const { data } = await supabase.from('friendships').select('*, sender:sender_id(id, name, level, pts), receiver:receiver_id(id, name, level, pts)').or(`sender_id.eq.${uid},receiver_id.eq.${uid}`)
+    return data || []
+  },
+  respondFriendRequest: async (id, status) => {
+    await supabase.from('friendships').update({ status }).eq('id', id)
+  },
+
+  // Gifts
+  sendGift: async (senderId, receiverId, type, amount, itemId, message) => {
+    const { data, error } = await supabase.from('gifts').insert({ sender_id: senderId, receiver_id: receiverId, type, amount: amount || 0, item_id: itemId || null, message: message || '' })
+    return { data, error }
+  },
+  getMyGifts: async (uid) => {
+    const { data } = await supabase.from('gifts').select('*, sender:sender_id(name), receiver:receiver_id(name)').or(`sender_id.eq.${uid},receiver_id.eq.${uid}`).order('created_at', { ascending: false })
+    return data || []
+  },
+  claimGift: async (giftId, receiverId) => {
+    const { data: gift } = await supabase.from('gifts').select('*').eq('id', giftId).single()
+    if (!gift || gift.receiver_id !== receiverId || gift.status !== 'pending') return null
+    await supabase.from('gifts').update({ status: 'claimed' }).eq('id', giftId)
+    if (gift.type === 'pts') {
+      const profile = await db.getProfile(receiverId)
+      if (profile) await db.updateProfile(receiverId, { pts: (profile.pts || 0) + gift.amount })
+    }
+    return gift
+  },
 }

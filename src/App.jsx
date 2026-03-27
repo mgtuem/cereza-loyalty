@@ -1040,101 +1040,618 @@ const ProfileTab = ({ user, setUser, onLogout, theme }) => {
   );
 };
 
-// ─── Admin ──────────────────────────────────────────────────────
+// ═══════════════════════════════════════════════════════════════
+// ADMIN PANEL – Kompletter Ersatz
+// In App.jsx: Suche nach "const AdminPanel" und ersetze die
+// gesamte Funktion bis zur nächsten "const AdminLogin" mit diesem Code
+// ═══════════════════════════════════════════════════════════════
+
 const AdminPanel = ({ onClose }) => {
-  const [tab, setTab] = useState("users"); const [users, setUsers] = useState([]); const [missions, setMissions] = useState([]); const [dishes, setDishes] = useState([]);
-  const [facts, setFacts] = useState([]); const [prizes, setPrizes] = useState([]); const [newFact, setNewFact] = useState(""); const [visitors, setVisitors] = useState([]);
-  const [pushTitle, setPushTitle] = useState(""); const [pushBody, setPushBody] = useState(""); const [pushSent, setPushSent] = useState(false);
-  const tabs = [{ id: "users", l: "user" }, { id: "points", l: "punkte" }, { id: "missions", l: "missionen" }, { id: "glow", l: "glow" }, { id: "dishes", l: "gerichte" }, { id: "facts", l: "fakten" }, { id: "prizes", l: "rad" }, { id: "visits", l: "heute" }, { id: "push", l: "push" }, { id: "abo", l: "abos" }];
-  useEffect(() => {
-    db.getAllProfiles().then(d => setUsers(d));
-    db.getMissions().then(d => setMissions(d.length ? d : MOCK_MISSIONS));
-    db.getDishes().then(d => setDishes(d.length ? d : MOCK_DISHES));
-    db.getFunFacts().then(d => setFacts(d));
-    db.getWheelPrizes().then(d => setPrizes(d));
-    db.getTodayVisitors().then(d => setVisitors(d));
-  }, []);
-  const addPts = async (uid, amt) => { const u = users.find(x => x.id === uid); if (!u) return; await db.updateProfile(uid, { pts: (u.pts || 0) + amt }); setUsers(p => p.map(x => x.id === uid ? { ...x, pts: (x.pts || 0) + amt } : x)); };
+  const [tab, setTab] = useState("stats");
+  const [users, setUsers] = useState([]);
+  const [missions, setMissions] = useState([]);
+  const [dishes, setDishes] = useState([]);
+  const [facts, setFacts] = useState([]);
+  const [prizes, setPrizes] = useState([]);
+  const [shopItems, setShopItems] = useState([]);
+  const [glowHours, setGlowHours] = useState([]);
+  const [redemptions, setRedemptions] = useState([]);
+  const [vibes, setVibes] = useState([]);
+  const [visitors, setVisitors] = useState([]);
+  const [pushTitle, setPushTitle] = useState("");
+  const [pushBody, setPushBody] = useState("");
+  const [pushSent, setPushSent] = useState(false);
+  const [toast, setToast] = useState(null);
+  const [editUser, setEditUser] = useState(null);
+  const [editMission, setEditMission] = useState(null);
+  const [editDish, setEditDish] = useState(null);
+  const [editShop, setEditShop] = useState(null);
+  const [editPrize, setEditPrize] = useState(null);
+  const [editGlow, setEditGlow] = useState(null);
+  const [newFact, setNewFact] = useState("");
+  const [searchQ, setSearchQ] = useState("");
+  const [loading, setLoading] = useState(true);
+
+  const showToast = (msg, ok = true) => { setToast({ msg, ok }); setTimeout(() => setToast(null), 2500); };
+
+  const loadAll = async () => {
+    setLoading(true);
+    const [u, m, d, f, p, s, r, v, vis] = await Promise.all([
+      db.getAllProfiles(),
+      db.getMissions(),
+      supabase.from('dishes').select('*, dish_votes(vote)').eq('active', true).then(r => (r.data || []).map(d => ({ ...d, votes: d.dish_votes?.filter(v => v.vote).length || 0 }))),
+      db.getFunFacts(),
+      db.getWheelPrizes(),
+      db.getShopItems(),
+      db.getPendingRedemptions(),
+      db.getPendingVibes(),
+      db.getTodayVisitors(),
+    ]);
+    setUsers(u); setMissions(m); setDishes(d); setFacts(f); setPrizes(p);
+    setShopItems(s); setRedemptions(r); setVibes(v); setVisitors(vis);
+    // Glow Hours
+    const { data: gh } = await supabase.from('glow_hours').select('*').order('id');
+    setGlowHours(gh || []);
+    setLoading(false);
+  };
+
+  useEffect(() => { loadAll(); }, []);
+
+  // ── Statistiken ───────────────────────────────────────────────
+  const totalPts = users.reduce((s, u) => s + (u.pts || 0), 0);
+  const avgPts = users.length ? Math.round(totalPts / users.length) : 0;
+  const today = new Date().toISOString().split('T')[0];
+  const todayUsers = users.filter(u => u.last_visit === today).length;
+  const aboMembers = users.filter(u => u.is_abo_member).length;
+  const levelDist = [1, 2, 3, 4, 5].map(l => ({ l, count: users.filter(u => (u.level || 1) === l).length }));
+
+  // ── User bearbeiten ───────────────────────────────────────────
+  const saveUser = async () => {
+    if (!editUser) return;
+    await db.updateProfile(editUser.id, {
+      name: editUser.name,
+      pts: parseInt(editUser.pts) || 0,
+      level: parseInt(editUser.level) || 1,
+      is_admin: editUser.is_admin,
+      is_abo_member: editUser.is_abo_member,
+      streak: parseInt(editUser.streak) || 0,
+      total_visits: parseInt(editUser.total_visits) || 0,
+    });
+    showToast("User gespeichert ✓");
+    setEditUser(null);
+    db.getAllProfiles().then(setUsers);
+  };
+
+  const deleteUser = async (uid) => {
+    if (!confirm("User wirklich löschen?")) return;
+    await supabase.from('profiles').delete().eq('id', uid);
+    showToast("User gelöscht");
+    db.getAllProfiles().then(setUsers);
+  };
+
+  // ── Mission CRUD ──────────────────────────────────────────────
+  const saveMission = async () => {
+    if (!editMission) return;
+    if (editMission.id) {
+      await supabase.from('missions').update({
+        title: editMission.title, description: editMission.description,
+        pts_reward: parseInt(editMission.pts_reward) || 0,
+        icon: editMission.icon, goal: parseInt(editMission.goal) || 1,
+        active: editMission.active,
+      }).eq('id', editMission.id);
+    } else {
+      await supabase.from('missions').insert({
+        title: editMission.title, description: editMission.description,
+        pts_reward: parseInt(editMission.pts_reward) || 0,
+        icon: editMission.icon || '⭐', goal: parseInt(editMission.goal) || 1,
+        active: true,
+      });
+    }
+    showToast("Mission gespeichert ✓");
+    setEditMission(null);
+    db.getMissions().then(setMissions);
+  };
+
+  // ── Dish CRUD ─────────────────────────────────────────────────
+  const saveDish = async () => {
+    if (!editDish) return;
+    if (editDish.id) {
+      await supabase.from('dishes').update({
+        name: editDish.name, description: editDish.description,
+        active: editDish.active, voting_enabled: editDish.voting_enabled,
+      }).eq('id', editDish.id);
+    } else {
+      await supabase.from('dishes').insert({
+        name: editDish.name, description: editDish.description || '',
+        active: true, voting_enabled: true,
+      });
+    }
+    showToast("Gericht gespeichert ✓");
+    setEditDish(null);
+    supabase.from('dishes').select('*, dish_votes(vote)').eq('active', true)
+      .then(r => setDishes((r.data || []).map(d => ({ ...d, votes: d.dish_votes?.filter(v => v.vote).length || 0 }))));
+  };
+
+  // ── Shop CRUD ─────────────────────────────────────────────────
+  const saveShop = async () => {
+    if (!editShop) return;
+    if (editShop.id) {
+      await supabase.from('shop_items').update({
+        name: editShop.name, description: editShop.description,
+        icon: editShop.icon, cost: parseInt(editShop.cost) || 0,
+        min_level: parseInt(editShop.min_level) || 1, active: editShop.active,
+      }).eq('id', editShop.id);
+    } else {
+      await supabase.from('shop_items').insert({
+        name: editShop.name, description: editShop.description || '',
+        icon: editShop.icon || '🎁', cost: parseInt(editShop.cost) || 0,
+        min_level: parseInt(editShop.min_level) || 1, active: true,
+      });
+    }
+    showToast("Shop Item gespeichert ✓");
+    setEditShop(null);
+    db.getShopItems().then(setShopItems);
+  };
+
+  // ── Wheel Prize CRUD ──────────────────────────────────────────
+  const savePrize = async () => {
+    if (!editPrize) return;
+    if (editPrize.id) {
+      await supabase.from('wheel_prizes').update({
+        label: editPrize.label, value: parseInt(editPrize.value) || 0,
+        color: editPrize.color, active: editPrize.active,
+      }).eq('id', editPrize.id);
+    } else {
+      await supabase.from('wheel_prizes').insert({
+        label: editPrize.label, value: parseInt(editPrize.value) || 0,
+        color: editPrize.color || '#e24a28', active: true,
+      });
+    }
+    showToast("Preis gespeichert ✓");
+    setEditPrize(null);
+    db.getWheelPrizes().then(setPrizes);
+  };
+
+  // ── Glow Hour CRUD ────────────────────────────────────────────
+  const saveGlow = async () => {
+    if (!editGlow) return;
+    const days = ['So', 'Mo', 'Di', 'Mi', 'Do', 'Fr', 'Sa'];
+    if (editGlow.id) {
+      await supabase.from('glow_hours').update({
+        day_of_week: parseInt(editGlow.day_of_week),
+        start_time: editGlow.start_time, end_time: editGlow.end_time,
+        multiplier: parseInt(editGlow.multiplier) || 2, active: editGlow.active,
+      }).eq('id', editGlow.id);
+    } else {
+      await supabase.from('glow_hours').insert({
+        day_of_week: parseInt(editGlow.day_of_week) || 1,
+        start_time: editGlow.start_time || '12:00',
+        end_time: editGlow.end_time || '14:00',
+        multiplier: 2, active: true,
+      });
+    }
+    showToast("Glow Hour gespeichert ✓");
+    setEditGlow(null);
+    supabase.from('glow_hours').select('*').order('id').then(r => setGlowHours(r.data || []));
+  };
+
+  const tabs = [
+    { id: "stats", l: "📊 Stats" },
+    { id: "users", l: "👥 User" },
+    { id: "redemptions", l: "🎟️ Kasse" },
+    { id: "shop", l: "🛒 Shop" },
+    { id: "missions", l: "🎯 Missions" },
+    { id: "dishes", l: "🍕 Gerichte" },
+    { id: "glow", l: "✨ Glow" },
+    { id: "prizes", l: "🎡 Rad" },
+    { id: "facts", l: "💡 Fakten" },
+    { id: "vibes", l: "📸 Vibes" },
+    { id: "visits", l: "📅 Heute" },
+    { id: "push", l: "🔔 Push" },
+  ];
+
+  const days = ['Sonntag', 'Montag', 'Dienstag', 'Mittwoch', 'Donnerstag', 'Freitag', 'Samstag'];
+
+  const inp = (label, val, onChange, type = "text") => (
+    <div style={{ marginBottom: "8px" }}>
+      <div style={{ fontSize: "10px", color: C.textLight, marginBottom: "3px", fontWeight: "600" }}>{label}</div>
+      <input type={type} value={val ?? ''} onChange={e => onChange(e.target.value)}
+        style={{ width: "100%", padding: "9px 12px", border: `1px solid ${C.border}`, borderRadius: "8px", fontSize: "13px", outline: "none", boxSizing: "border-box", fontFamily: font.ui, background: C.card, color: C.text }} />
+    </div>
+  );
+
+  const toggle = (label, val, onChange) => (
+    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "8px 0", borderBottom: `1px solid ${C.greyBg}` }}>
+      <div style={{ fontSize: "13px", color: C.text }}>{label}</div>
+      <div onClick={() => onChange(!val)} style={{ width: "40px", height: "22px", borderRadius: "11px", background: val ? C.orange : C.greyBg, cursor: "pointer", position: "relative", transition: "all 0.2s" }}>
+        <div style={{ width: "18px", height: "18px", borderRadius: "50%", background: C.white, position: "absolute", top: "2px", left: val ? "20px" : "2px", transition: "all 0.2s" }} />
+      </div>
+    </div>
+  );
+
+  const Modal = ({ title, onSave, onClose, children }) => (
+    <div style={{ position: "fixed", inset: 0, zIndex: 99999, background: "rgba(0,0,0,0.5)", display: "flex", alignItems: "flex-end" }}>
+      <div style={{ background: C.card, borderRadius: "20px 20px 0 0", padding: "20px", width: "100%", maxHeight: "80vh", overflowY: "auto", boxSizing: "border-box" }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "16px" }}>
+          <div style={{ fontSize: "16px", fontWeight: "700", color: C.text }}>{title}</div>
+          <button onClick={onClose} style={{ background: C.greyBg, border: "none", borderRadius: "8px", padding: "6px 10px", cursor: "pointer", color: C.text }}>✕</button>
+        </div>
+        {children}
+        <button onClick={onSave} style={{ width: "100%", padding: "12px", background: C.orange, border: "none", borderRadius: "10px", color: C.white, fontSize: "14px", fontWeight: "700", cursor: "pointer", fontFamily: font.ui, marginTop: "12px" }}>Speichern</button>
+      </div>
+    </div>
+  );
+
+  const filteredUsers = users.filter(u =>
+    !searchQ || u.name?.toLowerCase().includes(searchQ.toLowerCase()) || u.email?.toLowerCase().includes(searchQ.toLowerCase())
+  );
+
   return (
-    <div style={{ position: "fixed", inset: 0, zIndex: 9999, background: C.beige, overflow: "auto", fontFamily: font.ui }}>
+    <div style={{ position: "fixed", inset: 0, zIndex: 9999, background: C.beige, overflow: "hidden", fontFamily: font.ui, display: "flex", flexDirection: "column" }}>
       <style>{defaultCSS}</style>
-      <div style={{ padding: "12px 14px", borderBottom: `1px solid ${C.border}`, display: "flex", justifyContent: "space-between", alignItems: "center", position: "sticky", top: 0, background: C.beige, zIndex: 10 }}>
-        <div><div style={{ fontSize: "15px", fontWeight: "700", color: C.text }}>admin panel</div><div style={{ fontSize: "10px", color: C.textLight }}>cereza pizza · frankfurt</div></div>
-        <button onClick={onClose} style={{ background: C.white, border: `1px solid ${C.border}`, borderRadius: "8px", padding: "6px 12px", color: C.text, cursor: "pointer", fontSize: "12px" }}>✕</button>
-      </div>
-      <div style={{ display: "flex", gap: "4px", padding: "8px 10px", overflowX: "auto", borderBottom: `1px solid ${C.greyBg}` }}>
-        {tabs.map(t => <button key={t.id} onClick={() => setTab(t.id)} style={{ padding: "6px 10px", borderRadius: "12px", border: "none", background: tab === t.id ? C.orange : "transparent", color: tab === t.id ? C.white : C.textLight, fontSize: "11px", fontWeight: "600", cursor: "pointer", whiteSpace: "nowrap", fontFamily: font.ui }}>{t.l}</button>)}
-      </div>
-      <div style={{ padding: "10px" }}>
-        {tab === "users" && (<>
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "6px", marginBottom: "10px" }}>
-            {[{ v: users.length, l: "user" }, { v: users.filter(u => u.last_visit === new Date().toISOString().split('T')[0]).length, l: "heute" }, { v: users.length ? Math.round(users.filter(u => (u.total_visits || 0) > 1).length / users.length * 100) + "%" : "—", l: "retention" }].map((s, i) => <Card key={i} style={{ padding: "10px", textAlign: "center" }}><div style={{ fontSize: "17px", fontWeight: "800", color: C.orange }}>{s.v}</div><div style={{ fontSize: "9px", color: C.textLight }}>{s.l}</div></Card>)}
+
+      {/* Toast */}
+      {toast && <div style={{ position: "fixed", top: "16px", left: "50%", transform: "translateX(-50%)", background: toast.ok ? C.green : C.orange, color: C.white, padding: "10px 20px", borderRadius: "20px", fontSize: "13px", fontWeight: "600", zIndex: 999999, animation: "fadeUp 0.3s" }}>{toast.msg}</div>}
+
+      {/* Edit Modals */}
+      {editUser && (
+        <Modal title="User bearbeiten" onSave={saveUser} onClose={() => setEditUser(null)}>
+          {inp("Name", editUser.name, v => setEditUser(p => ({ ...p, name: v })))}
+          {inp("Punkte (XP)", editUser.pts, v => setEditUser(p => ({ ...p, pts: v })), "number")}
+          {inp("Level (1-5)", editUser.level, v => setEditUser(p => ({ ...p, level: v })), "number")}
+          {inp("Streak", editUser.streak, v => setEditUser(p => ({ ...p, streak: v })), "number")}
+          {inp("Besuche gesamt", editUser.total_visits, v => setEditUser(p => ({ ...p, total_visits: v })), "number")}
+          {toggle("Admin", editUser.is_admin, v => setEditUser(p => ({ ...p, is_admin: v })))}
+          {toggle("Abo Mitglied", editUser.is_abo_member, v => setEditUser(p => ({ ...p, is_abo_member: v })))}
+          <button onClick={() => deleteUser(editUser.id)} style={{ width: "100%", padding: "10px", background: "transparent", border: `1px solid #e24a28`, borderRadius: "10px", color: "#e24a28", fontSize: "13px", cursor: "pointer", marginTop: "8px" }}>User löschen</button>
+        </Modal>
+      )}
+
+      {editMission && (
+        <Modal title={editMission.id ? "Mission bearbeiten" : "Neue Mission"} onSave={saveMission} onClose={() => setEditMission(null)}>
+          {inp("Titel", editMission.title, v => setEditMission(p => ({ ...p, title: v })))}
+          {inp("Beschreibung", editMission.description, v => setEditMission(p => ({ ...p, description: v })))}
+          {inp("Icon (Emoji)", editMission.icon, v => setEditMission(p => ({ ...p, icon: v })))}
+          {inp("XP Belohnung", editMission.pts_reward, v => setEditMission(p => ({ ...p, pts_reward: v })), "number")}
+          {inp("Ziel (Anzahl)", editMission.goal, v => setEditMission(p => ({ ...p, goal: v })), "number")}
+          {editMission.id && toggle("Aktiv", editMission.active, v => setEditMission(p => ({ ...p, active: v })))}
+        </Modal>
+      )}
+
+      {editDish && (
+        <Modal title={editDish.id ? "Gericht bearbeiten" : "Neues Gericht"} onSave={saveDish} onClose={() => setEditDish(null)}>
+          {inp("Name", editDish.name, v => setEditDish(p => ({ ...p, name: v })))}
+          {inp("Beschreibung", editDish.description, v => setEditDish(p => ({ ...p, description: v })))}
+          {editDish.id && toggle("Aktiv", editDish.active, v => setEditDish(p => ({ ...p, active: v })))}
+          {editDish.id && toggle("Voting aktiv", editDish.voting_enabled, v => setEditDish(p => ({ ...p, voting_enabled: v })))}
+          {editDish.id && <button onClick={async () => { if (!confirm("Alle Votes zurücksetzen?")) return; await supabase.from('dish_votes').delete().eq('dish_id', editDish.id); showToast("Votes zurückgesetzt"); setEditDish(null); loadAll(); }} style={{ width: "100%", padding: "10px", background: "transparent", border: `1px solid ${C.border}`, borderRadius: "10px", color: C.textLight, fontSize: "12px", cursor: "pointer", marginTop: "8px" }}>Votes zurücksetzen</button>}
+        </Modal>
+      )}
+
+      {editShop && (
+        <Modal title={editShop.id ? "Shop Item bearbeiten" : "Neues Item"} onSave={saveShop} onClose={() => setEditShop(null)}>
+          {inp("Name", editShop.name, v => setEditShop(p => ({ ...p, name: v })))}
+          {inp("Beschreibung", editShop.description, v => setEditShop(p => ({ ...p, description: v })))}
+          {inp("Icon (Emoji)", editShop.icon, v => setEditShop(p => ({ ...p, icon: v })))}
+          {inp("Kosten (XP)", editShop.cost, v => setEditShop(p => ({ ...p, cost: v })), "number")}
+          {inp("Mindest-Level", editShop.min_level, v => setEditShop(p => ({ ...p, min_level: v })), "number")}
+          {editShop.id && toggle("Aktiv", editShop.active, v => setEditShop(p => ({ ...p, active: v })))}
+        </Modal>
+      )}
+
+      {editPrize && (
+        <Modal title={editPrize.id ? "Preis bearbeiten" : "Neuer Preis"} onSave={savePrize} onClose={() => setEditPrize(null)}>
+          {inp("Label", editPrize.label, v => setEditPrize(p => ({ ...p, label: v })))}
+          {inp("Wert (XP, 0 = nichts, -1 = 2x)", editPrize.value, v => setEditPrize(p => ({ ...p, value: v })), "number")}
+          {inp("Farbe (Hex)", editPrize.color, v => setEditPrize(p => ({ ...p, color: v })))}
+          {editPrize.id && toggle("Aktiv", editPrize.active, v => setEditPrize(p => ({ ...p, active: v })))}
+        </Modal>
+      )}
+
+      {editGlow && (
+        <Modal title={editGlow.id ? "Glow Hour bearbeiten" : "Neue Glow Hour"} onSave={saveGlow} onClose={() => setEditGlow(null)}>
+          <div style={{ marginBottom: "8px" }}>
+            <div style={{ fontSize: "10px", color: C.textLight, marginBottom: "3px", fontWeight: "600" }}>Tag</div>
+            <select value={editGlow.day_of_week ?? 1} onChange={e => setEditGlow(p => ({ ...p, day_of_week: e.target.value }))}
+              style={{ width: "100%", padding: "9px 12px", border: `1px solid ${C.border}`, borderRadius: "8px", fontSize: "13px", outline: "none", fontFamily: font.ui, background: C.card, color: C.text }}>
+              {days.map((d, i) => <option key={i} value={i}>{d}</option>)}
+            </select>
           </div>
-          {users.map((u, i) => <Card key={i} style={{ marginBottom: "5px", padding: "10px 12px", display: "flex", alignItems: "center", gap: "8px" }}>
-            <div style={{ width: "28px", height: "28px", borderRadius: "50%", background: C.orange, display: "flex", alignItems: "center", justifyContent: "center", color: C.white, fontSize: "11px", fontWeight: "800" }}>{u.level || 1}</div>
-            <div style={{ flex: 1 }}><div style={{ fontSize: "12px", fontWeight: "700" }}>@{u.name}</div><div style={{ fontSize: "9px", color: C.textLight }}>{u.email} · {u.last_visit || "—"}</div></div>
-            <div style={{ textAlign: "right" }}><div style={{ fontSize: "12px", fontWeight: "700", color: C.orange }}>{u.pts || 0}</div><div style={{ fontSize: "8px", color: C.textLight }}>{u.total_visits || 0} besuche</div></div>
-            <button onClick={() => addPts(u.id, 100)} style={{ background: C.beige, border: `1px solid ${C.border}`, borderRadius: "6px", padding: "4px 6px", fontSize: "9px", fontWeight: "700", cursor: "pointer" }}>+100</button>
-          </Card>)}
-        </>)}
-        {tab === "points" && ERAS.map((e, i) => <Card key={i} style={{ marginBottom: "5px", padding: "10px", display: "flex", alignItems: "center", gap: "8px" }}><div style={{ width: "26px", height: "26px", borderRadius: "50%", background: C.orange, color: C.white, display: "flex", alignItems: "center", justifyContent: "center", fontSize: "11px", fontWeight: "800" }}>{e.level}</div><div style={{ flex: 1 }}><div style={{ fontWeight: "700", fontSize: "13px" }}>{e.name}</div><div style={{ fontSize: "10px", color: C.textLight }}>{e.ptsNeeded} pts</div></div></Card>)}
-        {tab === "missions" && missions.map(m => <Card key={m.id} style={{ marginBottom: "5px", padding: "10px", display: "flex", alignItems: "center", gap: "8px" }}><span style={{ fontSize: "18px" }}>{m.icon}</span><div style={{ flex: 1 }}><div style={{ fontSize: "12px", fontWeight: "700" }}>{m.title}</div><div style={{ fontSize: "9px", color: C.textLight }}>{m.description}</div></div><div style={{ color: C.orange, fontSize: "11px", fontWeight: "700" }}>+{m.pts_reward}</div></Card>)}
-        {tab === "glow" && ["montag 12:00–14:00", "mittwoch 18:00–20:00", "freitag 12:00–14:00"].map((d, i) => <Card key={i} style={{ marginBottom: "5px", padding: "10px", display: "flex", justifyContent: "space-between", alignItems: "center" }}><div><div style={{ fontWeight: "700", fontSize: "13px" }}>{d.split(" ")[0]}</div><div style={{ color: C.textLight, fontSize: "11px" }}>{d.split(" ")[1]}</div></div><span style={{ fontSize: "11px", color: C.orange, fontWeight: "700" }}>2x pts</span></Card>)}
-        {tab === "dishes" && dishes.map(d => <Card key={d.id} style={{ marginBottom: "5px", padding: "10px", display: "flex", alignItems: "center", gap: "8px" }}><span style={{ fontSize: "22px" }}>🍕</span><div style={{ flex: 1 }}><div style={{ fontWeight: "700", fontSize: "12px" }}>{d.name}</div><div style={{ fontSize: "9px", color: C.textLight }}>{d.description}</div></div><div style={{ background: C.orange, color: C.white, borderRadius: "8px", padding: "2px 7px", fontSize: "10px", fontWeight: "700" }}>♥ {d.votes}</div></Card>)}
-        {tab === "facts" && (<>
-          <div style={{ display: "flex", gap: "6px", marginBottom: "10px" }}>
-            <input value={newFact} onChange={e => setNewFact(e.target.value)} placeholder="Neuer Fun Fact..." style={{ flex: 1, padding: "10px 12px", border: `1px solid ${C.border}`, borderRadius: "10px", fontSize: "12px", outline: "none", boxSizing: "border-box", fontFamily: font.ui }} />
-            <button onClick={async () => { if (!newFact) return; await db.addFunFact(newFact); setNewFact(""); db.getFunFacts().then(setFacts) }} style={{ padding: "10px 14px", background: C.orange, border: "none", borderRadius: "10px", color: C.white, fontSize: "11px", fontWeight: "700", cursor: "pointer" }}>+</button>
+          {inp("Start (HH:MM)", editGlow.start_time, v => setEditGlow(p => ({ ...p, start_time: v })))}
+          {inp("Ende (HH:MM)", editGlow.end_time, v => setEditGlow(p => ({ ...p, end_time: v })))}
+          {inp("Multiplikator", editGlow.multiplier, v => setEditGlow(p => ({ ...p, multiplier: v })), "number")}
+          {editGlow.id && toggle("Aktiv", editGlow.active, v => setEditGlow(p => ({ ...p, active: v })))}
+        </Modal>
+      )}
+
+      {/* Header */}
+      <div style={{ padding: "14px 16px 10px", borderBottom: `1px solid ${C.border}`, background: C.card, display: "flex", justifyContent: "space-between", alignItems: "center", flexShrink: 0 }}>
+        <div>
+          <div style={{ fontSize: "16px", fontWeight: "800", color: C.text }}>Admin Panel</div>
+          <div style={{ fontSize: "10px", color: C.textLight }}>Cereza Pizza · Frankfurt</div>
+        </div>
+        <button onClick={onClose} style={{ background: C.greyBg, border: `1px solid ${C.border}`, borderRadius: "10px", padding: "8px 14px", color: C.text, cursor: "pointer", fontSize: "13px", fontWeight: "600" }}>✕ Schließen</button>
+      </div>
+
+      {/* Tab Bar */}
+      <div style={{ display: "flex", gap: "4px", padding: "8px 10px", overflowX: "auto", borderBottom: `1px solid ${C.greyBg}`, background: C.card, flexShrink: 0 }}>
+        {tabs.map(t => (
+          <button key={t.id} onClick={() => setTab(t.id)} style={{ padding: "7px 12px", borderRadius: "20px", border: "none", background: tab === t.id ? C.orange : C.greyBg, color: tab === t.id ? C.white : C.textLight, fontSize: "11px", fontWeight: "600", cursor: "pointer", whiteSpace: "nowrap", fontFamily: font.ui, transition: "all 0.2s" }}>{t.l}</button>
+        ))}
+      </div>
+
+      {/* Content */}
+      <div style={{ flex: 1, overflowY: "auto", padding: "12px", WebkitOverflowScrolling: "touch" }}>
+        {loading && <div style={{ textAlign: "center", padding: "40px", color: C.textLight }}>Laden...</div>}
+
+        {/* ── STATISTIKEN ── */}
+        {!loading && tab === "stats" && (
+          <div>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "8px", marginBottom: "12px" }}>
+              {[
+                { v: users.length, l: "Registrierte User", icon: "👥" },
+                { v: todayUsers, l: "Heute aktiv", icon: "🟢" },
+                { v: aboMembers, l: "Abo Mitglieder", icon: "💚" },
+                { v: avgPts, l: "Ø Punkte/User", icon: "⭐" },
+                { v: totalPts.toLocaleString(), l: "Punkte total", icon: "🏆" },
+                { v: visitors.length, l: "Besuche heute", icon: "📅" },
+                { v: redemptions.length, l: "Offene Einlösungen", icon: "🎟️" },
+                { v: vibes.length, l: "Vibes zur Freigabe", icon: "📸" },
+              ].map((s, i) => (
+                <Card key={i} style={{ padding: "12px", display: "flex", alignItems: "center", gap: "10px" }}>
+                  <div style={{ fontSize: "22px" }}>{s.icon}</div>
+                  <div><div style={{ fontSize: "18px", fontWeight: "800", color: C.orange }}>{s.v}</div><div style={{ fontSize: "10px", color: C.textLight }}>{s.l}</div></div>
+                </Card>
+              ))}
+            </div>
+
+            {/* Level Verteilung */}
+            <Card style={{ marginBottom: "10px" }}>
+              <div style={{ fontSize: "12px", fontWeight: "700", marginBottom: "10px", color: C.textSub }}>Level Verteilung</div>
+              {levelDist.map(({ l, count }) => (
+                <div key={l} style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "6px" }}>
+                  <div style={{ width: "50px", fontSize: "11px", color: C.textLight }}>Level {l}</div>
+                  <div style={{ flex: 1, height: "16px", background: C.greyBg, borderRadius: "8px", overflow: "hidden" }}>
+                    <div style={{ height: "100%", width: `${users.length ? (count / users.length) * 100 : 0}%`, background: C.orange, borderRadius: "8px", transition: "width 0.5s" }} />
+                  </div>
+                  <div style={{ width: "30px", fontSize: "11px", fontWeight: "700", textAlign: "right" }}>{count}</div>
+                </div>
+              ))}
+            </Card>
+
+            {/* Top 5 User */}
+            <Card>
+              <div style={{ fontSize: "12px", fontWeight: "700", marginBottom: "10px", color: C.textSub }}>Top 5 User</div>
+              {[...users].sort((a, b) => (b.pts || 0) - (a.pts || 0)).slice(0, 5).map((u, i) => (
+                <div key={u.id} style={{ display: "flex", alignItems: "center", gap: "8px", padding: "6px 0", borderBottom: i < 4 ? `1px solid ${C.greyBg}` : "none" }}>
+                  <div style={{ fontSize: "14px" }}>{["🥇", "🥈", "🥉", "4️⃣", "5️⃣"][i]}</div>
+                  <div style={{ flex: 1, fontSize: "12px", fontWeight: "600" }}>@{u.name}</div>
+                  <div style={{ fontSize: "12px", fontWeight: "700", color: C.orange }}>{u.pts || 0} pts</div>
+                </div>
+              ))}
+            </Card>
           </div>
-          {facts.map(f => <Card key={f.id} style={{ marginBottom: "4px", padding: "10px 12px", display: "flex", alignItems: "center", gap: "8px" }}>
-            <div style={{ flex: 1, fontSize: "12px" }}>{f.text}</div>
-            <button onClick={async () => { await db.deleteFunFact(f.id); db.getFunFacts().then(setFacts) }} style={{ background: C.greyBg, border: "none", borderRadius: "6px", padding: "4px 8px", fontSize: "10px", color: C.textLight, cursor: "pointer" }}>X</button>
-          </Card>)}
-        </>)}
-        {tab === "prizes" && (<>
-          <div style={{ fontSize: "12px", color: C.textSub, marginBottom: "8px" }}>Glücksrad Preise bearbeiten</div>
-          {prizes.map(p => <Card key={p.id} style={{ marginBottom: "4px", padding: "10px 12px", display: "flex", alignItems: "center", gap: "8px" }}>
-            <div style={{ width: "20px", height: "20px", borderRadius: "4px", background: p.color }} />
-            <div style={{ flex: 1, fontSize: "12px", fontWeight: "600" }}>{p.label}</div>
-            <div style={{ fontSize: "11px", color: C.textLight }}>{p.value} pts</div>
-          </Card>)}
-        </>)}
-        {tab === "visits" && (<>
-          <div style={{ fontSize: "12px", color: C.textSub, marginBottom: "8px" }}>Geplante Besuche heute ({visitors.length})</div>
-          {visitors.length === 0 && <div style={{ textAlign: "center", padding: "20px", color: C.textLight, fontSize: "12px" }}>Noch keine Anmeldungen</div>}
-          {visitors.map(v => <Card key={v.id} style={{ marginBottom: "4px", padding: "10px 12px", display: "flex", alignItems: "center", gap: "8px" }}>
-            <div style={{ flex: 1, fontSize: "12px", fontWeight: "600" }}>@{v.profile?.name || "User"}</div>
-            <div style={{ fontSize: "10px", color: C.green, fontWeight: "600" }}>Kommt heute</div>
-          </Card>)}
-        </>)}
-        {tab === "push" && (<>
-          <div style={{ fontSize: "12px", color: C.textSub, marginBottom: "10px" }}>Push Notification an alle User senden</div>
-          <input value={pushTitle} onChange={e => setPushTitle(e.target.value)} placeholder="Titel (z.B. Glow Hour startet!)" style={{ width: "100%", padding: "10px 12px", border: `1px solid ${C.border}`, borderRadius: "10px", fontSize: "13px", marginBottom: "6px", outline: "none", boxSizing: "border-box", fontFamily: font.ui, background: C.card, color: C.text }} />
-          <input value={pushBody} onChange={e => setPushBody(e.target.value)} placeholder="Nachricht (z.B. Doppelte Punkte bis 14 Uhr!)" style={{ width: "100%", padding: "10px 12px", border: `1px solid ${C.border}`, borderRadius: "10px", fontSize: "13px", marginBottom: "10px", outline: "none", boxSizing: "border-box", fontFamily: font.ui, background: C.card, color: C.text }} />
-          <button onClick={async () => {
-            if (!pushTitle) return;
-            const count = await sendPushToAll(pushTitle, pushBody);
-            await supabase.from("admin_notifications").insert({ title: pushTitle, body: pushBody, sent_to: "all" });
-            setPushSent(true); setPushTitle(""); setPushBody("");
-            setTimeout(() => setPushSent(false), 3000);
-          }} style={{ width: "100%", padding: "12px", background: C.orange, border: "none", borderRadius: "10px", color: C.white, fontSize: "13px", fontWeight: "700", cursor: "pointer", fontFamily: font.ui }}>
-            An alle senden
-          </button>
-          {pushSent && <div style={{ textAlign: "center", padding: "10px", color: C.green, fontSize: "12px", fontWeight: "600", marginTop: "8px" }}>Gesendet!</div>}
-          <div style={{ fontSize: "11px", color: C.textSub, marginTop: "16px", marginBottom: "8px" }}>Schnell-Nachrichten</div>
-          {[
-            { t: "Glow Hour startet!", b: "Doppelte Punkte für die nächsten 2 Stunden!" },
-            { t: "Neue Missionen verfügbar", b: "Schau dir die Challenges dieser Woche an!" },
-            { t: "Glücksrad wartet!", b: "Du hast heute noch nicht gedreht." },
-            { t: "Neues Gericht zum Voten", b: "Swipe jetzt in Cinder!" },
-          ].map((q, i) => (
-            <button key={i} onClick={async () => { await sendPushToAll(q.t, q.b); await supabase.from("admin_notifications").insert({ title: q.t, body: q.b, sent_to: "all" }); setPushSent(true); setTimeout(() => setPushSent(false), 2000) }} style={{ width: "100%", padding: "10px 12px", background: C.card, border: `1px solid ${C.border}`, borderRadius: "10px", marginBottom: "4px", textAlign: "left", cursor: "pointer", fontFamily: font.ui }}>
-              <div style={{ fontSize: "12px", fontWeight: "600", color: C.text }}>{q.t}</div>
-              <div style={{ fontSize: "10px", color: C.textLight }}>{q.b}</div>
-            </button>
-          ))}
-        </>)}
-        {tab === "abo" && <Card><div style={{ fontSize: "16px", fontFamily: font.display, color: C.green, marginBottom: "8px", fontWeight: "700" }}>matcha society</div>{[{ l: "preis", v: "29,99€/mo" }, { l: "members", v: "—" }, { l: "zahlung", v: "stripe + paypal" }].map((r, i) => <div key={i} style={{ display: "flex", justifyContent: "space-between", padding: "4px 0", borderBottom: i < 2 ? `1px solid ${C.greyBg}` : "none", fontSize: "12px" }}><span style={{ color: C.textLight }}>{r.l}</span><span style={{ fontWeight: "700" }}>{r.v}</span></div>)}</Card>}
+        )}
+
+        {/* ── USER ── */}
+        {!loading && tab === "users" && (
+          <div>
+            <input value={searchQ} onChange={e => setSearchQ(e.target.value)} placeholder="🔍 User suchen..." style={{ width: "100%", padding: "10px 12px", border: `1px solid ${C.border}`, borderRadius: "10px", fontSize: "13px", outline: "none", boxSizing: "border-box", fontFamily: font.ui, background: C.card, color: C.text, marginBottom: "10px" }} />
+            {filteredUsers.map(u => (
+              <Card key={u.id} style={{ marginBottom: "6px", padding: "12px" }}>
+                <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+                  <div style={{ width: "36px", height: "36px", borderRadius: "50%", background: C.orange, display: "flex", alignItems: "center", justifyContent: "center", color: C.white, fontSize: "14px", fontWeight: "800", flexShrink: 0 }}>
+                    {(u.name || "U")[0].toUpperCase()}
+                  </div>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontSize: "13px", fontWeight: "700", color: C.text }}>@{u.name} {u.is_admin && <span style={{ background: C.orange, color: C.white, fontSize: "8px", padding: "1px 5px", borderRadius: "4px" }}>ADMIN</span>}</div>
+                    <div style={{ fontSize: "10px", color: C.textLight, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{u.email}</div>
+                  </div>
+                  <div style={{ textAlign: "right", flexShrink: 0 }}>
+                    <div style={{ fontSize: "13px", fontWeight: "800", color: C.orange }}>{u.pts || 0}</div>
+                    <div style={{ fontSize: "9px", color: C.textLight }}>Lvl {u.level || 1}</div>
+                  </div>
+                  <button onClick={() => setEditUser({ ...u })} style={{ background: C.greyBg, border: `1px solid ${C.border}`, borderRadius: "8px", padding: "6px 10px", fontSize: "11px", fontWeight: "600", cursor: "pointer", color: C.text, flexShrink: 0 }}>✏️</button>
+                </div>
+              </Card>
+            ))}
+          </div>
+        )}
+
+        {/* ── KASSE / REDEMPTIONS ── */}
+        {!loading && tab === "redemptions" && (
+          <div>
+            <div style={{ fontSize: "12px", color: C.textSub, marginBottom: "10px" }}>Offene Einlösungen – an der Kasse bestätigen</div>
+            {redemptions.length === 0 && <div style={{ textAlign: "center", padding: "30px", color: C.textLight }}>Keine offenen Einlösungen</div>}
+            {redemptions.map(r => (
+              <Card key={r.id} style={{ marginBottom: "8px", padding: "12px" }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                  <div>
+                    <div style={{ fontSize: "13px", fontWeight: "700" }}>{r.item?.icon} {r.item?.name || "Unbekannt"}</div>
+                    <div style={{ fontSize: "11px", color: C.textLight }}>@{r.profile?.name} · {r.pts_spent} XP</div>
+                    <div style={{ fontSize: "10px", color: C.textLight }}>Läuft ab: {new Date(r.expires_at).toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' })}</div>
+                  </div>
+                  <button onClick={async () => { await db.confirmRedemption(r.id, null); showToast("Bestätigt ✓"); db.getPendingRedemptions().then(setRedemptions); }}
+                    style={{ background: C.green, border: "none", borderRadius: "10px", padding: "10px 14px", color: C.white, fontSize: "12px", fontWeight: "700", cursor: "pointer" }}>✓ OK</button>
+                </div>
+              </Card>
+            ))}
+          </div>
+        )}
+
+        {/* ── SHOP ── */}
+        {!loading && tab === "shop" && (
+          <div>
+            <button onClick={() => setEditShop({ name: "", description: "", icon: "🎁", cost: 500, min_level: 1 })}
+              style={{ width: "100%", padding: "11px", background: C.orange, border: "none", borderRadius: "10px", color: C.white, fontSize: "13px", fontWeight: "700", cursor: "pointer", marginBottom: "10px" }}>+ Neues Item</button>
+            {shopItems.map(item => (
+              <Card key={item.id} style={{ marginBottom: "6px", padding: "12px", display: "flex", alignItems: "center", gap: "10px" }}>
+                <div style={{ fontSize: "24px" }}>{item.icon}</div>
+                <div style={{ flex: 1 }}>
+                  <div style={{ fontSize: "13px", fontWeight: "700" }}>{item.name}</div>
+                  <div style={{ fontSize: "10px", color: C.textLight }}>{item.cost} XP · Lvl {item.min_level}+</div>
+                </div>
+                <button onClick={() => setEditShop({ ...item })} style={{ background: C.greyBg, border: `1px solid ${C.border}`, borderRadius: "8px", padding: "6px 10px", fontSize: "11px", cursor: "pointer" }}>✏️</button>
+              </Card>
+            ))}
+          </div>
+        )}
+
+        {/* ── MISSIONEN ── */}
+        {!loading && tab === "missions" && (
+          <div>
+            <button onClick={() => setEditMission({ title: "", description: "", icon: "⭐", pts_reward: 100, goal: 1 })}
+              style={{ width: "100%", padding: "11px", background: C.orange, border: "none", borderRadius: "10px", color: C.white, fontSize: "13px", fontWeight: "700", cursor: "pointer", marginBottom: "10px" }}>+ Neue Mission</button>
+            {missions.map(m => (
+              <Card key={m.id} style={{ marginBottom: "6px", padding: "12px", display: "flex", alignItems: "center", gap: "10px" }}>
+                <div style={{ fontSize: "22px" }}>{m.icon}</div>
+                <div style={{ flex: 1 }}>
+                  <div style={{ fontSize: "13px", fontWeight: "700" }}>{m.title}</div>
+                  <div style={{ fontSize: "10px", color: C.textLight }}>{m.description} · +{m.pts_reward} XP</div>
+                </div>
+                <button onClick={() => setEditMission({ ...m })} style={{ background: C.greyBg, border: `1px solid ${C.border}`, borderRadius: "8px", padding: "6px 10px", fontSize: "11px", cursor: "pointer" }}>✏️</button>
+              </Card>
+            ))}
+          </div>
+        )}
+
+        {/* ── GERICHTE ── */}
+        {!loading && tab === "dishes" && (
+          <div>
+            <button onClick={() => setEditDish({ name: "", description: "" })}
+              style={{ width: "100%", padding: "11px", background: C.orange, border: "none", borderRadius: "10px", color: C.white, fontSize: "13px", fontWeight: "700", cursor: "pointer", marginBottom: "10px" }}>+ Neues Gericht</button>
+            {dishes.map(d => (
+              <Card key={d.id} style={{ marginBottom: "6px", padding: "12px", display: "flex", alignItems: "center", gap: "10px" }}>
+                <div style={{ fontSize: "22px" }}>🍕</div>
+                <div style={{ flex: 1 }}>
+                  <div style={{ fontSize: "13px", fontWeight: "700" }}>{d.name}</div>
+                  <div style={{ fontSize: "10px", color: C.textLight }}>♥ {d.votes} Votes · {d.voting_enabled ? "Voting aktiv" : "Voting aus"}</div>
+                </div>
+                <button onClick={() => setEditDish({ ...d })} style={{ background: C.greyBg, border: `1px solid ${C.border}`, borderRadius: "8px", padding: "6px 10px", fontSize: "11px", cursor: "pointer" }}>✏️</button>
+              </Card>
+            ))}
+          </div>
+        )}
+
+        {/* ── GLOW HOURS ── */}
+        {!loading && tab === "glow" && (
+          <div>
+            <button onClick={() => setEditGlow({ day_of_week: 1, start_time: "12:00", end_time: "14:00", multiplier: 2, active: true })}
+              style={{ width: "100%", padding: "11px", background: C.orange, border: "none", borderRadius: "10px", color: C.white, fontSize: "13px", fontWeight: "700", cursor: "pointer", marginBottom: "10px" }}>+ Neue Glow Hour</button>
+            {glowHours.map(g => (
+              <Card key={g.id} style={{ marginBottom: "6px", padding: "12px", display: "flex", alignItems: "center", gap: "10px" }}>
+                <div style={{ fontSize: "22px" }}>✨</div>
+                <div style={{ flex: 1 }}>
+                  <div style={{ fontSize: "13px", fontWeight: "700" }}>{days[g.day_of_week]}</div>
+                  <div style={{ fontSize: "10px", color: C.textLight }}>{g.start_time} – {g.end_time} · {g.multiplier}x XP · {g.active ? "✅ Aktiv" : "❌ Inaktiv"}</div>
+                </div>
+                <button onClick={() => setEditGlow({ ...g })} style={{ background: C.greyBg, border: `1px solid ${C.border}`, borderRadius: "8px", padding: "6px 10px", fontSize: "11px", cursor: "pointer" }}>✏️</button>
+              </Card>
+            ))}
+          </div>
+        )}
+
+        {/* ── GLÜCKSRAD PREISE ── */}
+        {!loading && tab === "prizes" && (
+          <div>
+            <button onClick={() => setEditPrize({ label: "", value: 100, color: "#e24a28" })}
+              style={{ width: "100%", padding: "11px", background: C.orange, border: "none", borderRadius: "10px", color: C.white, fontSize: "13px", fontWeight: "700", cursor: "pointer", marginBottom: "10px" }}>+ Neuer Preis</button>
+            {prizes.map(p => (
+              <Card key={p.id} style={{ marginBottom: "6px", padding: "12px", display: "flex", alignItems: "center", gap: "10px" }}>
+                <div style={{ width: "24px", height: "24px", borderRadius: "6px", background: p.color, flexShrink: 0 }} />
+                <div style={{ flex: 1 }}>
+                  <div style={{ fontSize: "13px", fontWeight: "700" }}>{p.label}</div>
+                  <div style={{ fontSize: "10px", color: C.textLight }}>{p.value > 0 ? `+${p.value} XP` : p.value === -1 ? "2x Multiplikator" : "Kein Gewinn"}</div>
+                </div>
+                <button onClick={() => setEditPrize({ ...p })} style={{ background: C.greyBg, border: `1px solid ${C.border}`, borderRadius: "8px", padding: "6px 10px", fontSize: "11px", cursor: "pointer" }}>✏️</button>
+              </Card>
+            ))}
+          </div>
+        )}
+
+        {/* ── FUN FACTS ── */}
+        {!loading && tab === "facts" && (
+          <div>
+            <div style={{ display: "flex", gap: "6px", marginBottom: "10px" }}>
+              <input value={newFact} onChange={e => setNewFact(e.target.value)} placeholder="Neuer Fun Fact..." style={{ flex: 1, padding: "10px 12px", border: `1px solid ${C.border}`, borderRadius: "10px", fontSize: "13px", outline: "none", fontFamily: font.ui, background: C.card, color: C.text }} />
+              <button onClick={async () => { if (!newFact.trim()) return; await db.addFunFact(newFact); setNewFact(""); db.getFunFacts().then(setFacts); showToast("Hinzugefügt ✓"); }}
+                style={{ padding: "10px 16px", background: C.orange, border: "none", borderRadius: "10px", color: C.white, fontSize: "13px", fontWeight: "700", cursor: "pointer" }}>+</button>
+            </div>
+            {facts.map(f => (
+              <Card key={f.id} style={{ marginBottom: "6px", padding: "12px", display: "flex", alignItems: "center", gap: "8px" }}>
+                <div style={{ flex: 1, fontSize: "13px" }}>{f.text}</div>
+                <button onClick={async () => { await db.deleteFunFact(f.id); db.getFunFacts().then(setFacts); }}
+                  style={{ background: C.greyBg, border: "none", borderRadius: "6px", padding: "5px 8px", fontSize: "11px", color: C.textLight, cursor: "pointer" }}>✕</button>
+              </Card>
+            ))}
+          </div>
+        )}
+
+        {/* ── VIBE GALLERY ── */}
+        {!loading && tab === "vibes" && (
+          <div>
+            <div style={{ fontSize: "12px", color: C.textSub, marginBottom: "10px" }}>Fotos zur Freigabe ({vibes.length})</div>
+            {vibes.length === 0 && <div style={{ textAlign: "center", padding: "30px", color: C.textLight }}>Keine Fotos zur Freigabe</div>}
+            {vibes.map(v => (
+              <Card key={v.id} style={{ marginBottom: "8px", padding: "12px" }}>
+                <img src={v.url} style={{ width: "100%", borderRadius: "10px", marginBottom: "8px", filter: "sepia(0.3) contrast(1.1)" }} />
+                <div style={{ fontSize: "11px", color: C.textLight, marginBottom: "8px" }}>@{v.profile?.name} · {new Date(v.created_at).toLocaleDateString('de-DE')}</div>
+                <div style={{ display: "flex", gap: "6px" }}>
+                  <button onClick={async () => { await db.approveVibe(v.id, true); showToast("Freigegeben ✓"); db.getPendingVibes().then(setVibes); }}
+                    style={{ flex: 1, padding: "9px", background: C.green, border: "none", borderRadius: "8px", color: C.white, fontSize: "12px", fontWeight: "700", cursor: "pointer" }}>✓ Freigeben</button>
+                  <button onClick={async () => { await supabase.from('vibe_photos').delete().eq('id', v.id); showToast("Gelöscht"); db.getPendingVibes().then(setVibes); }}
+                    style={{ flex: 1, padding: "9px", background: C.greyBg, border: `1px solid ${C.border}`, borderRadius: "8px", color: C.textLight, fontSize: "12px", fontWeight: "700", cursor: "pointer" }}>✕ Ablehnen</button>
+                </div>
+              </Card>
+            ))}
+          </div>
+        )}
+
+        {/* ── HEUTIGE BESUCHE ── */}
+        {!loading && tab === "visits" && (
+          <div>
+            <div style={{ fontSize: "12px", color: C.textSub, marginBottom: "10px" }}>Angemeldete Besuche heute ({visitors.length})</div>
+            {visitors.length === 0 && <div style={{ textAlign: "center", padding: "30px", color: C.textLight }}>Noch keine Anmeldungen</div>}
+            {visitors.map(v => (
+              <Card key={v.id} style={{ marginBottom: "6px", padding: "12px", display: "flex", alignItems: "center", gap: "10px" }}>
+                <div style={{ fontSize: "22px" }}>👤</div>
+                <div style={{ flex: 1 }}>
+                  <div style={{ fontSize: "13px", fontWeight: "700" }}>@{v.profile?.name || "User"}</div>
+                  <div style={{ fontSize: "10px", color: C.green, fontWeight: "600" }}>Kommt heute</div>
+                </div>
+              </Card>
+            ))}
+          </div>
+        )}
+
+        {/* ── PUSH ── */}
+        {!loading && tab === "push" && (
+          <div>
+            <Card style={{ marginBottom: "10px" }}>
+              <div style={{ fontSize: "12px", fontWeight: "700", color: C.textSub, marginBottom: "10px" }}>Broadcast an alle User</div>
+              <input value={pushTitle} onChange={e => setPushTitle(e.target.value)} placeholder="Titel (z.B. Glow Hour startet!)"
+                style={{ width: "100%", padding: "10px 12px", border: `1px solid ${C.border}`, borderRadius: "10px", fontSize: "13px", marginBottom: "6px", outline: "none", boxSizing: "border-box", fontFamily: font.ui, background: C.card, color: C.text }} />
+              <input value={pushBody} onChange={e => setPushBody(e.target.value)} placeholder="Nachricht..."
+                style={{ width: "100%", padding: "10px 12px", border: `1px solid ${C.border}`, borderRadius: "10px", fontSize: "13px", marginBottom: "10px", outline: "none", boxSizing: "border-box", fontFamily: font.ui, background: C.card, color: C.text }} />
+              <button onClick={async () => { if (!pushTitle) return; await sendPushToAll(pushTitle, pushBody); await supabase.from("admin_notifications").insert({ title: pushTitle, body: pushBody, sent_to: "all" }); showToast("Gesendet ✓"); setPushTitle(""); setPushBody(""); }}
+                style={{ width: "100%", padding: "12px", background: C.orange, border: "none", borderRadius: "10px", color: C.white, fontSize: "13px", fontWeight: "700", cursor: "pointer" }}>📤 Senden</button>
+            </Card>
+            <div style={{ fontSize: "12px", color: C.textSub, marginBottom: "8px" }}>Schnell-Nachrichten</div>
+            {[
+              { t: "🌟 Glow Hour startet!", b: "Doppelte Punkte für die nächsten 2 Stunden!" },
+              { t: "🎯 Neue Missionen verfügbar", b: "Schau dir die Challenges dieser Woche an!" },
+              { t: "🎡 Glücksrad wartet!", b: "Du hast heute noch nicht gedreht." },
+              { t: "🍕 Neues Gericht zum Voten", b: "Swipe jetzt und bestimme unser Menü!" },
+              { t: "🎁 Exklusives Angebot", b: "Heute 20% Rabatt für Loyalty Mitglieder!" },
+            ].map((q, i) => (
+              <button key={i} onClick={async () => { await sendPushToAll(q.t, q.b); await supabase.from("admin_notifications").insert({ title: q.t, body: q.b, sent_to: "all" }); showToast("Gesendet ✓"); }}
+                style={{ width: "100%", padding: "10px 12px", background: C.card, border: `1px solid ${C.border}`, borderRadius: "10px", marginBottom: "6px", textAlign: "left", cursor: "pointer", fontFamily: font.ui }}>
+                <div style={{ fontSize: "13px", fontWeight: "600", color: C.text }}>{q.t}</div>
+                <div style={{ fontSize: "11px", color: C.textLight }}>{q.b}</div>
+              </button>
+            ))}
+          </div>
+        )}
       </div>
     </div>
   );

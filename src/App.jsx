@@ -438,56 +438,106 @@ const WheelTab = ({ user, setUser }) => {
 
   useEffect(() => {
     const init = async () => {
+      // Immer frische Daten aus DB holen
       if (user.id) {
-        const fresh = await db.getProfile(user.id);
-        if (fresh) { setSpins(fresh.wheel_spun_today ? 1 : 0); setUser(u => ({ ...u, ...fresh })); }
-      } else { setSpins(user.wheel_spun_today ? 1 : 0); }
-      db.getMissions().then(d => { if (d.length) setMissions(d) });
-      db.getWheelPrizes().then(d => { if (d.length) setPrizes(d.map(p => ({ label: p.label, value: p.value, bg: p.color }))) });
-      setLoading(false);
-    };
-    init();
-  }, []);
+        const fresh = await db.getProfile(user.id)
+        if (fresh) {
+          setUser(u => ({ ...u, ...fresh }))
+          // FIX #9: Spin-Status aus DB lesen, nicht aus lokalem State
+          const lastSpin = fresh.last_spin_date
+          const today = new Date().toISOString().split('T')[0]
+          if (lastSpin === today) {
+            setSpins(fresh.wheel_spun_today ? 2 : 1) // war schon mind. 1x gedreht
+          } else {
+            // Neuer Tag: Reset
+            setSpins(0)
+            if (fresh.wheel_spun_today) {
+              await db.updateProfile(user.id, { wheel_spun_today: false })
+            }
+          }
+        }
+      }
+      // Prizes aus DB laden (Realtime-kompatibel)
+      const dbPrizes = await db.getWheelPrizes()
+      if (dbPrizes.length) setPrizes(dbPrizes.map(p => ({ ...p, bg: p.color })))
+      db.getMissions().then(d => { if (d.length) setMissions(d) })
+      setLoading(false)
+    }
+    init()
+
+    // Realtime: Prizes sofort aktualisieren wenn Admin sie ändert
+    if (!user.id) return
+    const channel = supabase
+      .channel('wheel-prizes-live')
+      .on('postgres_changes', {
+        event: '*', schema: 'public', table: 'wheel_prizes'
+      }, async () => {
+        const updated = await db.getWheelPrizes()
+        if (updated.length) setPrizes(updated.map(p => ({ ...p, bg: p.color })))
+      })
+      .subscribe()
+    return () => supabase.removeChannel(channel)
+  }, [])
 
   const canSpin = spins < maxPaidSpins;
   const needsPay = spins >= maxFreeSpins;
 
   const spin = async () => {
-    if (spinning || !canSpin) return;
-    // Double-check from DB that user hasn't already spun
+    if (spinning || !canSpin) return
+
+    const today = new Date().toISOString().split('T')[0]
+
+    // FIX #9: Immer DB prüfen – verhindert Spin nach Reload
     if (user.id) {
-      const fresh = await db.getProfile(user.id);
-      if (fresh && fresh.wheel_spun_today && spins < 1) { setSpins(1); return; }
-    }
-    if (needsPay && (user.pts || 0) < 100) { return; }
-    setSpinning(true); setResult(null); Sound.spin();
-    // Deduct 100 pts for 2nd spin
-    if (needsPay) {
-      const freshProfile = user.id ? await db.getProfile(user.id) : null;
-      const currentPts = freshProfile ? freshProfile.pts : (user.pts || 0);
-      if (currentPts < 100) { setSpinning(false); return; }
-      const np = currentPts - 100;
-      setUser(u => ({ ...u, pts: np }));
-      if (user.id) await db.updateProfile(user.id, { pts: np });
-    }
-    const idx = Math.floor(Math.random() * prizes.length); const seg = 360 / prizes.length;
-    setRot(r => r + 360 * 6 + (360 - idx * seg - seg / 2));
-    setTimeout(async () => {
-      setSpinning(false); const newSpins = spins + 1; setSpins(newSpins);
-      const prize = prizes[idx]; setResult(prize); prize.value > 0 ? Sound.win() : Sound.lose();
-      // Get fresh pts from DB before adding
-      const freshProfile = user.id ? await db.getProfile(user.id) : null;
-      const currentPts = freshProfile ? freshProfile.pts : (user.pts || 0);
-      if (prize.value > 0) {
-        const np = currentPts + prize.value;
-        setUser(u => ({ ...u, pts: np, wheel_spun_today: true }));
-        if (user.id) await db.updateProfile(user.id, { pts: np, wheel_spun_today: true });
-      } else {
-        if (user.id) await db.updateProfile(user.id, { wheel_spun_today: true });
-        setUser(u => ({ ...u, wheel_spun_today: true }));
+      const fresh = await db.getProfile(user.id)
+      if (fresh) {
+        const lastSpin = fresh.last_spin_date
+        if (lastSpin === today) {
+          const todaySpins = fresh.wheel_spun_today ? 2 : 1
+          if (todaySpins >= 2) { setSpins(2); return }
+          setSpins(todaySpins)
+        }
       }
-    }, 5000);
-  };
+    }
+
+    // 100 XP für 2. Spin
+    if (needsPay) {
+      const fresh = user.id ? await db.getProfile(user.id) : null
+      const currentPts = fresh ? fresh.pts : (user.pts || 0)
+      if (currentPts < 100) return
+      const np = currentPts - 100
+      setUser(u => ({ ...u, pts: np }))
+      if (user.id) await db.updateProfile(user.id, { pts: np })
+    }
+
+    setSpinning(true); setResult(null); Sound.spin()
+    const idx = Math.floor(Math.random() * prizes.length)
+    const seg = 360 / prizes.length
+    setRot(r => r + 360 * 6 + (360 - idx * seg - seg / 2))
+
+    setTimeout(async () => {
+      setSpinning(false)
+      const newSpins = spins + 1
+      setSpins(newSpins)
+      const prize = prizes[idx]; setResult(prize)
+      prize.value > 0 ? Sound.win() : Sound.lose()
+
+      const fresh = user.id ? await db.getProfile(user.id) : null
+      const currentPts = fresh ? fresh.pts : (user.pts || 0)
+
+      const updates = {
+        wheel_spun_today: true,
+        last_spin_date: today,
+      }
+      if (prize.value > 0) {
+        updates.pts = currentPts + prize.value
+        setUser(u => ({ ...u, pts: updates.pts, wheel_spun_today: true }))
+      } else {
+        setUser(u => ({ ...u, wheel_spun_today: true }))
+      }
+      if (user.id) await db.updateProfile(user.id, updates)
+    }, 5000)
+  }
 
   // Lighter wheel colors
   const wheelColors = [
@@ -1708,30 +1758,68 @@ export default function App() {
   const CSS = getCSS(t);
 
   useEffect(() => {
-    // Try restore session
     const restore = async () => {
       try {
-        const { data: { session } } = await db.getSession();
+        // FIX: getUser() ist zuverlässiger als getSession() allein
+        const { data: { session } } = await supabase.auth.getSession()
         if (session?.user) {
-          const p = await db.getProfile(session.user.id);
-          if (p) { setUser(p); }
-          else {
-            // Profile missing but session exists - create fallback profile from session
-            console.warn('Session exists but profile missing, using session data');
-            setUser({ id: session.user.id, name: session.user.user_metadata?.name || session.user.email?.split('@')[0], email: session.user.email, pts: 0, level: 1, streak: 0, total_visits: 0, treat_count: 0, treat_goal: 8, wheel_spun_today: false, is_abo_member: false, is_admin: false });
+          // FIX: Mit Retry – löst "Profil nicht gefunden" nach Reload
+          const p = await db.getProfileWithRetry(session.user.id)
+          if (p) {
+            setUser(p)
+          } else {
+            // Letzter Fallback aus Session-Daten
+            setUser({
+              id: session.user.id,
+              name: session.user.user_metadata?.name || session.user.email?.split('@')[0],
+              email: session.user.email,
+              pts: 0, level: 1, streak: 0, total_visits: 0,
+              treat_count: 0, treat_goal: 8,
+              wheel_spun_today: false, is_abo_member: false, is_admin: false
+            })
           }
         }
-      } catch (e) { console.error('Session restore error:', e); }
-      setLoading(false);
-    };
-    restore();
+      } catch (e) { console.error('Session restore error:', e) }
+      setLoading(false)
+    }
+    restore()
 
-    // Listen for auth changes (login/logout)
+    // Auth-Änderungen abfangen
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
-      if (event === 'SIGNED_OUT') { setUser(null); }
-    });
-    return () => subscription?.unsubscribe();
-  }, []);
+      if (event === 'SIGNED_OUT') {
+        setUser(null)
+      }
+      if (event === 'SIGNED_IN' && session?.user) {
+        const p = await db.getProfileWithRetry(session.user.id)
+        if (p) setUser(p)
+      }
+      // Token-Refresh: Profil im Hintergrund aktualisieren
+      if (event === 'TOKEN_REFRESHED' && session?.user) {
+        const p = await db.getProfile(session.user.id)
+        if (p) setUser(prev => ({ ...prev, ...p }))
+      }
+    })
+
+    return () => subscription?.unsubscribe()
+  }, [])
+
+  // Realtime: sofort updaten wenn Admin etwas ändert (Punkte, Level, etc.)
+  useEffect(() => {
+    if (!user?.id) return
+    const channel = supabase
+      .channel('profile-live-' + user.id)
+      .on('postgres_changes', {
+        event: 'UPDATE',
+        schema: 'public',
+        table: 'profiles',
+        filter: `id=eq.${user.id}`
+      }, (payload) => {
+        setUser(prev => ({ ...prev, ...payload.new }))
+      })
+      .subscribe()
+    return () => supabase.removeChannel(channel)
+  }, [user?.id])
+
   // Realtime – sofort updaten wenn Admin Punkte/Level ändert
   useEffect(() => {
     if (!user?.id) return;

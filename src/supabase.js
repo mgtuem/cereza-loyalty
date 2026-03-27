@@ -142,4 +142,54 @@ export const db = {
     }
     return gift
   },
+
+  // Fun Facts (admin editable)
+  getFunFacts: async () => {
+    const { data } = await supabase.from('fun_facts').select('*').eq('active', true).order('id')
+    return data || []
+  },
+  addFunFact: async (text) => {
+    return supabase.from('fun_facts').insert({ text })
+  },
+  deleteFunFact: async (id) => {
+    return supabase.from('fun_facts').update({ active: false }).eq('id', id)
+  },
+
+  // Wheel Prizes (admin editable)
+  getWheelPrizes: async () => {
+    const { data } = await supabase.from('wheel_prizes').select('*').eq('active', true).order('id')
+    return data || []
+  },
+  updateWheelPrize: async (id, updates) => {
+    return supabase.from('wheel_prizes').update(updates).eq('id', id)
+  },
+  addWheelPrize: async (label, value, color) => {
+    return supabase.from('wheel_prizes').insert({ label, value, color })
+  },
+
+  // Visit Intentions
+  setVisitIntention: async (uid, date, status) => {
+    return supabase.from('visit_intentions').upsert({ user_id: uid, planned_date: date, status })
+  },
+  getVisitIntention: async (uid, date) => {
+    const { data } = await supabase.from('visit_intentions').select('*').eq('user_id', uid).eq('planned_date', date).single()
+    return data
+  },
+  getTodayVisitors: async () => {
+    const today = new Date().toISOString().split('T')[0]
+    const { data } = await supabase.from('visit_intentions').select('*, profile:user_id(name)').eq('planned_date', today).eq('status', 'planned')
+    return data || []
+  },
+
+  // Avatar upload
+  uploadAvatar: async (uid, file) => {
+    const ext = file.name.split('.').pop()
+    const path = `${uid}.${ext}`
+    const { error } = await supabase.storage.from('avatars').upload(path, file, { upsert: true })
+    if (error) { console.error('Upload error:', error); return null }
+    const { data } = supabase.storage.from('avatars').getPublicUrl(path)
+    const url = data.publicUrl + '?t=' + Date.now()
+    await db.updateProfile(uid, { avatar_url: url })
+    return url
+  },
 }

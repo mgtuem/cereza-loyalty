@@ -253,9 +253,27 @@ const HomeTab = ({ user, setUser, setTab }) => {
   const [fi,setFi] = useState(0);
   const [lb,setLb] = useState(MOCK_LB);
   const [missions,setMissions] = useState(MOCK_MISSIONS);
+  const [facts,setFacts] = useState(FUN_FACTS);
+  const [visitStatus,setVisitStatus] = useState(null); // null, planned, not
 
-  useEffect(()=>{ const t=setInterval(()=>setFi(i=>(i+1)%FUN_FACTS.length),5000); return()=>clearInterval(t); },[]);
-  useEffect(()=>{ db.getLeaderboard().then(d=>{if(d.length)setLb(d)}); db.getMissions().then(d=>{if(d.length)setMissions(d)}); },[]);
+  useEffect(()=>{ const t=setInterval(()=>setFi(i=>(i+1)%facts.length),5000); return()=>clearInterval(t); },[facts]);
+  useEffect(()=>{
+    db.getLeaderboard().then(d=>{if(d.length)setLb(d)});
+    db.getMissions().then(d=>{if(d.length)setMissions(d)});
+    db.getFunFacts().then(d=>{if(d.length)setFacts(d.map(f=>f.text))});
+    if(user.id){
+      const today=new Date().toISOString().split('T')[0];
+      db.getVisitIntention(user.id,today).then(d=>{if(d)setVisitStatus(d.status)}).catch(()=>{});
+    }
+  },[]);
+
+  const setVisit=async(status)=>{
+    setVisitStatus(status);
+    if(user.id){
+      const today=new Date().toISOString().split('T')[0];
+      await db.setVisitIntention(user.id,today,status);
+    }
+  };
 
   return (
     <div style={{ paddingBottom:"16px", background:C.beige, minHeight:"100%", minHeight:"100%" }}>
@@ -272,8 +290,21 @@ const HomeTab = ({ user, setUser, setTab }) => {
         <div style={{ fontSize:"52px", fontFamily:font.display, color:C.green, letterSpacing:"2px", fontWeight:"700", lineHeight:1 }}>cereza</div>
         {/* Fun Fact */}
         <div style={{ marginTop:"14px", background:C.white, borderRadius:"10px", padding:"10px 14px", border:`1px solid ${C.border}`, fontSize:"12px", color:C.textSub, fontFamily:font.ui }}>
-          {FUN_FACTS[fi]}
+          {facts[fi] || "..."}
         </div>
+        {/* Visit Intention */}
+        {visitStatus===null && (
+          <div style={{marginTop:"10px",background:C.white,borderRadius:"12px",padding:"12px 14px",border:`1px solid ${C.border}`,display:"flex",alignItems:"center",gap:"10px"}}>
+            <div style={{flex:1,fontSize:"13px",fontWeight:"600",color:C.text}}>Kommst du heute?</div>
+            <button onClick={()=>setVisit("planned")} style={{padding:"6px 14px",background:C.orange,border:"none",borderRadius:"8px",color:C.white,fontSize:"11px",fontWeight:"700",cursor:"pointer"}}>Ja</button>
+            <button onClick={()=>setVisit("cancelled")} style={{padding:"6px 14px",background:C.greyBg,border:"none",borderRadius:"8px",color:C.textLight,fontSize:"11px",fontWeight:"600",cursor:"pointer"}}>Nein</button>
+          </div>
+        )}
+        {visitStatus==="planned" && (
+          <div style={{marginTop:"10px",background:"rgba(76,175,80,0.1)",borderRadius:"12px",padding:"10px 14px",border:"1px solid rgba(76,175,80,0.2)",fontSize:"12px",color:C.green,fontWeight:"600",textAlign:"center"}}>
+            Bis später! Wir freuen uns auf dich ♥
+          </div>
+        )}
       </div>
 
       <div style={{ padding:"12px 14px", background:C.beige }}>
@@ -371,19 +402,17 @@ const WheelTab = ({ user, setUser }) => {
   const [spinning,setSpinning]=useState(false); const [rot,setRot]=useState(0); const [result,setResult]=useState(null);
   const [spins,setSpins]=useState(0); const [loading,setLoading]=useState(true);
   const [missions,setMissions]=useState(MOCK_MISSIONS);
+  const [prizes,setPrizes]=useState(WHEEL_PRIZES);
   const maxFreeSpins = 1; const maxPaidSpins = 2;
 
-  // Load fresh state from DB on mount
   useEffect(()=>{
     const init=async()=>{
       if(user.id){
         const fresh=await db.getProfile(user.id);
-        if(fresh){
-          setSpins(fresh.wheel_spun_today ? 1 : 0);
-          setUser(u=>({...u,...fresh}));
-        }
+        if(fresh){ setSpins(fresh.wheel_spun_today ? 1 : 0); setUser(u=>({...u,...fresh})); }
       } else { setSpins(user.wheel_spun_today ? 1 : 0); }
       db.getMissions().then(d=>{if(d.length)setMissions(d)});
+      db.getWheelPrizes().then(d=>{if(d.length)setPrizes(d.map(p=>({label:p.label,value:p.value,bg:p.color})))});
       setLoading(false);
     };
     init();
@@ -410,11 +439,11 @@ const WheelTab = ({ user, setUser }) => {
       setUser(u=>({...u, pts: np}));
       if(user.id) await db.updateProfile(user.id, { pts: np });
     }
-    const idx=Math.floor(Math.random()*WHEEL_PRIZES.length); const seg=360/WHEEL_PRIZES.length;
+    const idx=Math.floor(Math.random()*prizes.length); const seg=360/prizes.length;
     setRot(r=>r+360*6+(360-idx*seg-seg/2));
     setTimeout(async()=>{
       setSpinning(false); const newSpins = spins + 1; setSpins(newSpins);
-      const prize=WHEEL_PRIZES[idx]; setResult(prize);
+      const prize=prizes[idx]; setResult(prize);
       // Get fresh pts from DB before adding
       const freshProfile = user.id ? await db.getProfile(user.id) : null;
       const currentPts = freshProfile ? freshProfile.pts : (user.pts||0);
@@ -470,7 +499,7 @@ const WheelTab = ({ user, setUser }) => {
             <div style={{ position:"absolute",inset:0,borderRadius:"50%",border:`2px solid ${C.border}`,boxShadow:spinning?"0 0 20px rgba(226,74,40,0.3)":"0 0 8px rgba(0,0,0,0.06)",transition:"box-shadow 0.5s" }}/>
             <div style={{ position:"absolute",top:"-2px",left:"50%",transform:"translateX(-50%)",zIndex:3,width:0,height:0,borderLeft:"8px solid transparent",borderRight:"8px solid transparent",borderTop:`14px solid ${C.orange}` }}/>
             <svg width={sz} height={sz} viewBox={`0 0 ${sz} ${sz}`} style={{ transform:`rotate(${rot}deg)`,transition:spinning?"transform 5s cubic-bezier(0.15,0.6,0.15,1)":"none",display:"block" }}>
-              {WHEEL_PRIZES.map((p,i)=>{ const seg=360/WHEEL_PRIZES.length; const s=(i*seg-90)*Math.PI/180,e=((i+1)*seg-90)*Math.PI/180,mid=(s+e)/2;
+              {prizes.map((p,i)=>{ const seg=360/prizes.length; const s=(i*seg-90)*Math.PI/180,e=((i+1)*seg-90)*Math.PI/180,mid=(s+e)/2;
                 return(<g key={i}><path d={`M${cx},${cy} L${cx+r*Math.cos(s)},${cy+r*Math.sin(s)} A${r},${r} 0 0,1 ${cx+r*Math.cos(e)},${cy+r*Math.sin(e)} Z`} fill={wheelColors[i].bg} stroke={C.white} strokeWidth="2"/><text x={cx+(r*0.6)*Math.cos(mid)} y={cy+(r*0.6)*Math.sin(mid)} transform={`rotate(${i*seg+seg/2},${cx+(r*0.6)*Math.cos(mid)},${cy+(r*0.6)*Math.sin(mid)})`} textAnchor="middle" dominantBaseline="middle" fill={C.text} fontSize="10" fontWeight="700">{p.label}</text></g>);
               })}
               <circle cx={cx} cy={cy} r="28" fill={C.white} stroke={C.orange} strokeWidth="2"/>
@@ -798,7 +827,22 @@ const ProfileTab = ({ user, setUser, onLogout, theme }) => {
       {rd && <div style={{position:"fixed",inset:0,zIndex:999,background:"rgba(0,0,0,0.9)",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",animation:"scaleIn 0.3s"}}><div style={{fontSize:"40px",color:C.white}}>✓</div><div style={{color:C.white,fontSize:"18px",fontWeight:"700",marginTop:"10px"}}>Eingelöst!</div><div style={{color:"rgba(255,255,255,0.5)",fontSize:"11px",marginTop:"4px"}}>Zeige dies an der Kasse</div></div>}
       {showShare && <div style={{position:"fixed",top:"20px",left:"50%",transform:"translateX(-50%)",background:C.green,color:C.white,padding:"10px 20px",borderRadius:"10px",fontSize:"13px",fontWeight:"600",zIndex:999,animation:"fadeUp 0.3s"}}>Link kopiert!</div>}
       <div style={{ padding:"24px 20px", textAlign:"center" }}>
-        <div style={{ width:"64px",height:"64px",borderRadius:"50%",margin:"0 auto 10px",background:C.orange,display:"flex",alignItems:"center",justifyContent:"center",fontSize:"22px",color:C.white,fontFamily:font.display,fontWeight:"700",border:`3px solid ${C.beige}` }}>{(user.name||"U")[0].toUpperCase()}</div>
+        {/* Avatar with upload */}
+        <div style={{position:"relative",display:"inline-block",marginBottom:"10px"}}>
+          {user.avatar_url ? (
+            <img src={user.avatar_url} style={{width:"64px",height:"64px",borderRadius:"50%",objectFit:"cover",border:`3px solid ${C.beige}`}} />
+          ) : (
+            <div style={{ width:"64px",height:"64px",borderRadius:"50%",background:C.orange,display:"flex",alignItems:"center",justifyContent:"center",fontSize:"22px",color:C.white,fontFamily:font.display,fontWeight:"700",border:`3px solid ${C.beige}` }}>{(user.name||"U")[0].toUpperCase()}</div>
+          )}
+          <label style={{position:"absolute",bottom:"-2px",right:"-2px",width:"22px",height:"22px",borderRadius:"50%",background:C.card,border:`1px solid ${C.border}`,display:"flex",alignItems:"center",justifyContent:"center",cursor:"pointer",fontSize:"10px"}}>
+            +
+            <input type="file" accept="image/*" style={{display:"none"}} onChange={async(e)=>{
+              const file=e.target.files?.[0]; if(!file||!user.id)return;
+              const url=await db.uploadAvatar(user.id,file);
+              if(url)setUser(u=>({...u,avatar_url:url}));
+            }} />
+          </label>
+        </div>
         <div style={{ fontSize:"20px", fontFamily:font.display, color:C.text, fontWeight:"700" }}>@{user.name||"user"}</div>
         <div style={{ color:C.textLight, fontSize:"11px", marginTop:"3px" }}>{era.name} · Level {user.level||1}</div>
         {/* Share + Invite buttons */}
@@ -964,8 +1008,16 @@ const ProfileTab = ({ user, setUser, onLogout, theme }) => {
 // ─── Admin ──────────────────────────────────────────────────────
 const AdminPanel = ({ onClose }) => {
   const [tab,setTab]=useState("users"); const [users,setUsers]=useState([]); const [missions,setMissions]=useState([]); const [dishes,setDishes]=useState([]);
-  const tabs=[{id:"users",l:"user"},{id:"points",l:"punkte"},{id:"missions",l:"missionen"},{id:"glow",l:"glow"},{id:"dishes",l:"gerichte"},{id:"abo",l:"abos"}];
-  useEffect(()=>{db.getAllProfiles().then(d=>setUsers(d)); db.getMissions().then(d=>setMissions(d.length?d:MOCK_MISSIONS)); db.getDishes().then(d=>setDishes(d.length?d:MOCK_DISHES)); },[]);
+  const [facts,setFacts]=useState([]); const [prizes,setPrizes]=useState([]); const [newFact,setNewFact]=useState(""); const [visitors,setVisitors]=useState([]);
+  const tabs=[{id:"users",l:"user"},{id:"points",l:"punkte"},{id:"missions",l:"missionen"},{id:"glow",l:"glow"},{id:"dishes",l:"gerichte"},{id:"facts",l:"fakten"},{id:"prizes",l:"rad"},{id:"visits",l:"heute"},{id:"abo",l:"abos"}];
+  useEffect(()=>{
+    db.getAllProfiles().then(d=>setUsers(d));
+    db.getMissions().then(d=>setMissions(d.length?d:MOCK_MISSIONS));
+    db.getDishes().then(d=>setDishes(d.length?d:MOCK_DISHES));
+    db.getFunFacts().then(d=>setFacts(d));
+    db.getWheelPrizes().then(d=>setPrizes(d));
+    db.getTodayVisitors().then(d=>setVisitors(d));
+  },[]);
   const addPts=async(uid,amt)=>{ const u=users.find(x=>x.id===uid); if(!u)return; await db.updateProfile(uid,{pts:(u.pts||0)+amt}); setUsers(p=>p.map(x=>x.id===uid?{...x,pts:(x.pts||0)+amt}:x)); };
   return (
     <div style={{position:"fixed",inset:0,zIndex:9999,background:C.beige,overflow:"auto",fontFamily:font.ui}}>
@@ -993,6 +1045,32 @@ const AdminPanel = ({ onClose }) => {
         {tab==="missions"&&missions.map(m=><Card key={m.id} style={{marginBottom:"5px",padding:"10px",display:"flex",alignItems:"center",gap:"8px"}}><span style={{fontSize:"18px"}}>{m.icon}</span><div style={{flex:1}}><div style={{fontSize:"12px",fontWeight:"700"}}>{m.title}</div><div style={{fontSize:"9px",color:C.textLight}}>{m.description}</div></div><div style={{color:C.orange,fontSize:"11px",fontWeight:"700"}}>+{m.pts_reward}</div></Card>)}
         {tab==="glow"&&["montag 12:00–14:00","mittwoch 18:00–20:00","freitag 12:00–14:00"].map((d,i)=><Card key={i} style={{marginBottom:"5px",padding:"10px",display:"flex",justifyContent:"space-between",alignItems:"center"}}><div><div style={{fontWeight:"700",fontSize:"13px"}}>{d.split(" ")[0]}</div><div style={{color:C.textLight,fontSize:"11px"}}>{d.split(" ")[1]}</div></div><span style={{fontSize:"11px",color:C.orange,fontWeight:"700"}}>2x pts</span></Card>)}
         {tab==="dishes"&&dishes.map(d=><Card key={d.id} style={{marginBottom:"5px",padding:"10px",display:"flex",alignItems:"center",gap:"8px"}}><span style={{fontSize:"22px"}}>🍕</span><div style={{flex:1}}><div style={{fontWeight:"700",fontSize:"12px"}}>{d.name}</div><div style={{fontSize:"9px",color:C.textLight}}>{d.description}</div></div><div style={{background:C.orange,color:C.white,borderRadius:"8px",padding:"2px 7px",fontSize:"10px",fontWeight:"700"}}>♥ {d.votes}</div></Card>)}
+        {tab==="facts"&&(<>
+          <div style={{display:"flex",gap:"6px",marginBottom:"10px"}}>
+            <input value={newFact} onChange={e=>setNewFact(e.target.value)} placeholder="Neuer Fun Fact..." style={{flex:1,padding:"10px 12px",border:`1px solid ${C.border}`,borderRadius:"10px",fontSize:"12px",outline:"none",boxSizing:"border-box",fontFamily:font.ui}} />
+            <button onClick={async()=>{if(!newFact)return;await db.addFunFact(newFact);setNewFact("");db.getFunFacts().then(setFacts)}} style={{padding:"10px 14px",background:C.orange,border:"none",borderRadius:"10px",color:C.white,fontSize:"11px",fontWeight:"700",cursor:"pointer"}}>+</button>
+          </div>
+          {facts.map(f=><Card key={f.id} style={{marginBottom:"4px",padding:"10px 12px",display:"flex",alignItems:"center",gap:"8px"}}>
+            <div style={{flex:1,fontSize:"12px"}}>{f.text}</div>
+            <button onClick={async()=>{await db.deleteFunFact(f.id);db.getFunFacts().then(setFacts)}} style={{background:C.greyBg,border:"none",borderRadius:"6px",padding:"4px 8px",fontSize:"10px",color:C.textLight,cursor:"pointer"}}>X</button>
+          </Card>)}
+        </>)}
+        {tab==="prizes"&&(<>
+          <div style={{fontSize:"12px",color:C.textSub,marginBottom:"8px"}}>Glücksrad Preise bearbeiten</div>
+          {prizes.map(p=><Card key={p.id} style={{marginBottom:"4px",padding:"10px 12px",display:"flex",alignItems:"center",gap:"8px"}}>
+            <div style={{width:"20px",height:"20px",borderRadius:"4px",background:p.color}} />
+            <div style={{flex:1,fontSize:"12px",fontWeight:"600"}}>{p.label}</div>
+            <div style={{fontSize:"11px",color:C.textLight}}>{p.value} pts</div>
+          </Card>)}
+        </>)}
+        {tab==="visits"&&(<>
+          <div style={{fontSize:"12px",color:C.textSub,marginBottom:"8px"}}>Geplante Besuche heute ({visitors.length})</div>
+          {visitors.length===0&&<div style={{textAlign:"center",padding:"20px",color:C.textLight,fontSize:"12px"}}>Noch keine Anmeldungen</div>}
+          {visitors.map(v=><Card key={v.id} style={{marginBottom:"4px",padding:"10px 12px",display:"flex",alignItems:"center",gap:"8px"}}>
+            <div style={{flex:1,fontSize:"12px",fontWeight:"600"}}>@{v.profile?.name||"User"}</div>
+            <div style={{fontSize:"10px",color:C.green,fontWeight:"600"}}>Kommt heute</div>
+          </Card>)}
+        </>)}
         {tab==="abo"&&<Card><div style={{fontSize:"16px",fontFamily:font.display,color:C.green,marginBottom:"8px",fontWeight:"700"}}>matcha society</div>{[{l:"preis",v:"29,99€/mo"},{l:"members",v:"—"},{l:"zahlung",v:"stripe + paypal"}].map((r,i)=><div key={i} style={{display:"flex",justifyContent:"space-between",padding:"4px 0",borderBottom:i<2?`1px solid ${C.greyBg}`:"none",fontSize:"12px"}}><span style={{color:C.textLight}}>{r.l}</span><span style={{fontWeight:"700"}}>{r.v}</span></div>)}</Card>}
       </div>
     </div>

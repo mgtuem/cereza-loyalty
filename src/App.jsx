@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import supabase, { db } from "./supabase";
 import FamTab from "./FamTab";
+import { UserProfileCard, MissionQRScanner } from "./UserComponents";
 import { requestPushPermission, onForegroundMessage, sendPushToAll } from "./push";
 
 // ─── Themes ─────────────────────────────────────────────────────
@@ -195,6 +196,7 @@ const LevelUpOverlay = ({ level, onClose }) => {
   );
 };
 
+// ─── UserProfileCard + MissionQRScanner werden weiter unten eingefügt
 // ─── Auth Screen ──────────────────────────────────────────────────
 const AuthScreen = ({ onLogin }) => {
   const [isLogin,setIsLogin]=useState(true);
@@ -265,6 +267,33 @@ const AuthScreen = ({ onLogin }) => {
         </p>
       </div>
     </div>
+  );
+};
+
+// ─── Bestenliste Card – mit anklickbaren Profilen ────────────────
+const BestenlisteCard = ({ lb, user }) => {
+  const [selectedUserId, setSelectedUserId] = useState(null);
+  return (
+    <>
+      {selectedUserId && (
+        <UserProfileCard userId={selectedUserId} currentUser={user} C={C} font={font} onClose={()=>setSelectedUserId(null)}/>
+      )}
+      <Card style={{ marginTop:"6px" }}>
+        <div style={{ display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:"14px" }}>
+          <div style={{ fontSize:"14px",fontWeight:"700",color:C.text }}>Bestenliste</div>
+          <div style={{ fontSize:"10px",fontWeight:"700",color:C.orange,background:`${C.orange}18`,padding:"3px 10px",borderRadius:"8px" }}>Live</div>
+        </div>
+        {lb.slice(0,5).map((p,i)=>(
+          <div key={i} onClick={()=>{ if(p.id)setSelectedUserId(p.id); }} style={{ display:"flex",alignItems:"center",gap:"12px",padding:"9px 0",borderBottom:i<4?`1px solid ${C.greyBg}`:"none",cursor:p.id?"pointer":"default" }}>
+            <div style={{ width:"24px",fontSize:"15px",fontWeight:"800",color:i<3?C.orange:C.textLight,textAlign:"center" }}>{i+1}</div>
+            <div style={{ flex:1,fontSize:"14px",fontWeight:p.name===user.name?"700":"500",color:C.text }}>
+              {p.name}{p.name===user.name&&<span style={{ fontSize:"10px",color:C.orange,marginLeft:"4px" }}>(Du)</span>}
+            </div>
+            <div style={{ fontSize:"13px",fontWeight:"700",color:C.green }}>{p.pts} XP</div>
+          </div>
+        ))}
+      </Card>
+    </>
   );
 };
 
@@ -433,21 +462,7 @@ const HomeTab = ({ user, setUser, setTab }) => {
         )}
 
         {/* Bestenliste */}
-        <Card style={{ marginTop:"6px" }}>
-          <div style={{ display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:"14px" }}>
-            <div style={{ fontSize:"14px",fontWeight:"700",color:C.text }}>Bestenliste</div>
-            <div style={{ fontSize:"10px",fontWeight:"700",color:C.orange,background:`${C.orange}18`,padding:"3px 10px",borderRadius:"8px" }}>Live</div>
-          </div>
-          {lb.slice(0,5).map((p,i)=>(
-            <div key={i} style={{ display:"flex",alignItems:"center",gap:"12px",padding:"9px 0",borderBottom:i<4?`1px solid ${C.greyBg}`:"none" }}>
-              <div style={{ width:"24px",fontSize:"15px",fontWeight:"800",color:i<3?C.orange:C.textLight,textAlign:"center" }}>{i+1}</div>
-              <div style={{ flex:1,fontSize:"14px",fontWeight:p.name===user.name?"700":"500",color:C.text }}>
-                {p.name}{p.name===user.name&&<span style={{ fontSize:"10px",color:C.orange,marginLeft:"4px" }}>(Du)</span>}
-              </div>
-              <div style={{ fontSize:"13px",fontWeight:"700",color:C.green }}>{p.pts} XP</div>
-            </div>
-          ))}
-        </Card>
+        <BestenlisteCard lb={lb} user={user} C={C} font={font}/>
 
         {/* Matcha Abo */}
         {!user.is_abo_member&&(
@@ -1042,7 +1057,16 @@ const ProfileTab = ({ user, setUser, onLogout, theme }) => {
         </div>
         <div style={{ fontSize:"20px",fontFamily:font.display,fontWeight:"700",color:C.text }}>@{user.name||"user"}</div>
         <div style={{ fontSize:"12px",color:C.textLight,marginTop:"2px" }}>{era.name} · Level {user.level||1}</div>
-        <div style={{ display:"flex",gap:"8px",justifyContent:"center",marginTop:"14px" }}>
+        {/* Mein QR-Code – für Mission-Stempelung durch Admin */}
+        <div onClick={()=>{
+          const code=`cereza:${user.id}`;
+          if(navigator.share)navigator.share({title:"Mein Cereza QR",text:code});
+          else navigator.clipboard?.writeText(code).then(()=>alert("Code kopiert: "+code));
+        }} style={{ display:"inline-flex",alignItems:"center",gap:"6px",marginTop:"8px",padding:"6px 14px",background:`${C.orange}18`,border:`1px solid ${C.orange}33`,borderRadius:"20px",cursor:"pointer" }}>
+          <span style={{ fontSize:"14px" }}>▣</span>
+          <span style={{ fontSize:"12px",fontWeight:"600",color:C.orange }}>Mein QR-Code</span>
+        </div>
+        <div style={{ display:"flex",gap:"8px",justifyContent:"center",marginTop:"12px" }}>
           <button onClick={shareApp} style={{ padding:"9px 18px",background:C.card,border:`1px solid ${C.border}`,borderRadius:"20px",fontSize:"13px",fontWeight:"600",color:C.text,display:"flex",alignItems:"center",gap:"6px" }}>{I.share} Teilen</button>
           <button onClick={shareApp} style={{ padding:"9px 18px",background:C.orange,borderRadius:"20px",fontSize:"13px",fontWeight:"600",color:C.white }}>+ Einladen</button>
         </div>
@@ -1289,6 +1313,86 @@ const AdminLogin = ({ onLogin, onBack }) => {
 };
 
 const AdminPanel = ({ onClose }) => {
+  // ── Inline QR Mission Scanner ──────────────────────────────────
+  const QRMissionInline = () => {
+    const [qrMissions,setQrMissions]=useState([]);
+    const [qrSelected,setQrSelected]=useState(null);
+    const [qrScanning,setQrScanning]=useState(false);
+    const [qrScanned,setQrScanned]=useState(null);
+    const [qrResult,setQrResult]=useState(null);
+    const [qrStamping,setQrStamping]=useState(false);
+    const qrRef=useRef(null);
+    useEffect(()=>{db.getMissions().then(setQrMissions);return()=>{if(qrRef.current)try{qrRef.current.stop()}catch(e){}}},[]);
+    const startQR=async()=>{
+      setQrScanning(true);setQrResult(null);setQrScanned(null);
+      try{
+        const{Html5Qrcode}=await import("html5-qrcode");
+        const s=new Html5Qrcode("admin-mission-qr");qrRef.current=s;
+        await s.start({facingMode:"environment"},{fps:10,qrbox:{width:200,height:200}},async(text)=>{
+          await s.stop();setQrScanning(false);
+          let uid=text.trim();if(text.startsWith("cereza:"))uid=text.split(":")[1];
+          const{data:p}=await supabase.from('profiles').select('id,name').eq('id',uid).single();
+          if(p)setQrScanned({id:p.id,name:p.name});
+          else setQrResult({ok:false,msg:"User nicht gefunden"});
+        },()=>{});
+      }catch(e){setQrScanning(false);setQrResult({ok:false,msg:"Kamera-Fehler"});}
+    };
+    const doQrStamp=async()=>{
+      if(!qrScanned||!qrSelected||qrStamping)return;
+      setQrStamping(true);
+      const{data,error}=await supabase.rpc('stamp_mission',{p_user_id:qrScanned.id,p_mission_id:qrSelected.id});
+      if(error||!data?.ok)setQrResult({ok:false,msg:data?.error||error?.message||"Fehler"});
+      else{setQrResult({ok:true,msg:data.completed?`Mission abgeschlossen! +${qrSelected.pts_reward} XP`:`Stempel ${data.progress}/${data.goal} ✓`});setQrScanned(null);}
+      setQrStamping(false);
+    };
+    return(
+      <div>
+        <div style={{fontSize:"12px",color:"#999",marginBottom:"10px",lineHeight:1.5}}>User zeigt QR-Code aus Profil → scannen → Mission stempeln</div>
+        {/* Mission wählen */}
+        <div style={{marginBottom:"14px"}}>
+          <div style={{fontSize:"11px",fontWeight:"700",color:"#999",marginBottom:"8px",letterSpacing:"0.5px"}}>MISSION WÄHLEN</div>
+          {qrMissions.map(m=>(
+            <button key={m.id} onClick={()=>{setQrSelected(m);setQrScanned(null);setQrResult(null);}} style={{width:"100%",padding:"11px 14px",background:qrSelected?.id===m.id?"#e24a28":"#f5f5f5",border:qrSelected?.id===m.id?"none":"1px solid #e8e8e8",borderRadius:"12px",color:qrSelected?.id===m.id?"#fff":"#111",textAlign:"left",display:"flex",alignItems:"center",gap:"10px",marginBottom:"6px",cursor:"pointer",transition:"all 0.2s"}}>
+              <span style={{fontSize:"16px"}}>{m.icon}</span>
+              <div style={{flex:1}}><div style={{fontSize:"13px",fontWeight:"700"}}>{m.title}</div><div style={{fontSize:"11px",opacity:0.6}}>{m.goal}× Ziel · +{m.pts_reward} XP</div></div>
+              {qrSelected?.id===m.id&&<span>✓</span>}
+            </button>
+          ))}
+        </div>
+        {/* Scanner */}
+        {qrSelected&&!qrScanned&&(
+          <div style={{marginBottom:"14px"}}>
+            <div id="admin-mission-qr" style={{width:"100%",maxWidth:"260px",height:"200px",borderRadius:"14px",overflow:"hidden",background:"#000",border:`2px solid ${qrScanning?"#e24a28":"#e8e8e8"}`,margin:"0 auto 10px",display:"block"}}/>
+            {!qrScanning
+              ?<button onClick={startQR} style={{width:"100%",padding:"12px",background:"#e24a28",border:"none",borderRadius:"12px",color:"#fff",fontSize:"14px",fontWeight:"700"}}>▣ QR-Code scannen</button>
+              :<div style={{textAlign:"center",color:"#999",fontSize:"13px"}}>Scanne den Code des Users...</div>
+            }
+          </div>
+        )}
+        {/* Bestätigen */}
+        {qrSelected&&qrScanned&&!qrResult&&(
+          <div style={{padding:"16px",background:"#f9f9f9",borderRadius:"14px",border:"1px solid #e8e8e8",marginBottom:"14px"}}>
+            <div style={{fontSize:"13px",color:"#999",marginBottom:"6px"}}>User gescannt:</div>
+            <div style={{fontSize:"17px",fontWeight:"700",color:"#111",marginBottom:"4px"}}>@{qrScanned.name}</div>
+            <div style={{fontSize:"12px",color:"#666",marginBottom:"14px"}}>{qrSelected.icon} {qrSelected.title}</div>
+            <div style={{display:"flex",gap:"8px"}}>
+              <button onClick={doQrStamp} disabled={qrStamping} style={{flex:1,padding:"12px",background:"#e24a28",border:"none",borderRadius:"10px",color:"#fff",fontSize:"14px",fontWeight:"700",opacity:qrStamping?0.7:1}}>{qrStamping?"...":"✓ Stempel"}</button>
+              <button onClick={()=>setQrScanned(null)} style={{padding:"12px 14px",background:"#f0f0f0",border:"1px solid #e8e8e8",borderRadius:"10px",color:"#555",fontSize:"13px"}}>↩</button>
+            </div>
+          </div>
+        )}
+        {/* Ergebnis */}
+        {qrResult&&(
+          <div style={{padding:"16px",background:qrResult.ok?"#f0fdf4":"#fff5f5",borderRadius:"14px",border:`1px solid ${qrResult.ok?"#bbf7d0":"#fecaca"}`,textAlign:"center",marginBottom:"14px"}}>
+            <div style={{fontSize:"24px",marginBottom:"6px"}}>{qrResult.ok?"✅":"❌"}</div>
+            <div style={{fontSize:"15px",fontWeight:"700",color:qrResult.ok?"#16a34a":"#dc2626"}}>{qrResult.msg}</div>
+            <button onClick={()=>{setQrResult(null);setQrScanned(null);}} style={{marginTop:"10px",padding:"8px 20px",background:"#f0f0f0",border:"none",borderRadius:"20px",color:"#555",fontSize:"13px"}}>Weiter</button>
+          </div>
+        )}
+      </div>
+    );
+  };
+
   const[tab,setTab]=useState("stats");
   const[users,setUsers]=useState([]);
   const[missions,setMissions]=useState([]);
@@ -1366,6 +1470,7 @@ const AdminPanel = ({ onClose }) => {
 
   const TABS=[
     {id:"stats",l:"Stats"},{id:"users",l:"User"},{id:"redemptions",l:"Kasse"},
+    {id:"qrscan",l:"QR-Scan"},
     {id:"shop",l:"Shop"},{id:"missions",l:"Missionen"},{id:"dishes",l:"Gerichte"},
     {id:"glow",l:"Glow"},{id:"prizes",l:"Rad"},{id:"facts",l:"Fakten"},
     {id:"vibes",l:"Vibes"},{id:"visits",l:"Heute"},{id:"push",l:"Push"},
@@ -1477,6 +1582,13 @@ const AdminPanel = ({ onClose }) => {
       {/* Content */}
       <div style={{ flex:1,overflowY:"auto",padding:"12px",WebkitOverflowScrolling:"touch" }}>
         {loading&&<div style={{ textAlign:"center",padding:"40px",color:"#999" }}>Wird geladen...</div>}
+
+        {!loading&&tab==="qrscan"&&(
+          <div>
+            <div style={{fontSize:"16px",fontWeight:"700",color:"#111",marginBottom:"4px"}}>Mission QR-Scanner</div>
+            <QRMissionInline/>
+          </div>
+        )}
 
         {!loading&&tab==="stats"&&(
           <div>
@@ -1675,37 +1787,32 @@ export default function App() {
   const CSS=getCSS(t);
 
   useEffect(()=>{
-    // Hard timeout – nach 4 Sekunden immer setLoading(false) egal was
-    const hardTimeout = setTimeout(()=>{ setLoading(false); }, 4000);
+    // Absoluter Fallback nach 5s – verhindert ewiges Laden
+    const fallback = setTimeout(()=>setLoading(false), 5000);
 
-    const restore=async()=>{
-      try{
-        // getSession mit eigenem Timeout von 3 Sekunden
-        const sessionPromise = supabase.auth.getSession();
-        const timeoutPromise = new Promise((_,rej)=>setTimeout(()=>rej(new Error('timeout')),3000));
-        const{data:{session}} = await Promise.race([sessionPromise, timeoutPromise]).catch(()=>({data:{session:null}}));
-
-        if(session?.user){
-          // Profil mit max 2 Versuchen laden
+    // onAuthStateChange ist zuverlässiger als getSession nach PWA-Reload
+    const{data:{subscription}}=supabase.auth.onAuthStateChange(async(event,session)=>{
+      if(event==='SIGNED_OUT'||event==='USER_DELETED'){
+        setUser(null);setAdminMode(false);setLoading(false);clearTimeout(fallback);
+      }
+      if((event==='SIGNED_IN'||event==='INITIAL_SESSION'||event==='TOKEN_REFRESHED')&&session?.user){
+        try{
           let p=null;
-          for(let i=0;i<2;i++){
-            try{ p=await Promise.race([db.getProfile(session.user.id), new Promise((_,rej)=>setTimeout(()=>rej(new Error('timeout')),2000))]); }catch(e){}
+          for(let i=0;i<3;i++){
+            try{ p=await Promise.race([db.getProfile(session.user.id),new Promise((_,rej)=>setTimeout(()=>rej(),1500))]); }catch(e){}
             if(p)break;
-            await new Promise(r=>setTimeout(r,500));
+            if(i<2)await new Promise(r=>setTimeout(r,400));
           }
           if(p)setUser(p);
           else setUser({id:session.user.id,name:session.user.user_metadata?.name||session.user.email?.split('@')[0],email:session.user.email,pts:0,level:1,streak:0,total_visits:0,treat_count:0,treat_goal:8,wheel_spun_today:false,is_abo_member:false,is_admin:false});
-        }
-      }catch(e){console.error('Session restore:',e);}
-      clearTimeout(hardTimeout);
-      setLoading(false);
-    };
-    restore();
-    const{data:{subscription}}=supabase.auth.onAuthStateChange(async(event,session)=>{
-      if(event==='SIGNED_OUT'){setUser(null);setAdminMode(false);}
-      if(event==='SIGNED_IN'&&session?.user){let p=null;for(let i=0;i<4;i++){p=await db.getProfile(session.user.id);if(p)break;await new Promise(r=>setTimeout(r,500));}if(p)setUser(p);}
+        }catch(e){console.error('Profile load:',e);}
+        setLoading(false);clearTimeout(fallback);
+      }
+      if(event==='INITIAL_SESSION'&&!session){
+        setLoading(false);clearTimeout(fallback);
+      }
     });
-    return()=>subscription?.unsubscribe();
+    return()=>{subscription?.unsubscribe();clearTimeout(fallback);};
   },[]);
 
   useEffect(()=>{

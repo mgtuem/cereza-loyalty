@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from "react";
 import supabase, { db } from "./supabase";
+import { requestPushPermission, onForegroundMessage, sendPushToAll, sendPushToUser } from "./push";
 
 // ─── Theme System ───────────────────────────────────────────────
 const themes = {
@@ -132,10 +133,12 @@ const MOCK_LB = [
 const getCSS = (t) => `
   @import url('https://fonts.googleapis.com/css2?family=Source+Sans+Pro:wght@400;600;700&family=Playfair+Display:wght@400;700;900&display=swap');
   *,*::before,*::after{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
-  html,body,#root{height:100%;width:100%;overflow:hidden;position:fixed;inset:0;background:${t.bg};overscroll-behavior:none;user-select:none;-webkit-user-select:none;transition:background 0.3s}
+  html,body,#root{height:100%;width:100%;overflow:hidden;position:fixed;inset:0;background:${t.bg};overscroll-behavior:none;user-select:none;-webkit-user-select:none;transition:background 0.3s;-webkit-font-smoothing:antialiased;-moz-osx-font-smoothing:grayscale}
   input,textarea{user-select:text;-webkit-user-select:text}
   input::placeholder{color:${t.textLight}}
   ::-webkit-scrollbar{display:none}
+  button{-webkit-appearance:none;appearance:none}
+  button:active{transform:scale(0.97);opacity:0.85}
   @keyframes fadeUp{from{opacity:0;transform:translateY(14px)}to{opacity:1;transform:translateY(0)}}
   @keyframes fadeIn{from{opacity:0}to{opacity:1}}
   @keyframes scaleIn{from{transform:scale(0.7);opacity:0}to{transform:scale(1);opacity:1}}
@@ -152,6 +155,31 @@ const Card = ({ children, style, onClick, t: thm }) => {
 
 // Default CSS for components outside theme context
 const defaultCSS = getCSS(themes.light);
+
+// ─── Sound System (Web Audio API) ───────────────────────────────
+const Sound = {
+  ctx: null,
+  init() { if (!this.ctx) this.ctx = new (window.AudioContext || window.webkitAudioContext)(); return this.ctx; },
+  play(freq, duration, type = "sine", vol = 0.15) {
+    try {
+      const c = this.init(); const o = c.createOscillator(); const g = c.createGain();
+      o.type = type; o.frequency.value = freq;
+      g.gain.setValueAtTime(vol, c.currentTime);
+      g.gain.exponentialRampToValueAtTime(0.001, c.currentTime + duration);
+      o.connect(g); g.connect(c.destination);
+      o.start(c.currentTime); o.stop(c.currentTime + duration);
+    } catch(e) {}
+  },
+  spin() { this.play(440, 0.08); setTimeout(()=>this.play(550, 0.08), 80); setTimeout(()=>this.play(660, 0.08), 160); },
+  win() { [523,659,784,1047].forEach((f,i) => setTimeout(()=>this.play(f, 0.2, "sine", 0.12), i*120)); },
+  lose() { this.play(300, 0.3, "triangle", 0.1); setTimeout(()=>this.play(250, 0.4, "triangle", 0.08), 200); },
+  levelUp() { [523,659,784,880,1047].forEach((f,i) => setTimeout(()=>this.play(f, 0.25, "sine", 0.1), i*150)); },
+  scan() { this.play(880, 0.1); setTimeout(()=>this.play(1100, 0.15), 100); },
+  redeem() { this.play(660, 0.15); setTimeout(()=>this.play(880, 0.2), 150); },
+  tap() { this.play(800, 0.05, "sine", 0.06); },
+  vote() { this.play(500, 0.1); setTimeout(()=>this.play(700, 0.12), 80); },
+  gift() { [660,784,880,1047].forEach((f,i) => setTimeout(()=>this.play(f, 0.15, "sine", 0.08), i*100)); },
+};
 
 // ─── Auth ───────────────────────────────────────────────────────
 const AuthScreen = ({ onLogin }) => {
@@ -432,7 +460,7 @@ const WheelTab = ({ user, setUser }) => {
       if(fresh && fresh.wheel_spun_today && spins < 1){ setSpins(1); return; }
     }
     if(needsPay && (user.pts||0) < 100) { return; }
-    setSpinning(true); setResult(null);
+    setSpinning(true); setResult(null); Sound.spin();
     // Deduct 100 pts for 2nd spin
     if(needsPay) {
       const freshProfile = user.id ? await db.getProfile(user.id) : null;
@@ -446,7 +474,7 @@ const WheelTab = ({ user, setUser }) => {
     setRot(r=>r+360*6+(360-idx*seg-seg/2));
     setTimeout(async()=>{
       setSpinning(false); const newSpins = spins + 1; setSpins(newSpins);
-      const prize=prizes[idx]; setResult(prize);
+      const prize=prizes[idx]; setResult(prize); prize.value>0?Sound.win():Sound.lose();
       // Get fresh pts from DB before adding
       const freshProfile = user.id ? await db.getProfile(user.id) : null;
       const currentPts = freshProfile ? freshProfile.pts : (user.pts||0);
@@ -526,7 +554,7 @@ const WheelTab = ({ user, setUser }) => {
 const ScanTab = ({ user, setUser }) => {
   const [scanning,setScanning]=useState(false); const [done,setDone]=useState(false); const [pts,setPts]=useState(0); const scannerRef=useRef(null);
   const awardPts = async(p) => {
-    setPts(p);
+    setPts(p); Sound.scan();
     // Always get fresh data from DB
     const fresh = user.id ? await db.getProfile(user.id) : null;
     const currentPts = fresh ? fresh.pts : (user.pts||0);
@@ -595,6 +623,7 @@ const VoteTab = ({ user }) => {
     init();
   },[]);
   const swipe=async d=>{
+    Sound.vote();
     setDir(d);
     if(d==="right"){
       setDishes(p=>p.map((x,i)=>i===idx?{...x,votes:x.votes+1}:x));
@@ -656,7 +685,7 @@ const ScoreTab = ({ user, setUser }) => {
     if((user.pts||0)<item.cost||(user.level||1)<item.min_level)return;
     const np=(user.pts||0)-item.cost; setUser(u=>({...u,pts:np}));
     if(user.id){ await db.updateProfile(user.id,{pts:np}); await supabase.from("redemptions").insert({user_id:user.id,item_id:item.id}); }
-    setRd(item); setTimeout(()=>setRd(null),2500);
+    Sound.redeem(); setRd(item); setTimeout(()=>setRd(null),2500);
   };
   return (
     <div style={{ background:C.beige, paddingBottom:"16px", background:C.beige, minHeight:"100%" }}>
@@ -699,7 +728,7 @@ const ProfileTab = ({ user, setUser, onLogout, theme }) => {
       await db.updateProfile(user.id, {pts:np});
       await supabase.from("redemptions").insert({user_id:user.id, item_id:item.id});
     }
-    setRd(item); setTimeout(()=>setRd(null),2500);
+    Sound.redeem(); setRd(item); setTimeout(()=>setRd(null),2500);
   };
   const canvasRef = useRef(null);
   const [socialTab, setSocialTab] = useState("score"); // score | friends | gifts
@@ -801,7 +830,7 @@ const ProfileTab = ({ user, setUser, onLogout, theme }) => {
     const fresh = user.id ? await db.getProfile(user.id) : null;
     const currentPts = fresh ? fresh.pts : (user.pts||0);
     if(currentPts < giftAmount) return;
-    await db.sendGift(user.id, giftTarget.id, "pts", giftAmount, null, giftMsg);
+    Sound.gift(); await db.sendGift(user.id, giftTarget.id, "pts", giftAmount, null, giftMsg);
     await db.updateProfile(user.id, { pts: currentPts - giftAmount });
     setUser(u=>({...u, pts: currentPts - giftAmount}));
     setGiftTarget(null); setGiftAmount(50); setGiftMsg("");
@@ -1012,7 +1041,8 @@ const ProfileTab = ({ user, setUser, onLogout, theme }) => {
 const AdminPanel = ({ onClose }) => {
   const [tab,setTab]=useState("users"); const [users,setUsers]=useState([]); const [missions,setMissions]=useState([]); const [dishes,setDishes]=useState([]);
   const [facts,setFacts]=useState([]); const [prizes,setPrizes]=useState([]); const [newFact,setNewFact]=useState(""); const [visitors,setVisitors]=useState([]);
-  const tabs=[{id:"users",l:"user"},{id:"points",l:"punkte"},{id:"missions",l:"missionen"},{id:"glow",l:"glow"},{id:"dishes",l:"gerichte"},{id:"facts",l:"fakten"},{id:"prizes",l:"rad"},{id:"visits",l:"heute"},{id:"abo",l:"abos"}];
+  const [pushTitle,setPushTitle]=useState(""); const [pushBody,setPushBody]=useState(""); const [pushSent,setPushSent]=useState(false);
+  const tabs=[{id:"users",l:"user"},{id:"points",l:"punkte"},{id:"missions",l:"missionen"},{id:"glow",l:"glow"},{id:"dishes",l:"gerichte"},{id:"facts",l:"fakten"},{id:"prizes",l:"rad"},{id:"visits",l:"heute"},{id:"push",l:"push"},{id:"abo",l:"abos"}];
   useEffect(()=>{
     db.getAllProfiles().then(d=>setUsers(d));
     db.getMissions().then(d=>setMissions(d.length?d:MOCK_MISSIONS));
@@ -1073,6 +1103,33 @@ const AdminPanel = ({ onClose }) => {
             <div style={{flex:1,fontSize:"12px",fontWeight:"600"}}>@{v.profile?.name||"User"}</div>
             <div style={{fontSize:"10px",color:C.green,fontWeight:"600"}}>Kommt heute</div>
           </Card>)}
+        </>)}
+        {tab==="push"&&(<>
+          <div style={{fontSize:"12px",color:C.textSub,marginBottom:"10px"}}>Push Notification an alle User senden</div>
+          <input value={pushTitle} onChange={e=>setPushTitle(e.target.value)} placeholder="Titel (z.B. Glow Hour startet!)" style={{width:"100%",padding:"10px 12px",border:`1px solid ${C.border}`,borderRadius:"10px",fontSize:"13px",marginBottom:"6px",outline:"none",boxSizing:"border-box",fontFamily:font.ui,background:C.card,color:C.text}} />
+          <input value={pushBody} onChange={e=>setPushBody(e.target.value)} placeholder="Nachricht (z.B. Doppelte Punkte bis 14 Uhr!)" style={{width:"100%",padding:"10px 12px",border:`1px solid ${C.border}`,borderRadius:"10px",fontSize:"13px",marginBottom:"10px",outline:"none",boxSizing:"border-box",fontFamily:font.ui,background:C.card,color:C.text}} />
+          <button onClick={async()=>{
+            if(!pushTitle)return;
+            const count=await sendPushToAll(pushTitle,pushBody);
+            await supabase.from("admin_notifications").insert({title:pushTitle,body:pushBody,sent_to:"all"});
+            setPushSent(true);setPushTitle("");setPushBody("");
+            setTimeout(()=>setPushSent(false),3000);
+          }} style={{width:"100%",padding:"12px",background:C.orange,border:"none",borderRadius:"10px",color:C.white,fontSize:"13px",fontWeight:"700",cursor:"pointer",fontFamily:font.ui}}>
+            An alle senden
+          </button>
+          {pushSent&&<div style={{textAlign:"center",padding:"10px",color:C.green,fontSize:"12px",fontWeight:"600",marginTop:"8px"}}>Gesendet!</div>}
+          <div style={{fontSize:"11px",color:C.textSub,marginTop:"16px",marginBottom:"8px"}}>Schnell-Nachrichten</div>
+          {[
+            {t:"Glow Hour startet!",b:"Doppelte Punkte für die nächsten 2 Stunden!"},
+            {t:"Neue Missionen verfügbar",b:"Schau dir die Challenges dieser Woche an!"},
+            {t:"Glücksrad wartet!",b:"Du hast heute noch nicht gedreht."},
+            {t:"Neues Gericht zum Voten",b:"Swipe jetzt in Cinder!"},
+          ].map((q,i)=>(
+            <button key={i} onClick={async()=>{await sendPushToAll(q.t,q.b);await supabase.from("admin_notifications").insert({title:q.t,body:q.b,sent_to:"all"});setPushSent(true);setTimeout(()=>setPushSent(false),2000)}} style={{width:"100%",padding:"10px 12px",background:C.card,border:`1px solid ${C.border}`,borderRadius:"10px",marginBottom:"4px",textAlign:"left",cursor:"pointer",fontFamily:font.ui}}>
+              <div style={{fontSize:"12px",fontWeight:"600",color:C.text}}>{q.t}</div>
+              <div style={{fontSize:"10px",color:C.textLight}}>{q.b}</div>
+            </button>
+          ))}
         </>)}
         {tab==="abo"&&<Card><div style={{fontSize:"16px",fontFamily:font.display,color:C.green,marginBottom:"8px",fontWeight:"700"}}>matcha society</div>{[{l:"preis",v:"29,99€/mo"},{l:"members",v:"—"},{l:"zahlung",v:"stripe + paypal"}].map((r,i)=><div key={i} style={{display:"flex",justifyContent:"space-between",padding:"4px 0",borderBottom:i<2?`1px solid ${C.greyBg}`:"none",fontSize:"12px"}}><span style={{color:C.textLight}}>{r.l}</span><span style={{fontWeight:"700"}}>{r.v}</span></div>)}</Card>}
       </div>
@@ -1156,10 +1213,23 @@ export default function App() {
     return () => subscription?.unsubscribe();
   },[]);
 
+  const [toast, setToast] = useState(null);
+
   useEffect(()=>{
     if(!user)return; const ne=[...ERAS].reverse().find(e=>(user.pts||0)>=e.ptsNeeded);
-    if(ne&&ne.level>(user.level||1)){ setUser(u=>({...u,level:ne.level})); if(user.id) db.updateProfile(user.id,{level:ne.level}); setShowLevelUp(ne.level); }
+    if(ne&&ne.level>(user.level||1)){ setUser(u=>({...u,level:ne.level})); if(user.id) db.updateProfile(user.id,{level:ne.level}); setShowLevelUp(ne.level); Sound.levelUp(); }
   },[user?.pts]);
+
+  // Request push permission when user logs in
+  useEffect(()=>{
+    if(!user?.id) return;
+    requestPushPermission(user.id).catch(()=>{});
+    const unsub = onForegroundMessage((payload)=>{
+      const {title,body} = payload.notification || {};
+      if(title) { setToast({title,body}); setTimeout(()=>setToast(null),4000); Sound.tap(); }
+    });
+    return ()=>{ if(typeof unsub==='function') unsub(); };
+  },[user?.id]);
 
   if(loading) return <div style={{position:"fixed",inset:0,background:t.bg,display:"flex",alignItems:"center",justifyContent:"center"}}><style>{CSS}</style><div style={{textAlign:"center"}}><div style={{fontSize:"42px",fontFamily:font.display,color:t.logoColor,fontWeight:"700"}}>cereza</div><div style={{fontSize:"10px",color:t.textLight,letterSpacing:"3px",marginTop:"6px"}}>loading...</div></div></div>;
   if(adminMode==="login") return <AdminLogin onLogin={p=>{setAdminMode("panel")}} onBack={()=>setAdminMode(false)} />;
@@ -1172,6 +1242,10 @@ export default function App() {
     <div style={{position:"fixed",inset:0,maxWidth:"430px",margin:"0 auto",fontFamily:font.ui,background:t.bg,display:"flex",flexDirection:"column",overflow:"hidden",transition:"background 0.3s"}}>
       <style>{CSS}</style>
       {showLevelUp && <LevelUpOverlay level={showLevelUp} onClose={()=>setShowLevelUp(null)} />}
+      {toast && <div style={{position:"fixed",top:"12px",left:"50%",transform:"translateX(-50%)",background:t.card,border:`1px solid ${t.border}`,borderRadius:"14px",padding:"12px 18px",zIndex:9998,boxShadow:"0 8px 24px rgba(0,0,0,0.15)",maxWidth:"340px",width:"90%",animation:"fadeUp 0.3s",display:"flex",gap:"10px",alignItems:"center"}}>
+        <div style={{width:"8px",height:"8px",borderRadius:"50%",background:t.accent,flexShrink:0}} />
+        <div><div style={{fontSize:"13px",fontWeight:"700",color:t.text}}>{toast.title}</div>{toast.body&&<div style={{fontSize:"11px",color:t.textLight,marginTop:"2px"}}>{toast.body}</div>}</div>
+      </div>}
       <div style={{flex:1,overflowY:"auto",overflowX:"hidden",WebkitOverflowScrolling:"touch",overscrollBehavior:"contain"}}>
         {tab==="home"&&<HomeTab user={user} setUser={setUser} setTab={setTab}/>}
         {tab==="missions"&&<WheelTab user={user} setUser={setUser}/>}

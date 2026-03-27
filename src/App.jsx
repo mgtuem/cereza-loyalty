@@ -68,7 +68,10 @@ const useTheme = () => {
 
 // Keep C as alias - will be mutated by theme hook
 let C = { ...themes.light, beige: themes.light.surface, beigeDark: themes.light.surfaceAlt, orange: themes.light.accent, cream: themes.light.card };
-const font = { ui: "'Source Sans Pro', -apple-system, 'SF Pro Display', sans-serif", display: "'Playfair Display', Georgia, serif" };
+const font = {
+  ui: "'Inter', -apple-system, 'SF Pro Display', sans-serif",
+  display: "'Playfair Display', Georgia, serif"
+};
 
 const applyTheme = (t) => {
   C.bg = t.bg; C.beige = t.surface; C.beigeDark = t.surfaceAlt; C.card = t.card;
@@ -131,20 +134,34 @@ const MOCK_LB = [
 
 // ─── CSS ────────────────────────────────────────────────────────
 const getCSS = (t) => `
-  @import url('https://fonts.googleapis.com/css2?family=Source+Sans+Pro:wght@400;600;700&family=Playfair+Display:wght@400;700;900&display=swap');
+  @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&family=Playfair+Display:wght@400;700;900&display=swap');
   *,*::before,*::after{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
-  html,body,#root{height:100%;width:100%;overflow:hidden;position:fixed;inset:0;background:${t.bg};overscroll-behavior:none;user-select:none;-webkit-user-select:none;transition:background 0.3s;-webkit-font-smoothing:antialiased;-moz-osx-font-smoothing:grayscale}
+  html,body,#root{
+    height:100%;width:100%;
+    overflow:hidden;position:fixed;inset:0;
+    background:${t.bg};
+    overscroll-behavior:none;
+    -webkit-overscroll-behavior:none;
+    user-select:none;-webkit-user-select:none;
+    transition:background 0.4s;
+    -webkit-font-smoothing:antialiased;
+    -moz-osx-font-smoothing:grayscale;
+    font-family:'Inter',-apple-system,'SF Pro Display',sans-serif;
+  }
   input,textarea{user-select:text;-webkit-user-select:text}
   input::placeholder{color:${t.textLight}}
   ::-webkit-scrollbar{display:none}
-  button{-webkit-appearance:none;appearance:none}
-  button:active{transform:scale(0.97);opacity:0.85}
-  @keyframes fadeUp{from{opacity:0;transform:translateY(14px)}to{opacity:1;transform:translateY(0)}}
+  button{-webkit-appearance:none;appearance:none;font-family:inherit}
+  button:active{transform:scale(0.96);transition:transform 0.1s}
+  @keyframes fadeUp{from{opacity:0;transform:translateY(16px)}to{opacity:1;transform:translateY(0)}}
   @keyframes fadeIn{from{opacity:0}to{opacity:1}}
-  @keyframes scaleIn{from{transform:scale(0.7);opacity:0}to{transform:scale(1);opacity:1}}
+  @keyframes scaleIn{from{transform:scale(0.72);opacity:0}to{transform:scale(1);opacity:1}}
+  @keyframes slideUp{from{transform:translateY(100%)}to{transform:translateY(0)}}
   @keyframes confetti{0%{transform:translateY(0) rotate(0);opacity:1}100%{transform:translateY(500px) rotate(720deg);opacity:0}}
-  @keyframes glow{0%,100%{box-shadow:0 0 8px ${t.accent}33}50%{box-shadow:0 0 20px ${t.accent}66}}
+  @keyframes glow{0%,100%{box-shadow:0 0 8px ${t.accent}44}50%{box-shadow:0 0 24px ${t.accent}88}}
   @keyframes scanLine{0%,100%{top:12%}50%{top:82%}}
+  @keyframes pulse{0%,100%{opacity:1}50%{opacity:0.5}}
+  .tab-content{height:100%;overflow-y:auto;overflow-x:hidden;-webkit-overflow-scrolling:touch;overscroll-behavior-y:contain}
 `;
 
 const Card = ({ children, style, onClick, t: thm }) => {
@@ -159,26 +176,85 @@ const defaultCSS = getCSS(themes.light);
 // ─── Sound System (Web Audio API) ───────────────────────────────
 const Sound = {
   ctx: null,
-  init() { if (!this.ctx) this.ctx = new (window.AudioContext || window.webkitAudioContext)(); return this.ctx; },
-  play(freq, duration, type = "sine", vol = 0.15) {
+  init() {
+    if (!this.ctx) {
+      try { this.ctx = new (window.AudioContext || window.webkitAudioContext)(); } catch (e) { }
+    }
+    return this.ctx;
+  },
+  play(freq, duration, type = "sine", vol = 0.12, delay = 0) {
     try {
-      const c = this.init(); const o = c.createOscillator(); const g = c.createGain();
-      o.type = type; o.frequency.value = freq;
-      g.gain.setValueAtTime(vol, c.currentTime);
-      g.gain.exponentialRampToValueAtTime(0.001, c.currentTime + duration);
+      const c = this.init(); if (!c) return;
+      const o = c.createOscillator();
+      const g = c.createGain();
+      o.type = type;
+      o.frequency.setValueAtTime(freq, c.currentTime + delay);
+      g.gain.setValueAtTime(0, c.currentTime + delay);
+      g.gain.linearRampToValueAtTime(vol, c.currentTime + delay + 0.01);
+      g.gain.exponentialRampToValueAtTime(0.001, c.currentTime + delay + duration);
       o.connect(g); g.connect(c.destination);
-      o.start(c.currentTime); o.stop(c.currentTime + duration);
+      o.start(c.currentTime + delay);
+      o.stop(c.currentTime + delay + duration);
     } catch (e) { }
   },
-  spin() { this.play(440, 0.08); setTimeout(() => this.play(550, 0.08), 80); setTimeout(() => this.play(660, 0.08), 160); },
-  win() { [523, 659, 784, 1047].forEach((f, i) => setTimeout(() => this.play(f, 0.2, "sine", 0.12), i * 120)); },
-  lose() { this.play(300, 0.3, "triangle", 0.1); setTimeout(() => this.play(250, 0.4, "triangle", 0.08), 200); },
-  levelUp() { [523, 659, 784, 880, 1047].forEach((f, i) => setTimeout(() => this.play(f, 0.25, "sine", 0.1), i * 150)); },
-  scan() { this.play(880, 0.1); setTimeout(() => this.play(1100, 0.15), 100); },
-  redeem() { this.play(660, 0.15); setTimeout(() => this.play(880, 0.2), 150); },
-  tap() { this.play(800, 0.05, "sine", 0.06); },
-  vote() { this.play(500, 0.1); setTimeout(() => this.play(700, 0.12), 80); },
-  gift() { [660, 784, 880, 1047].forEach((f, i) => setTimeout(() => this.play(f, 0.15, "sine", 0.08), i * 100)); },
+  // Tab-Wechsel
+  tap() { this.play(1000, 0.06, "sine", 0.05); },
+  // Scan erfolgreich
+  scan() {
+    this.play(660, 0.08, "sine", 0.1);
+    this.play(880, 0.12, "sine", 0.1, 0.09);
+    this.play(1100, 0.15, "sine", 0.08, 0.18);
+  },
+  // Glücksrad drehen
+  spin() {
+    for (let i = 0; i < 6; i++) {
+      this.play(300 + i * 80, 0.06, "triangle", 0.06, i * 0.07);
+    }
+  },
+  // Gewinn
+  win() {
+    [523, 659, 784, 880, 1047].forEach((f, i) =>
+      this.play(f, 0.2, "sine", 0.1, i * 0.1)
+    );
+  },
+  // Kein Gewinn
+  lose() {
+    this.play(330, 0.15, "sawtooth", 0.08);
+    this.play(280, 0.25, "sawtooth", 0.06, 0.15);
+  },
+  // Level Up
+  levelUp() {
+    [392, 523, 659, 784, 1047, 1318].forEach((f, i) =>
+      this.play(f, 0.18, "sine", 0.09, i * 0.08)
+    );
+  },
+  // Einlösen
+  redeem() {
+    this.play(440, 0.1, "sine", 0.1);
+    this.play(554, 0.1, "sine", 0.1, 0.1);
+    this.play(659, 0.2, "sine", 0.1, 0.2);
+  },
+  // Vote / Swipe
+  vote() {
+    this.play(440, 0.08, "sine", 0.08);
+    this.play(554, 0.1, "sine", 0.07, 0.07);
+  },
+  // Geschenk senden
+  gift() {
+    [523, 659, 784, 880, 1047].forEach((f, i) =>
+      this.play(f, 0.12, "sine", 0.08, i * 0.07)
+    );
+  },
+  // Fehler
+  error() {
+    this.play(200, 0.1, "sawtooth", 0.1);
+    this.play(160, 0.15, "sawtooth", 0.08, 0.1);
+  },
+  // Freund hinzugefügt
+  friend() {
+    this.play(440, 0.1, "sine", 0.1);
+    this.play(660, 0.15, "sine", 0.1, 0.12);
+  },
 };
 
 // ─── Auth ───────────────────────────────────────────────────────
@@ -196,10 +272,10 @@ const AuthScreen = ({ onLogin }) => {
 
   const submit = async () => {
     setErr("");
-    if (!email || !pw) { setErr("bitte alle felder ausfüllen"); return; }
-    if (mode === "register" && !username) { setErr("bitte username eingeben"); return; }
-    if (mode === "register" && !phone) { setErr("bitte handynummer eingeben"); return; }
-    if (mode === "register" && !dsgvo) { setErr("bitte datenschutz akzeptieren"); return; }
+    if (!email || !pw) { setErr("Bitte alle Felder ausfüllen"); return; }
+    if (mode === "register" && !username) { setErr("Bitte Username eingeben"); return; }
+    if (mode === "register" && !phone) { setErr("Bitte Handynummer eingeben"); return; }
+    if (mode === "register" && !dsgvo) { setErr("Bitte Datenschutz akzeptieren"); return; }
     setLoading(true);
     try {
       if (mode === "login") {
@@ -434,7 +510,8 @@ const WheelTab = ({ user, setUser }) => {
   const [spins, setSpins] = useState(0); const [loading, setLoading] = useState(true);
   const [missions, setMissions] = useState(MOCK_MISSIONS);
   const [prizes, setPrizes] = useState(WHEEL_PRIZES);
-  const maxFreeSpins = 1; const maxPaidSpins = 2;
+  const maxFreeSpins = 1;
+  const maxPaidSpins = 2; // Max 2x total, 2. Spin kostet 100 XP
 
   useEffect(() => {
     const init = async () => {
@@ -540,12 +617,19 @@ const WheelTab = ({ user, setUser }) => {
   }
 
   // Lighter wheel colors
+  // Pastell-Farben für das Rad
   const wheelColors = [
-    { bg: "#f4a59a" }, { bg: "#e8ddd0" }, { bg: "#f7c8a0" }, { bg: "#d4e8d0" },
-    { bg: "#f4a59a" }, { bg: "#e8ddd0" }, { bg: "#f7c8a0" }, { bg: "#d4e8d0" },
+    { bg: "#fde8e8", text: "#c0392b" },
+    { bg: "#fef3e2", text: "#d35400" },
+    { bg: "#e8f5e9", text: "#27ae60" },
+    { bg: "#e8eaf6", text: "#3949ab" },
+    { bg: "#fce4ec", text: "#c2185b" },
+    { bg: "#e0f7fa", text: "#00838f" },
+    { bg: "#fff8e1", text: "#f57f17" },
+    { bg: "#f3e5f5", text: "#7b1fa2" },
   ];
 
-  const sz = 240, cx = sz / 2, cy = sz / 2, r = sz / 2 - 8;
+  const sz = 280, cx = sz / 2, cy = sz / 2, r = sz / 2 - 10;
   return (
     <div style={{ paddingBottom: "16px", background: C.beige, minHeight: "100%" }}>
       {/* Missions Section */}
@@ -584,8 +668,12 @@ const WheelTab = ({ user, setUser }) => {
                 const seg = 360 / prizes.length; const s = (i * seg - 90) * Math.PI / 180, e = ((i + 1) * seg - 90) * Math.PI / 180, mid = (s + e) / 2;
                 return (<g key={i}><path d={`M${cx},${cy} L${cx + r * Math.cos(s)},${cy + r * Math.sin(s)} A${r},${r} 0 0,1 ${cx + r * Math.cos(e)},${cy + r * Math.sin(e)} Z`} fill={wheelColors[i].bg} stroke={C.white} strokeWidth="2" /><text x={cx + (r * 0.6) * Math.cos(mid)} y={cy + (r * 0.6) * Math.sin(mid)} transform={`rotate(${i * seg + seg / 2},${cx + (r * 0.6) * Math.cos(mid)},${cy + (r * 0.6) * Math.sin(mid)})`} textAnchor="middle" dominantBaseline="middle" fill={C.text} fontSize="10" fontWeight="700">{p.label}</text></g>);
               })}
-              <circle cx={cx} cy={cy} r="28" fill={C.white} stroke={C.orange} strokeWidth="2" />
-              <text x={cx} y={cy + 2} textAnchor="middle" dominantBaseline="middle" fill={C.green} fontSize="24" fontWeight="900" fontFamily="Gallica,serif">c</text>
+              <circle cx={cx} cy={cy} r="32" fill="white" stroke={C.orange} strokeWidth="2.5"
+                style={{ filter: "drop-shadow(0 2px 8px rgba(226,74,40,0.3))" }} />
+              <text x={cx} y={cy + 10} textAnchor="middle" dominantBaseline="middle"
+                fill={C.orange} fontSize="30" fontWeight="900" fontFamily="Playfair Display,serif"
+                style={{ letterSpacing: "-1px" }}>c</text>
+
             </svg>
           </div>
 
@@ -636,17 +724,17 @@ const ScanTab = ({ user, setUser }) => {
     <div style={{ background: C.beige, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: "30px 20px", minHeight: "100%" }}>
       {!done ? (<>
         <div style={{ fontSize: "10px", letterSpacing: "3px", color: C.textLight }}>qr code</div>
-        <div style={{ fontSize: "24px", fontFamily: font.display, color: C.text, marginBottom: "24px", marginTop: "4px", fontWeight: "700" }}>punkte sammeln</div>
+        <div style={{ fontSize: "24px", fontFamily: font.display, color: C.text, marginBottom: "24px", marginTop: "4px", fontWeight: "700" }}>Punkte sammeln</div>
         <div id="qr-reader" style={{ width: "240px", height: "240px", borderRadius: "16px", overflow: "hidden", background: "#111", border: `2px solid ${scanning ? C.orange : C.border}`, transition: "border 0.3s" }} />
-        {!scanning ? <button onClick={startScan} style={{ marginTop: "18px", padding: "13px 36px", background: C.orange, border: "none", borderRadius: "50px", color: C.white, fontSize: "14px", fontWeight: "700", cursor: "pointer", fontFamily: font.ui }}>📷 kamera starten</button>
+        {!scanning ? <button onClick={startScan} style={{ marginTop: "18px", padding: "13px 36px", background: C.orange, border: "none", borderRadius: "50px", color: C.white, fontSize: "14px", fontWeight: "700", cursor: "pointer", fontFamily: font.ui }}>📷 Kamera starten</button>
           : <button onClick={async () => { if (scannerRef.current) try { await scannerRef.current.stop() } catch (e) { } setScanning(false) }} style={{ marginTop: "18px", padding: "13px 36px", background: C.greyBg, border: `1px solid ${C.border}`, borderRadius: "50px", color: C.textSub, fontSize: "14px", fontWeight: "600", cursor: "pointer", fontFamily: font.ui }}>abbrechen</button>}
         <div style={{ color: C.textLight, fontSize: "11px", marginTop: "12px" }}>scanne den qr-code auf deinem beleg</div>
       </>) : (
         <div style={{ textAlign: "center", animation: "scaleIn 0.4s" }}>
           <div style={{ fontSize: "48px" }}>🎉</div>
           <div style={{ fontSize: "32px", fontWeight: "700", color: C.orange, fontFamily: font.display }}>+{pts} pts</div>
-          <div style={{ color: C.textLight, fontSize: "13px", marginTop: "6px" }}>punkte gutgeschrieben!</div>
-          <button onClick={() => { setDone(false); setPts(0) }} style={{ marginTop: "18px", padding: "11px 28px", background: C.greyBg, border: `1px solid ${C.border}`, borderRadius: "50px", color: C.text, fontSize: "13px", cursor: "pointer", fontFamily: font.ui }}>nochmal scannen</button>
+          <div style={{ color: C.textLight, fontSize: "13px", marginTop: "6px" }}>Punkte gutgeschrieben!</div>
+          <button onClick={() => { setDone(false); setPts(0) }} style={{ marginTop: "18px", padding: "11px 28px", background: C.greyBg, border: `1px solid ${C.border}`, borderRadius: "50px", color: C.text, fontSize: "13px", cursor: "pointer", fontFamily: font.ui }}>Nochmal scannen</button>
         </div>
       )}
     </div>
@@ -654,76 +742,293 @@ const ScanTab = ({ user, setUser }) => {
 };
 
 // ─── Vote ───────────────────────────────────────────────────────
-const VoteTab = ({ user }) => {
-  const [idx, setIdx] = useState(0); const [dir, setDir] = useState(null); const [dishes, setDishes] = useState([]); const [ts, setTs] = useState(null); const [off, setOff] = useState(0); const [loading, setLoading] = useState(true);
+const VoteTab = ({ user, setUser }) => {
+  const [allDishes, setAllDishes] = useState([]);
+  const [unvoted, setUnvoted] = useState([]);
+  const [current, setCurrent] = useState(0);
+  const [dir, setDir] = useState(null);
+  const [dragX, setDragX] = useState(0);
+  const [dragStart, setDragStart] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [showResults, setShowResults] = useState(false);
+  const [visitStatus, setVisitStatus] = useState(null);
+
   useEffect(() => {
     const init = async () => {
-      let allDishes = await db.getDishes();
-      if (!allDishes.length) allDishes = MOCK_DISHES;
-      // Load user's existing votes to filter out already voted dishes
+      const dishes = await db.getDishes();
+      const list = dishes.length ? dishes : MOCK_DISHES;
+      setAllDishes(list);
+
       if (user.id) {
-        const { data: myVotes } = await supabase.from("dish_votes").select("dish_id").eq("user_id", user.id);
-        const votedIds = new Set((myVotes || []).map(v => v.dish_id));
-        const unvoted = allDishes.filter(d => !votedIds.has(d.id));
-        setDishes(allDishes); // keep all for results
-        setIdx(allDishes.length - unvoted.length); // skip to first unvoted
-        if (unvoted.length === 0) setIdx(allDishes.length); // all voted
-      } else { setDishes(allDishes); }
+        const votedIds = await db.getUserVotes(user.id);
+        const notVoted = list.filter(d => !votedIds.has(d.id));
+        setUnvoted(notVoted);
+        // Visit intention
+        const today = new Date().toISOString().split('T')[0];
+        db.getVisitIntention(user.id, today).then(d => { if (d) setVisitStatus(d.status); }).catch(() => { });
+      } else {
+        setUnvoted(list);
+      }
       setLoading(false);
     };
     init();
   }, []);
-  const swipe = async d => {
+
+  const currentDish = unvoted[current];
+  const done = current >= unvoted.length;
+
+  // FIX #12: swipe-Funktion die BEIDE Buttons (Herz + X) korrekt behandelt
+  const doVote = async (liked) => {
+    if (!currentDish || dir) return;
     Sound.vote();
-    setDir(d);
-    if (d === "right") {
-      setDishes(p => p.map((x, i) => i === idx ? { ...x, votes: x.votes + 1 } : x));
-      if (user.id) await supabase.from("dish_votes").upsert({ user_id: user.id, dish_id: dishes[idx].id, vote: true }).catch(() => { });
-    } else {
-      // Also record "skip" vote to prevent re-voting
-      if (user.id) await supabase.from("dish_votes").upsert({ user_id: user.id, dish_id: dishes[idx].id, vote: false }).catch(() => { });
+
+    const voteDir = liked ? "right" : "left";
+    setDir(voteDir);
+
+    // DB-Vote speichern
+    if (user.id) {
+      await db.voteDish(user.id, currentDish.id, liked).catch(() => { });
+      // XP für Voting
+      if (liked) {
+        const fresh = await db.getProfile(user.id);
+        if (fresh) {
+          await db.updateProfile(user.id, { pts: (fresh.pts || 0) + 10 });
+          setUser(u => ({ ...u, pts: (u.pts || 0) + 10 }));
+        }
+      }
     }
-    setTimeout(() => { setDir(null); setOff(0); setIdx(i => i + 1) }, 300);
+
+    // Karte weganimieren, dann weiter
+    setTimeout(() => {
+      setDir(null);
+      setDragX(0);
+      setCurrent(i => i + 1);
+    }, 320);
   };
-  const dish = dishes[idx];
+
+  // Touch-Swipe
+  const onTouchStart = (e) => setDragStart(e.touches[0].clientX);
+  const onTouchMove = (e) => {
+    if (dragStart === null) return;
+    setDragX(e.touches[0].clientX - dragStart);
+  };
+  const onTouchEnd = () => {
+    if (Math.abs(dragX) > 70) {
+      doVote(dragX > 0);
+    } else {
+      setDragX(0);
+    }
+    setDragStart(null);
+  };
+
+  const setVisit = async (status) => {
+    setVisitStatus(status);
+    if (user.id) {
+      const today = new Date().toISOString().split('T')[0];
+      await db.setVisitIntention(user.id, today, status);
+    }
+  };
+
+  if (loading) return (
+    <div style={{ background: C.beige, minHeight: "100%", display: "flex", alignItems: "center", justifyContent: "center" }}>
+      <div style={{ color: C.textLight, fontSize: "14px" }}>Wird geladen...</div>
+    </div>
+  );
+
   return (
-    <div style={{ background: C.beige, paddingBottom: "16px", minHeight: "100%" }}>
-      <div style={{ padding: "18px 20px 16px", textAlign: "center" }}>
-        <div style={{ fontSize: "10px", letterSpacing: "3px", color: C.textLight }}>cinder</div>
-        <div style={{ fontSize: "24px", fontFamily: font.display, color: C.text, fontWeight: "700" }}>Nächste Pizza?</div>
-      </div>
-      <div style={{ padding: "10px 14px" }}>
-        {loading ? <div style={{ textAlign: "center", padding: "40px", color: C.textLight }}>Lädt...</div> : dish ? (<>
-          <div onTouchStart={e => setTs(e.touches[0].clientX)} onTouchMove={e => { if (ts !== null) setOff(e.touches[0].clientX - ts) }} onTouchEnd={() => { if (Math.abs(off) > 80) swipe(off > 0 ? "right" : "left"); else { setOff(0); setTs(null) } }}>
-            <Card style={{ padding: 0, overflow: "hidden", maxWidth: "340px", margin: "0 auto", transform: dir === "left" ? "translateX(-120%) rotate(-15deg)" : dir === "right" ? "translateX(120%) rotate(15deg)" : `translateX(${off}px) rotate(${off * 0.04}deg)`, opacity: dir ? 0 : 1 - Math.abs(off) * 0.002, transition: dir ? "all 0.3s" : "none" }}>
-              <div style={{ height: "170px", background: `linear-gradient(135deg, ${C.beigeDark}, ${C.beige})`, display: "flex", alignItems: "center", justifyContent: "center", fontSize: "48px", position: "relative" }}>
-                {dish.image_url ? <img src={dish.image_url} style={{ width: "100%", height: "100%", objectFit: "cover" }} /> : <span style={{ fontSize: "48px", color: C.textLight }}>?</span>}
-                <div style={{ position: "absolute", bottom: "8px", right: "10px", background: C.text, color: C.white, borderRadius: "12px", padding: "3px 9px", fontSize: "11px", fontWeight: "700" }}>{dish.votes} votes</div>
-              </div>
-              <div style={{ padding: "14px" }}><div style={{ fontSize: "18px", fontFamily: font.display, color: C.text, fontWeight: "700" }}>{dish.name}</div><div style={{ fontSize: "12px", color: C.textLight, marginTop: "3px" }}>{dish.description}</div></div>
-            </Card>
+    <div style={{ background: C.beige, minHeight: "100%", paddingBottom: "20px" }}>
+      {/* Header */}
+      <div style={{ padding: "20px 20px 12px", display: "flex", justifyContent: "space-between", alignItems: "flex-end" }}>
+        <div>
+          <div style={{ fontSize: "11px", letterSpacing: "2px", color: C.textLight, fontWeight: "600", textTransform: "uppercase" }}>Cinder</div>
+          <div style={{ fontSize: "26px", fontFamily: font.display, color: C.text, fontWeight: "700", lineHeight: 1.1 }}>
+            {done ? "Ergebnisse" : "Was kommt auf die Karte?"}
           </div>
-          <div style={{ display: "flex", justifyContent: "center", gap: "20px", marginTop: "16px" }}>
-            <button onClick={(e) => { e.preventDefault(); e.stopPropagation(); swipe("left") }} style={{ width: "52px", height: "52px", borderRadius: "50%", background: C.white, border: `2px solid ${C.border}`, color: C.textSub, fontSize: "20px", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}>✕</button>
-            <button onClick={(e) => { e.preventDefault(); e.stopPropagation(); swipe("right") }} style={{ width: "52px", height: "52px", borderRadius: "50%", background: C.orange, border: "none", color: C.white, fontSize: "20px", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", boxShadow: "0 4px 12px rgba(226,74,40,0.3)" }}>♥</button>
-          </div>
-          <div style={{ textAlign: "center", color: C.textLight, fontSize: "10px", marginTop: "8px" }}>← swipe oder buttons →</div>
-        </>) : (
-          <div style={{ textAlign: "center", marginTop: "30px" }}>
-            <div style={{ fontSize: "36px" }}>🍕</div>
-            <div style={{ fontSize: "16px", fontWeight: "700", color: C.text, marginTop: "8px" }}>alle gevotet!</div>
-            <div style={{ marginTop: "16px" }}>
-              {[...dishes].sort((a, b) => b.votes - a.votes).map((d, i) => (
-                <Card key={d.id} style={{ marginBottom: "5px", padding: "10px 12px", display: "flex", alignItems: "center", gap: "8px" }}>
-                  <div style={{ fontSize: "11px", fontWeight: "800", color: i === 0 ? C.orange : C.textLight, width: "18px" }}>#{i + 1}</div>
-                  <div style={{ flex: 1, fontSize: "12px", fontWeight: "600" }}>{d.name}</div>
-                  <div style={{ background: i === 0 ? C.orange : C.greyBg, color: i === 0 ? C.white : C.text, borderRadius: "8px", padding: "2px 8px", fontSize: "11px", fontWeight: "700" }}>♥ {d.votes}</div>
-                </Card>
-              ))}
-            </div>
+        </div>
+        {!done && (
+          <div style={{ fontSize: "12px", color: C.textLight, fontWeight: "600" }}>
+            {current + 1} / {unvoted.length}
           </div>
         )}
       </div>
+
+      {/* Besuch heute? – FIX #13 */}
+      {!done && (
+        <div style={{ margin: "0 16px 14px", background: C.card, borderRadius: "16px", padding: "14px 16px" }}>
+          <div style={{ fontSize: "13px", fontWeight: "600", color: C.text, marginBottom: "10px" }}>
+            Kommst du heute vorbei?
+          </div>
+          <div style={{ display: "flex", gap: "8px" }}>
+            {[
+              { v: "planned", l: "Ja, heute" },
+              { v: "not", l: "Nicht heute" },
+            ].map(opt => (
+              <button key={opt.v} onClick={() => setVisit(opt.v)}
+                style={{
+                  flex: 1, padding: "9px", borderRadius: "10px", border: "none",
+                  background: visitStatus === opt.v ? C.orange : C.greyBg,
+                  color: visitStatus === opt.v ? C.white : C.textLight,
+                  fontSize: "12px", fontWeight: "600", cursor: "pointer",
+                  transition: "all 0.2s"
+                }}>
+                {opt.l}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Card Stack */}
+      {!done ? (
+        <div style={{ padding: "0 16px" }}>
+          <div
+            onTouchStart={onTouchStart}
+            onTouchMove={onTouchMove}
+            onTouchEnd={onTouchEnd}
+            style={{
+              transform: dir === "left"
+                ? "translateX(-110%) rotate(-18deg)"
+                : dir === "right"
+                  ? "translateX(110%) rotate(18deg)"
+                  : `translateX(${dragX}px) rotate(${dragX * 0.035}deg)`,
+              opacity: dir ? 0 : Math.max(0.3, 1 - Math.abs(dragX) * 0.003),
+              transition: dir ? "all 0.32s cubic-bezier(0.4,0,0.2,1)" : dragX ? "none" : "all 0.3s",
+              willChange: "transform",
+            }}>
+            <Card style={{ padding: 0, overflow: "hidden", borderRadius: "20px", boxShadow: "0 8px 32px rgba(0,0,0,0.10)" }}>
+              {/* Image area */}
+              <div style={{
+                height: "220px",
+                background: `linear-gradient(135deg, ${C.beigeDark} 0%, ${C.beige} 100%)`,
+                display: "flex", alignItems: "center", justifyContent: "center",
+                position: "relative", overflow: "hidden"
+              }}>
+                {currentDish?.image_url
+                  ? <img src={currentDish.image_url} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+                  : (
+                    <svg width="64" height="64" viewBox="0 0 24 24" fill="none" stroke={C.border} strokeWidth="1.5">
+                      <circle cx="12" cy="12" r="10" />
+                      <path d="M8 12s1-2 4-2 4 2 4 2" />
+                      <line x1="9" y1="9" x2="9.01" y2="9" />
+                      <line x1="15" y1="9" x2="15.01" y2="9" />
+                    </svg>
+                  )
+                }
+
+                {/* Like/Dislike overlay when dragging */}
+                {Math.abs(dragX) > 30 && (
+                  <div style={{
+                    position: "absolute", inset: 0,
+                    background: dragX > 0 ? "rgba(45,71,42,0.3)" : "rgba(226,74,40,0.3)",
+                    display: "flex", alignItems: "center", justifyContent: "center",
+                    fontSize: "48px", fontWeight: "900", color: "white"
+                  }}>
+                    {dragX > 0 ? "♥" : "✕"}
+                  </div>
+                )}
+
+                {/* Vote count */}
+                <div style={{
+                  position: "absolute", bottom: "10px", right: "12px",
+                  background: "rgba(0,0,0,0.6)", backdropFilter: "blur(8px)",
+                  color: "white", borderRadius: "10px", padding: "3px 10px",
+                  fontSize: "11px", fontWeight: "700"
+                }}>
+                  {currentDish?.votes} Votes
+                </div>
+              </div>
+
+              <div style={{ padding: "18px" }}>
+                <div style={{ fontSize: "20px", fontFamily: font.display, color: C.text, fontWeight: "700" }}>
+                  {currentDish?.name}
+                </div>
+                <div style={{ fontSize: "13px", color: C.textLight, marginTop: "4px", lineHeight: 1.4 }}>
+                  {currentDish?.description}
+                </div>
+                <div style={{ fontSize: "11px", color: C.orange, fontWeight: "600", marginTop: "8px" }}>
+                  +10 XP für dein Vote
+                </div>
+              </div>
+            </Card>
+          </div>
+
+          {/* Action Buttons – FIX #12 */}
+          <div style={{ display: "flex", justifyContent: "center", gap: "24px", marginTop: "20px", alignItems: "center" }}>
+            {/* Skip */}
+            <button
+              onPointerDown={(e) => { e.preventDefault(); e.stopPropagation(); }}
+              onClick={(e) => { e.preventDefault(); e.stopPropagation(); Sound.tap(); doVote(false); }}
+              style={{
+                width: "60px", height: "60px", borderRadius: "50%",
+                background: C.card, border: `2px solid ${C.border}`,
+                display: "flex", alignItems: "center", justifyContent: "center",
+                cursor: "pointer", boxShadow: "0 4px 16px rgba(0,0,0,0.08)",
+                transition: "all 0.15s"
+              }}>
+              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke={C.textSub} strokeWidth="2.5" strokeLinecap="round">
+                <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
+              </svg>
+            </button>
+
+            {/* Love */}
+            <button
+              onPointerDown={(e) => { e.preventDefault(); e.stopPropagation(); }}
+              onClick={(e) => { e.preventDefault(); e.stopPropagation(); Sound.win(); doVote(true); }}
+              style={{
+                width: "72px", height: "72px", borderRadius: "50%",
+                background: C.orange, border: "none",
+                display: "flex", alignItems: "center", justifyContent: "center",
+                cursor: "pointer",
+                boxShadow: `0 6px 24px ${C.orange}55`,
+                transition: "all 0.15s"
+              }}>
+              <svg width="28" height="28" viewBox="0 0 24 24" fill="white" stroke="white" strokeWidth="1">
+                <path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z" />
+              </svg>
+            </button>
+          </div>
+          <div style={{ textAlign: "center", color: C.textLight, fontSize: "11px", marginTop: "12px", fontWeight: "500" }}>
+            Swipe oder Buttons nutzen
+          </div>
+        </div>
+      ) : (
+        /* Ergebnisse */
+        <div style={{ padding: "0 16px" }}>
+          <Card style={{ padding: "20px", textAlign: "center", marginBottom: "16px" }}>
+            <div style={{ fontSize: "32px", marginBottom: "8px" }}>
+              <svg width="40" height="40" viewBox="0 0 24 24" fill={C.orange} stroke="none">
+                <path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z" />
+              </svg>
+            </div>
+            <div style={{ fontSize: "18px", fontWeight: "700", color: C.text }}>Alle Gerichte bewertet!</div>
+            <div style={{ fontSize: "13px", color: C.textLight, marginTop: "4px" }}>Danke für dein Feedback</div>
+          </Card>
+
+          <div style={{ fontSize: "12px", fontWeight: "700", letterSpacing: "1px", color: C.textSub, marginBottom: "10px", textTransform: "uppercase" }}>
+            Aktuelle Ergebnisse
+          </div>
+          {[...allDishes].sort((a, b) => (b.votes || 0) - (a.votes || 0)).map((d, i) => (
+            <Card key={d.id} style={{ marginBottom: "8px", padding: "14px 16px", display: "flex", alignItems: "center", gap: "12px" }}>
+              <div style={{
+                width: "28px", height: "28px", borderRadius: "8px", flexShrink: 0,
+                background: i === 0 ? C.orange : C.greyBg,
+                display: "flex", alignItems: "center", justifyContent: "center",
+                fontSize: "12px", fontWeight: "800", color: i === 0 ? C.white : C.textLight
+              }}>
+                #{i + 1}
+              </div>
+              <div style={{ flex: 1 }}>
+                <div style={{ fontSize: "14px", fontWeight: "600", color: C.text }}>{d.name}</div>
+                <div style={{ fontSize: "11px", color: C.textLight, marginTop: "2px" }}>{d.description}</div>
+              </div>
+              <div style={{ textAlign: "right" }}>
+                <div style={{ fontSize: "16px", fontWeight: "800", color: C.orange }}>{d.votes || 0}</div>
+                <div style={{ fontSize: "10px", color: C.textLight }}>Votes</div>
+              </div>
+            </Card>
+          ))}
+        </div>
+      )}
     </div>
   );
 };
@@ -743,9 +1048,9 @@ const ScoreTab = ({ user, setUser }) => {
       <div style={{ padding: "18px 20px 16px", textAlign: "center" }}>
         <div style={{ fontSize: "10px", letterSpacing: "3px", color: C.textLight }}>rewards</div>
         <div style={{ fontSize: "24px", fontFamily: font.display, color: C.text, fontWeight: "700" }}>score</div>
-        <div style={{ fontSize: "12px", color: C.textLight, marginTop: "4px" }}>guthaben: <strong style={{ color: C.text }}>{user.pts || 0} pts</strong></div>
+        <div style={{ fontSize: "12px", color: C.textLight, marginTop: "4px" }}>Guthaben: <strong style={{ color: C.text }}>{user.pts || 0} pts</strong></div>
       </div>
-      {rd && <div style={{ position: "fixed", inset: 0, zIndex: 999, background: "rgba(0,0,0,0.9)", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", animation: "scaleIn 0.3s" }}><div style={{ fontSize: "48px" }}>{rd.icon}</div><div style={{ color: C.white, fontSize: "18px", fontWeight: "700", marginTop: "10px" }}>eingelöst!</div><div style={{ color: "rgba(255,255,255,0.5)", fontSize: "11px", marginTop: "4px" }}>zeige dies an der kasse</div></div>}
+      {rd && <div style={{ position: "fixed", inset: 0, zIndex: 999, background: "rgba(0,0,0,0.9)", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", animation: "scaleIn 0.3s" }}><div style={{ fontSize: "48px" }}>{rd.icon}</div><div style={{ color: C.white, fontSize: "18px", fontWeight: "700", marginTop: "10px" }}>Eingelöst!</div><div style={{ color: "rgba(255,255,255,0.5)", fontSize: "11px", marginTop: "4px" }}>Zeige dies an der kasse</div></div>}
       <div style={{ padding: "10px 14px", display: "grid", gridTemplateColumns: "1fr 1fr", gap: "8px" }}>
         {items.map((item, i) => {
           const ok = (user.pts || 0) >= item.cost && (user.level || 1) >= item.min_level; const locked = (user.level || 1) < item.min_level;
@@ -1860,32 +2165,98 @@ export default function App() {
   if (adminMode === "panel") return <AdminPanel onClose={async () => { await db.signOut(); setAdminMode(false) }} />;
   if (!user) return <div style={{ position: "fixed", inset: 0, maxWidth: "430px", margin: "0 auto" }}><AuthScreen onLogin={setUser} /><div onClick={() => setAdminMode("login")} style={{ position: "fixed", bottom: "8px", left: "50%", transform: "translateX(-50%)", color: "rgba(0,0,0,0.06)", fontSize: "9px", cursor: "pointer", padding: "4px 10px" }}>admin</div></div>;
 
-  const nav = [{ id: "home", icon: "⌂", l: "home" }, { id: "missions", icon: "◎", l: "missions" }, { id: "scan", icon: "⊞", l: "scan" }, { id: "cinder", icon: "♡", l: "cinder" }, { id: "profile", icon: "○", l: "profil" }];
+  const nav = [
+    { id: "home", icon: <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" /><polyline points="9 22 9 12 15 12 15 22" /></svg>, l: "Home" },
+    { id: "missions", icon: <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10" /><circle cx="12" cy="12" r="4" /><line x1="12" y1="2" x2="12" y2="4" /><line x1="12" y1="20" x2="12" y2="22" /><line x1="2" y1="12" x2="4" y2="12" /><line x1="20" y1="12" x2="22" y2="12" /></svg>, l: "Missions" },
+    { id: "scan", icon: <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="5" height="5" rx="1" /><rect x="16" y="3" width="5" height="5" rx="1" /><rect x="3" y="16" width="5" height="5" rx="1" /><rect x="16" y="16" width="5" height="5" rx="1" /><line x1="9" y1="5" x2="10" y2="5" /><line x1="9" y1="19" x2="10" y2="19" /><line x1="14" y1="5" x2="15" y2="5" /><line x1="14" y1="19" x2="15" y2="19" /><line x1="5" y1="9" x2="5" y2="10" /><line x1="19" y1="9" x2="19" y2="10" /><line x1="5" y1="14" x2="5" y2="15" /><line x1="19" y1="14" x2="19" y2="15" /></svg>, l: "Scan" },
+    { id: "cinder", icon: <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z" /></svg>, l: "Cinder" },
+    { id: "profile", icon: <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" /><circle cx="12" cy="7" r="4" /></svg>, l: "Profil" },
+  ];
 
   return (
-    <div style={{ position: "fixed", inset: 0, maxWidth: "430px", margin: "0 auto", fontFamily: font.ui, background: t.bg, display: "flex", flexDirection: "column", overflow: "hidden", transition: "background 0.3s" }}>
+    <div style={{
+      position: "fixed", inset: 0, maxWidth: "430px", margin: "0 auto",
+      fontFamily: font.ui, background: t.bg,
+      display: "flex", flexDirection: "column", overflow: "hidden",
+      transition: "background 0.4s"
+    }}>
       <style>{CSS}</style>
       {showLevelUp && <LevelUpOverlay level={showLevelUp} onClose={() => setShowLevelUp(null)} />}
-      {toast && <div style={{ position: "fixed", top: "12px", left: "50%", transform: "translateX(-50%)", background: t.card, border: `1px solid ${t.border}`, borderRadius: "14px", padding: "12px 18px", zIndex: 9998, boxShadow: "0 8px 24px rgba(0,0,0,0.15)", maxWidth: "340px", width: "90%", animation: "fadeUp 0.3s", display: "flex", gap: "10px", alignItems: "center" }}>
-        <div style={{ width: "8px", height: "8px", borderRadius: "50%", background: t.accent, flexShrink: 0 }} />
-        <div><div style={{ fontSize: "13px", fontWeight: "700", color: t.text }}>{toast.title}</div>{toast.body && <div style={{ fontSize: "11px", color: t.textLight, marginTop: "2px" }}>{toast.body}</div>}</div>
-      </div>}
-      <div style={{ flex: 1, overflowY: "auto", overflowX: "hidden", WebkitOverflowScrolling: "touch", overscrollBehavior: "contain" }}>
-        {tab === "home" && <HomeTab user={user} setUser={setUser} setTab={setTab} />}
-        {tab === "missions" && <WheelTab user={user} setUser={setUser} />}
-        {tab === "scan" && <ScanTab user={user} setUser={setUser} />}
-        {tab === "cinder" && <VoteTab user={user} />}
-        {tab === "profile" && <ProfileTab user={user} setUser={setUser} onLogout={async () => { await db.signOut(); setUser(null) }} theme={theme} />}
+
+      {/* Toast */}
+      {toast && (
+        <div style={{
+          position: "fixed", top: "max(16px, env(safe-area-inset-top, 16px))",
+          left: "50%", transform: "translateX(-50%)",
+          background: t.card, border: `1px solid ${t.border}`,
+          borderRadius: "16px", padding: "12px 18px", zIndex: 9998,
+          boxShadow: "0 8px 32px rgba(0,0,0,0.15)", maxWidth: "340px", width: "90%",
+          animation: "fadeUp 0.3s", display: "flex", gap: "10px", alignItems: "center"
+        }}>
+          <div style={{ width: "8px", height: "8px", borderRadius: "50%", background: t.accent, flexShrink: 0 }} />
+          <div>
+            <div style={{ fontSize: "13px", fontWeight: "600", color: t.text }}>{toast.title}</div>
+            {toast.body && <div style={{ fontSize: "11px", color: t.textLight, marginTop: "2px" }}>{toast.body}</div>}
+          </div>
+        </div>
+      )}
+
+      {/* Content */}
+      <div style={{ flex: 1, overflow: "hidden", position: "relative" }}>
+        <div className="tab-content" style={{ height: "100%" }}>
+          {tab === "home" && <HomeTab user={user} setUser={setUser} setTab={setTab} />}
+          {tab === "missions" && <WheelTab user={user} setUser={setUser} />}
+          {tab === "scan" && <ScanTab user={user} setUser={setUser} />}
+          {tab === "cinder" && <VoteTab user={user} setUser={setUser} />}
+          {tab === "profile" && <ProfileTab user={user} setUser={setUser} onLogout={async () => { await db.signOut(); setUser(null) }} theme={theme} />}
+        </div>
       </div>
-      {/* Tab Bar */}
-      <div style={{ flexShrink: 0, background: t.navBg, backdropFilter: "blur(20px)", WebkitBackdropFilter: "blur(20px)", borderTop: `0.5px solid ${t.navBorder}`, paddingBottom: "env(safe-area-inset-bottom, 8px)", transition: "all 0.3s" }}>
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(5, 1fr)", alignItems: "end", padding: "8px 0 3px", maxWidth: "400px", margin: "0 auto" }}>
+
+      {/* iOS-Style Tab Bar */}
+      <div style={{
+        flexShrink: 0,
+        background: t.navBg,
+        backdropFilter: "blur(24px)",
+        WebkitBackdropFilter: "blur(24px)",
+        borderTop: `0.5px solid ${t.navBorder}`,
+        paddingBottom: "env(safe-area-inset-bottom, 0px)",
+        transition: "all 0.3s",
+      }}>
+        <div style={{
+          display: "grid", gridTemplateColumns: "repeat(5,1fr)",
+          padding: "8px 0 4px",
+          maxWidth: "430px", margin: "0 auto"
+        }}>
           {nav.map(n => {
             const a = tab === n.id;
-            return <button key={n.id} onClick={() => setTab(n.id)} style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: "3px", background: "none", border: "none", cursor: "pointer", padding: "4px 0" }}>
-              <div style={{ fontSize: "20px", lineHeight: "1", opacity: a ? 1 : 0.3, transition: "all 0.2s", color: a ? t.accent : t.textLight, fontWeight: a ? "700" : "400" }}>{n.icon}</div>
-              <span style={{ fontSize: "9px", fontWeight: a ? "700" : "400", color: a ? t.accent : t.textLight, transition: "all 0.2s", letterSpacing: "0.3px" }}>{n.l}</span>
-            </button>;
+            return (
+              <button key={n.id} onClick={() => { Sound.tap(); setTab(n.id); }}
+                style={{
+                  display: "flex", flexDirection: "column", alignItems: "center",
+                  gap: "3px", background: "none", border: "none", cursor: "pointer",
+                  padding: "6px 0", transition: "all 0.2s",
+                  color: a ? t.accent : t.textLight,
+                }}>
+                {/* Icon container – filled wenn aktiv */}
+                <div style={{
+                  padding: "4px",
+                  borderRadius: "10px",
+                  background: a ? t.accent + "15" : "transparent",
+                  transition: "all 0.2s",
+                  transform: a ? "scale(1.08)" : "scale(1)",
+                  color: a ? t.accent : t.textLight,
+                }}>
+                  {n.icon}
+                </div>
+                <span style={{
+                  fontSize: "10px",
+                  fontWeight: a ? "700" : "500",
+                  color: a ? t.accent : t.textLight,
+                  letterSpacing: "0.1px",
+                  transition: "all 0.2s"
+                }}>{n.l}</span>
+              </button>
+            );
           })}
         </div>
       </div>

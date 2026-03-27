@@ -1,291 +1,257 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import supabase, { db } from "./supabase";
 import { requestPushPermission, onForegroundMessage, sendPushToAll } from "./push";
 
-// ─── Themes ────────────────────────────────────────────────────
-const themes = {
+// ─── Themes ─────────────────────────────────────────────────────
+const T = {
   light: {
-    bg: "#C1272D", surface: "#f0e8d8", surfaceAlt: "#e8dcc8", card: "#ffffff",
-    accent: "#e24a28", green: "#2d472a", text: "#111111", textSub: "#555555",
-    textLight: "#999999", white: "#ffffff", border: "#e8e8e8", greyBg: "#f5f5f5",
-    navBg: "rgba(255,255,255,0.96)", navBorder: "rgba(0,0,0,0.08)",
-    authBg: "#C1272D", logoColor: "#ffffff",
+    bg: "#C1272D", surface: "#f0e8d8", card: "#ffffff",
+    accent: "#e24a28", green: "#2d472a",
+    text: "#111111", textSub: "#555555", textLight: "#999999",
+    white: "#ffffff", border: "#ebebeb", grey: "#f5f5f5",
+    navBg: "rgba(255,255,255,0.94)", navBorder: "rgba(0,0,0,0.07)",
   },
   dark: {
-    bg: "#0a0a0a", surface: "#1a1a1a", surfaceAlt: "#222222", card: "#1e1e1e",
-    accent: "#e24a28", green: "#4CAF50", text: "#f0f0f0", textSub: "#aaaaaa",
-    textLight: "#666666", white: "#ffffff", border: "#2a2a2a", greyBg: "#252525",
-    navBg: "rgba(18,18,18,0.97)", navBorder: "rgba(255,255,255,0.06)",
-    authBg: "#0a0a0a", logoColor: "#e24a28",
+    bg: "#0a0a0a", surface: "#161616", card: "#1c1c1e",
+    accent: "#e24a28", green: "#4ade80",
+    text: "#f5f5f7", textSub: "#aeaeb2", textLight: "#636366",
+    white: "#ffffff", border: "#2c2c2e", grey: "#1c1c1e",
+    navBg: "rgba(16,16,16,0.95)", navBorder: "rgba(255,255,255,0.05)",
   },
-  glowRosa: {
-    bg: "#f8e8ee", surface: "#fdf2f6", surfaceAlt: "#f9dce6", card: "#ffffff",
-    accent: "#d4618c", green: "#2d472a", text: "#3a1a2a", textSub: "#6a4a5a",
-    textLight: "#b090a8", white: "#ffffff", border: "#f0d0e0", greyBg: "#fef6f9",
-    navBg: "rgba(255,245,250,0.97)", navBorder: "rgba(200,150,170,0.12)",
-    authBg: "#f8e8ee", logoColor: "#d4618c",
+  rosa: {
+    bg: "#fce7f3", surface: "#fdf2f8", card: "#ffffff",
+    accent: "#db2777", green: "#16a34a",
+    text: "#1f0a14", textSub: "#6b2145", textLight: "#be87a8",
+    white: "#ffffff", border: "#fbcfe8", grey: "#fdf2f8",
+    navBg: "rgba(255,247,252,0.95)", navBorder: "rgba(219,39,119,0.1)",
   },
-  glowGruen: {
-    bg: "#e8f5e9", surface: "#f1f8f2", surfaceAlt: "#dcedc8", card: "#ffffff",
-    accent: "#4CAF50", green: "#2E7D32", text: "#1a3a1a", textSub: "#4a6a4a",
-    textLight: "#88a888", white: "#ffffff", border: "#c8e6c9", greyBg: "#f6faf6",
-    navBg: "rgba(245,255,245,0.97)", navBorder: "rgba(150,200,150,0.12)",
-    authBg: "#e8f5e9", logoColor: "#2E7D32",
+  gruen: {
+    bg: "#dcfce7", surface: "#f0fdf4", card: "#ffffff",
+    accent: "#16a34a", green: "#15803d",
+    text: "#052e16", textSub: "#14532d", textLight: "#6aaf84",
+    white: "#ffffff", border: "#bbf7d0", grey: "#f0fdf4",
+    navBg: "rgba(240,253,244,0.95)", navBorder: "rgba(22,163,74,0.1)",
   },
 };
 
 const useTheme = () => {
-  const [mode, setModeRaw] = useState(() => localStorage.getItem("cereza-theme") || "light");
-  const [glowColor, setGlowColorRaw] = useState(() => localStorage.getItem("cereza-glow") || "rosa");
-  const [isGlowHour, setIsGlowHour] = useState(false);
-
-  const setMode = (m) => { setModeRaw(m); localStorage.setItem("cereza-theme", m); };
-  const setGlowColor = (g) => { setGlowColorRaw(g); localStorage.setItem("cereza-glow", g); };
-
+  const [mode, setMode] = useState(() => localStorage.getItem("cz-mode") || "light");
+  const [glow, setGlow] = useState(() => localStorage.getItem("cz-glow") || "rosa");
+  const [isGlow, setIsGlow] = useState(false);
+  useEffect(() => { localStorage.setItem("cz-mode", mode); }, [mode]);
+  useEffect(() => { localStorage.setItem("cz-glow", glow); }, [glow]);
   useEffect(() => {
-    const check = async () => {
-      try { const g = await db.isGlowHourNow(); setIsGlowHour(g); } catch (e) { }
-    };
-    check();
-    const interval = setInterval(check, 60000);
-    return () => clearInterval(interval);
+    const check = async () => { try { setIsGlow(await db.isGlowHourNow()); } catch { } };
+    check(); const iv = setInterval(check, 60000); return () => clearInterval(iv);
   }, []);
-
-  const activeTheme = isGlowHour ? (glowColor === "rosa" ? "glowRosa" : "glowGruen") : mode;
-  const t = themes[activeTheme] || themes.light;
-  return { t, mode, setMode, glowColor, setGlowColor, isGlowHour };
+  const key = isGlow ? glow : mode;
+  return { t: T[key] || T.light, mode, setMode, glow, setGlow, isGlow };
 };
 
-// ─── Global color alias (mutated by applyTheme) ─────────────────
-let C = { ...themes.light, beige: themes.light.surface, beigeDark: themes.light.surfaceAlt, orange: themes.light.accent, cream: themes.light.card };
-const font = { ui: "'Inter',-apple-system,'SF Pro Display',sans-serif", display: "'Playfair Display',Georgia,serif" };
-
-const applyTheme = (t) => {
-  C.bg = t.bg; C.beige = t.surface; C.beigeDark = t.surfaceAlt; C.card = t.card;
-  C.orange = t.accent; C.green = t.green; C.text = t.text; C.textSub = t.textSub;
-  C.textLight = t.textLight; C.white = t.white; C.border = t.border; C.greyBg = t.greyBg; C.cream = t.card;
+let C = { ...T.light, beige: T.light.surface, orange: T.light.accent };
+const applyTheme = t => {
+  C.bg = t.bg; C.beige = t.surface; C.card = t.card; C.orange = t.accent; C.green = t.green;
+  C.text = t.text; C.textSub = t.textSub; C.textLight = t.textLight;
+  C.white = t.white; C.border = t.border; C.greyBg = t.grey;
+  C.navBg = t.navBg; C.navBorder = t.navBorder;
 };
+const font = { ui: "'Inter',-apple-system,'SF Pro Text',sans-serif", display: "'Playfair Display',Georgia,serif" };
 
-// ─── Static data ────────────────────────────────────────────────
+// ─── Constants ──────────────────────────────────────────────────
 const ERAS = [
-  { level: 1, name: "Newbie", ptsNeeded: 0 },
-  { level: 2, name: "Regular", ptsNeeded: 500 },
-  { level: 3, name: "Muse", ptsNeeded: 1200 },
-  { level: 4, name: "Insider", ptsNeeded: 2500 },
-  { level: 5, name: "Icon", ptsNeeded: 5000 },
+  { level: 1, name: "Newbie", pts: 0 }, { level: 2, name: "Regular", pts: 500 },
+  { level: 3, name: "Muse", pts: 1200 }, { level: 4, name: "Insider", pts: 2500 }, { level: 5, name: "Icon", pts: 5000 },
 ];
 const MOCK_MISSIONS = [
-  { id: 1, title: "Morning Muse", description: "Besuche uns vor 12 Uhr", progress: 1, goal: 2, pts_reward: 150, icon: "☀" },
-  { id: 2, title: "Spicy Lover", description: "Bestelle Pizza mit Chili Oil", progress: 0, goal: 1, pts_reward: 100, icon: "✦" },
-  { id: 3, title: "Matcha Ritual", description: "3x Matcha diese Woche", progress: 2, goal: 3, pts_reward: 120, icon: "◈" },
-  { id: 4, title: "Social Star", description: "Teile deinen Status auf Instagram", progress: 0, goal: 1, pts_reward: 75, icon: "★" },
-];
-const MOCK_SHOP = [
-  { id: 1, name: "Gratis Espresso", cost: 300, min_level: 1, icon: "◎" },
-  { id: 2, name: "Gratis Matcha", cost: 600, min_level: 2, icon: "◈" },
-  { id: 3, name: "Gratis Margherita", cost: 1000, min_level: 3, icon: "◉" },
-  { id: 4, name: "Chef's Table Dinner", cost: 2500, min_level: 4, icon: "✦" },
-  { id: 5, name: "Cereza Merch Pack", cost: 1500, min_level: 3, icon: "▲" },
-  { id: 6, name: "Benenne eine Pizza", cost: 5000, min_level: 5, icon: "★" },
+  { id: 1, title: "Morning Muse", description: "Vor 12 Uhr besuchen", progress: 1, goal: 2, pts_reward: 150, icon: "☀" },
+  { id: 2, title: "Spicy Lover", description: "Pizza mit Chili Oil bestellen", progress: 0, goal: 1, pts_reward: 100, icon: "✦" },
+  { id: 3, title: "Matcha Ritual", description: "3× Matcha diese Woche", progress: 2, goal: 3, pts_reward: 120, icon: "◈" },
 ];
 const MOCK_DISHES = [
   { id: 1, name: "Truffle Margherita", description: "Trüffelcreme · Fior di Latte · Frischer Trüffel", votes: 142 },
   { id: 2, name: "Matcha Tiramisu", description: "Matcha-Mascarpone · Espresso-Sauerteigboden", votes: 89 },
   { id: 3, name: "Pistachio Dream", description: "Pistaziencreme · Mortadella · Stracciatella", votes: 234 },
-  { id: 4, name: "Mango Tango", description: "Mango-Habanero · Gambas · Limettenzeste", votes: 67 },
+];
+const MOCK_SHOP = [
+  { id: 1, name: "Gratis Espresso", cost: 300, min_level: 1, icon: "◎" },
+  { id: 2, name: "Gratis Matcha", cost: 600, min_level: 2, icon: "◈" },
+  { id: 3, name: "Gratis Margherita", cost: 1000, min_level: 3, icon: "◉" },
+  { id: 4, name: "Chef's Table", cost: 2500, min_level: 4, icon: "✦" },
 ];
 const MOCK_LB = [
   { rank: 1, name: "Sophia", pts: 3200 }, { rank: 2, name: "Luca", pts: 2800 }, { rank: 3, name: "Marco", pts: 1450 },
   { rank: 4, name: "Elena", pts: 1100 }, { rank: 5, name: "Tom", pts: 900 },
 ];
-const FUN_FACTS = [
+const WHEEL_DEFAULT = [
+  { id: 1, label: "50 XP", value: 50, color: "#fde8e8" }, { id: 2, label: "Nichts", value: 0, color: "#f5f5f5" },
+  { id: 3, label: "100 XP", value: 100, color: "#e8f5e9" }, { id: 4, label: "25 XP", value: 25, color: "#fef3e2" },
+  { id: 5, label: "2× XP", value: -1, color: "#e8eaf6" }, { id: 6, label: "Nichts", value: 0, color: "#f5f5f5" },
+  { id: 7, label: "200 XP", value: 200, color: "#fce4ec" }, { id: 8, label: "75 XP", value: 75, color: "#e0f7fa" },
+];
+const WHEEL_TCOLORS = ["#c0392b", "#999", "#27ae60", "#d35400", "#3949ab", "#999", "#c2185b", "#00838f"];
+const FUN_FACTS_DEFAULT = [
   "Unsere Chili No. 2 reift 40 Tage im Fass.",
   "Der Teig ruht 72 Stunden für maximalen Crunch.",
   "Cereza bedeutet Kirsche auf Spanisch.",
-  "Wir nutzen nur Fior di Latte aus Kampanien.",
+  "Fior di Latte kommt frisch aus Kampanien.",
   "Unser Ofen erreicht 485°C in 12 Minuten.",
 ];
-const WHEEL_PRIZES_DEFAULT = [
-  { id: 1, label: "50 XP", value: 50, color: "#fde8e8" },
-  { id: 2, label: "Nichts", value: 0, color: "#f5f5f5" },
-  { id: 3, label: "100 XP", value: 100, color: "#e8f5e9" },
-  { id: 4, label: "25 XP", value: 25, color: "#fef3e2" },
-  { id: 5, label: "2× XP", value: -1, color: "#e8eaf6" },
-  { id: 6, label: "Nichts", value: 0, color: "#f5f5f5" },
-  { id: 7, label: "200 XP", value: 200, color: "#fce4ec" },
-  { id: 8, label: "75 XP", value: 75, color: "#e0f7fa" },
-];
-const WHEEL_TEXT_COLORS = ["#c0392b", "#999999", "#27ae60", "#d35400", "#3949ab", "#999999", "#c2185b", "#00838f"];
 
 // ─── CSS ────────────────────────────────────────────────────────
-const getCSS = (t) => `
+const getCSS = t => `
   @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&family=Playfair+Display:wght@400;700;900&display=swap');
   *,*::before,*::after{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
-  html,body,#root{height:100%;width:100%;overflow:hidden;position:fixed;inset:0;background:${t.bg};overscroll-behavior:none;user-select:none;-webkit-user-select:none;transition:background 0.4s;-webkit-font-smoothing:antialiased;font-family:'Inter',-apple-system,sans-serif}
-  input,textarea,select{user-select:text;-webkit-user-select:text;font-family:inherit}
-  input::placeholder,textarea::placeholder{color:${t.textLight}}
+  html,body,#root{
+    height:100%;width:100%;
+    overflow:hidden;position:fixed;inset:0;
+    background:${t.bg};
+    overscroll-behavior:none;-webkit-overflow-scrolling:touch;
+    user-select:none;-webkit-user-select:none;
+    -webkit-font-smoothing:antialiased;
+    font-family:'Inter',-apple-system,sans-serif;
+    transition:background 0.35s;
+  }
+  input,textarea,select{user-select:text;-webkit-user-select:text;font-family:inherit;font-size:16px}
   ::-webkit-scrollbar{display:none}
-  button{-webkit-appearance:none;appearance:none;font-family:inherit;cursor:pointer}
-  button:active{transform:scale(0.96);transition:transform 0.1s}
-  a{color:inherit;text-decoration:none}
-  @keyframes fadeUp{from{opacity:0;transform:translateY(14px)}to{opacity:1;transform:translateY(0)}}
+  button{-webkit-appearance:none;appearance:none;font-family:inherit;cursor:pointer;border:none;outline:none}
+  button:active{opacity:0.75;transform:scale(0.97)}
+  @keyframes fadeUp{from{opacity:0;transform:translateY(12px)}to{opacity:1;transform:translateY(0)}}
   @keyframes fadeIn{from{opacity:0}to{opacity:1}}
-  @keyframes scaleIn{from{transform:scale(0.75);opacity:0}to{transform:scale(1);opacity:1}}
-  @keyframes slideUp{from{transform:translateY(100%);opacity:0}to{transform:translateY(0);opacity:1}}
-  @keyframes confetti{0%{transform:translateY(0) rotate(0deg);opacity:1}100%{transform:translateY(500px) rotate(720deg);opacity:0}}
+  @keyframes scaleIn{from{transform:scale(0.8);opacity:0}to{transform:scale(1);opacity:1}}
+  @keyframes slideUp{from{transform:translateY(100%)}to{transform:translateY(0)}}
+  @keyframes confetti{0%{transform:translateY(0) rotate(0deg);opacity:1}100%{transform:translateY(600px) rotate(720deg);opacity:0}}
 `;
-const defaultCSS = getCSS(themes.light);
+const defaultCSS = getCSS(T.light);
 
 // ─── Sound ──────────────────────────────────────────────────────
 const Sound = {
-  _ctx: null,
-  ctx() { if (!this._ctx) try { this._ctx = new (window.AudioContext || window.webkitAudioContext)(); } catch (e) { } return this._ctx; },
-  play(freq, dur, type = "sine", vol = 0.1, delay = 0) {
+  _c: null, ctx() { if (!this._c) try { this._c = new (window.AudioContext || window.webkitAudioContext)() } catch (e) { } return this._c; },
+  p(f, d, t = "sine", v = 0.09, dl = 0) {
     try {
-      const c = this.ctx(); if (!c) return;
-      const o = c.createOscillator(), g = c.createGain();
-      o.type = type; o.frequency.value = freq;
-      g.gain.setValueAtTime(0, c.currentTime + delay);
-      g.gain.linearRampToValueAtTime(vol, c.currentTime + delay + 0.01);
-      g.gain.exponentialRampToValueAtTime(0.001, c.currentTime + delay + dur);
-      o.connect(g); g.connect(c.destination);
-      o.start(c.currentTime + delay); o.stop(c.currentTime + delay + dur);
+      const c = this.ctx(); if (!c) return; const o = c.createOscillator(), g = c.createGain();
+      o.type = t; o.frequency.value = f; g.gain.setValueAtTime(0, c.currentTime + dl);
+      g.gain.linearRampToValueAtTime(v, c.currentTime + dl + 0.01); g.gain.exponentialRampToValueAtTime(0.001, c.currentTime + dl + d);
+      o.connect(g); g.connect(c.destination); o.start(c.currentTime + dl); o.stop(c.currentTime + dl + d);
     } catch (e) { }
   },
-  tap() { this.play(900, 0.06, "sine", 0.05); },
-  scan() { [660, 880, 1100].forEach((f, i) => this.play(f, 0.1, "sine", 0.08, i * 0.08)); },
-  spin() { for (let i = 0; i < 5; i++) this.play(300 + i * 60, 0.06, "triangle", 0.05, i * 0.07); },
-  win() { [523, 659, 784, 1047].forEach((f, i) => this.play(f, 0.2, "sine", 0.1, i * 0.1)); },
-  lose() { this.play(300, 0.3, "sawtooth", 0.08); },
-  levelUp() { [392, 523, 659, 784, 1047].forEach((f, i) => this.play(f, 0.2, "sine", 0.09, i * 0.09)); },
-  redeem() { [440, 554, 659].forEach((f, i) => this.play(f, 0.15, "sine", 0.1, i * 0.1)); },
-  vote() { this.play(440, 0.08); this.play(660, 0.1, "sine", 0.07, 0.08); },
-  gift() { [523, 659, 784, 1047].forEach((f, i) => this.play(f, 0.12, "sine", 0.08, i * 0.07)); },
-  error() { this.play(200, 0.15, "sawtooth", 0.1); },
+  tap() { this.p(900, 0.05, "sine", 0.04) },
+  scan() { [660, 880, 1100].forEach((f, i) => this.p(f, 0.1, "sine", 0.07, i * 0.08)) },
+  spin() { for (let i = 0; i < 5; i++)this.p(300 + i * 55, 0.06, "triangle", 0.04, i * 0.07) },
+  win() { [523, 659, 784, 1047].forEach((f, i) => this.p(f, 0.18, "sine", 0.09, i * 0.1)) },
+  lose() { this.p(280, 0.3, "sawtooth", 0.07) },
+  lvl() { [392, 523, 659, 784, 1047].forEach((f, i) => this.p(f, 0.2, "sine", 0.08, i * 0.09)) },
+  redeem() { [440, 554, 659].forEach((f, i) => this.p(f, 0.14, "sine", 0.09, i * 0.1)) },
+  vote() { this.p(440, 0.08); this.p(660, 0.1, "sine", 0.07, 0.08) },
+  gift() { [523, 659, 784, 1047].forEach((f, i) => this.p(f, 0.11, "sine", 0.07, i * 0.07)) },
 };
 
-// ─── Card Component ─────────────────────────────────────────────
+// ─── Icons ──────────────────────────────────────────────────────
+const Ico = {
+  home: <svg width="24" height="24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" viewBox="0 0 24 24"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" /><polyline points="9 22 9 12 15 12 15 22" /></svg>,
+  target: <svg width="24" height="24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10" /><circle cx="12" cy="12" r="6" /><circle cx="12" cy="12" r="2" /></svg>,
+  qr: <svg width="24" height="24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7" rx="1" /><rect x="14" y="3" width="7" height="7" rx="1" /><rect x="3" y="14" width="7" height="7" rx="1" /><path d="M14 14h3v3" /><path d="M17 17h4v4" /><path d="M14 17v4" /></svg>,
+  heart: <svg width="24" height="24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" viewBox="0 0 24 24"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z" /></svg>,
+  heartFill: <svg width="28" height="28" fill="currentColor" viewBox="0 0 24 24"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z" /></svg>,
+  user: <svg width="24" height="24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" viewBox="0 0 24 24"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" /><circle cx="12" cy="7" r="4" /></svg>,
+  x: <svg width="20" height="20" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" viewBox="0 0 24 24"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg>,
+  check: <svg width="20" height="20" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12" /></svg>,
+  share: <svg width="18" height="18" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" viewBox="0 0 24 24"><circle cx="18" cy="5" r="3" /><circle cx="6" cy="12" r="3" /><circle cx="18" cy="19" r="3" /><line x1="8.59" y1="13.51" x2="15.42" y2="17.49" /><line x1="15.41" y1="6.51" x2="8.59" y2="10.49" /></svg>,
+  gift: <svg width="18" height="18" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" viewBox="0 0 24 24"><polyline points="20 12 20 22 4 22 4 12" /><rect x="2" y="7" width="20" height="5" /><line x1="12" y1="22" x2="12" y2="7" /><path d="M12 7H7.5a2.5 2.5 0 0 1 0-5C11 2 12 7 12 7z" /><path d="M12 7h4.5a2.5 2.5 0 0 0 0-5C13 2 12 7 12 7z" /></svg>,
+  cam: <svg width="20" height="20" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" viewBox="0 0 24 24"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z" /><circle cx="12" cy="13" r="4" /></svg>,
+  edit: <svg width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" viewBox="0 0 24 24"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" /><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" /></svg>,
+};
+
+// ─── Card ────────────────────────────────────────────────────────
 const Card = ({ children, style, onClick }) => (
-  <div onClick={onClick} style={{
-    background: C.card, borderRadius: "16px", padding: "16px",
-    border: `1px solid ${C.border}`, color: C.text, ...style
-  }}>{children}</div>
+  <div onClick={onClick} style={{ background: C.card, borderRadius: "18px", padding: "16px", border: `1px solid ${C.border}`, ...style }}>
+    {children}
+  </div>
 );
 
-// ─── Icons (SVG) ────────────────────────────────────────────────
-const Icon = {
-  home: <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" /><polyline points="9 22 9 12 15 12 15 22" /></svg>,
-  target: <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10" /><circle cx="12" cy="12" r="6" /><circle cx="12" cy="12" r="2" /></svg>,
-  qr: <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="7" height="7" rx="1" /><rect x="14" y="3" width="7" height="7" rx="1" /><rect x="3" y="14" width="7" height="7" rx="1" /><rect x="14" y="14" width="3" height="3" /><rect x="19" y="14" width="2" height="2" /><rect x="14" y="19" width="2" height="2" /><rect x="18" y="18" width="3" height="3" /></svg>,
-  heart: <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z" /></svg>,
-  user: <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" /><circle cx="12" cy="7" r="4" /></svg>,
-  x: <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg>,
-  heartFill: <svg width="28" height="28" viewBox="0 0 24 24" fill="currentColor" stroke="none"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z" /></svg>,
-  share: <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="18" cy="5" r="3" /><circle cx="6" cy="12" r="3" /><circle cx="18" cy="19" r="3" /><line x1="8.59" y1="13.51" x2="15.42" y2="17.49" /><line x1="15.41" y1="6.51" x2="8.59" y2="10.49" /></svg>,
-  gift: <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 12 20 22 4 22 4 12" /><rect x="2" y="7" width="20" height="5" /><line x1="12" y1="22" x2="12" y2="7" /><path d="M12 7H7.5a2.5 2.5 0 0 1 0-5C11 2 12 7 12 7z" /><path d="M12 7h4.5a2.5 2.5 0 0 0 0-5C13 2 12 7 12 7z" /></svg>,
-  check: <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12" /></svg>,
-  crown: <svg width="32" height="32" viewBox="0 0 24 24" fill="currentColor" stroke="none"><path d="M2 20h20v2H2v-2zm2-3l2-8 4 5 2-10 2 10 4-5 2 8H4z" /></svg>,
-  camera: <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z" /><circle cx="12" cy="13" r="4" /></svg>,
-};
+// ─── PWA safe area helpers ───────────────────────────────────────
+// safeTop: status bar padding, safeBot: home indicator
+const safeTop = "env(safe-area-inset-top, 0px)";
+const safeBot = "env(safe-area-inset-bottom, 0px)";
 
-// ─── Level Up Overlay ───────────────────────────────────────────
+// ─── Level Up Overlay ────────────────────────────────────────────
 const LevelUpOverlay = ({ level, onClose }) => {
   const era = ERAS[level - 1] || ERAS[0];
   return (
-    <div style={{ position: "fixed", inset: 0, zIndex: 9999, background: "rgba(0,0,0,0.92)", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", animation: "fadeIn 0.4s" }}>
+    <div style={{ position: "fixed", inset: 0, zIndex: 9999, background: "rgba(0,0,0,0.93)", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", animation: "fadeIn 0.4s" }}>
       <style>{defaultCSS}</style>
       {[...Array(16)].map((_, i) => (
-        <div key={i} style={{ position: "absolute", width: "8px", height: "8px", background: ["#e24a28", "#f0e8d8", "#FFD700", "#ff8080"][i % 4], borderRadius: i % 2 ? "50%" : "2px", left: `${Math.random() * 100}%`, top: "-10px", animation: `confetti ${1 + Math.random() * 2}s ease-in forwards`, animationDelay: `${Math.random() * 0.5}s` }} />
+        <div key={i} style={{ position: "absolute", width: "8px", height: "8px", background: ["#e24a28", "#f0e8d8", "#ffd700", "#ff8080"][i % 4], borderRadius: i % 2 ? "50%" : "2px", left: `${Math.random() * 100}%`, top: "-10px", animation: `confetti ${1 + Math.random() * 2}s ease-in forwards`, animationDelay: `${Math.random() * 0.5}s` }} />
       ))}
-      <div style={{ color: "#FFD700", animation: "scaleIn 0.6s ease 0.2s both" }}>{Icon.crown}</div>
-      <div style={{ fontSize: "42px", fontFamily: font.display, color: "#ffffff", marginTop: "12px", fontWeight: "700", animation: "scaleIn 0.6s ease 0.4s both" }}>Level Up!</div>
-      <div style={{ fontSize: "11px", letterSpacing: "4px", color: "rgba(255,255,255,0.5)", marginTop: "12px", animation: "fadeUp 0.5s ease 0.6s both" }}>NEUER STATUS FREIGESCHALTET</div>
-      <div style={{ fontSize: "30px", fontFamily: font.display, color: "#ffffff", marginTop: "6px", animation: "fadeUp 0.5s ease 0.7s both" }}>{era.name}</div>
-      <button onClick={onClose} style={{ marginTop: "36px", padding: "14px 48px", background: "#e24a28", border: "none", borderRadius: "50px", color: "#ffffff", fontSize: "15px", fontWeight: "700", animation: "fadeUp 0.5s ease 0.9s both" }}>
-        Feiern
-      </button>
+      <div style={{ fontSize: "48px", marginBottom: "8px" }}>👑</div>
+      <div style={{ fontSize: "40px", fontFamily: font.display, color: "#fff", fontWeight: "700", animation: "scaleIn 0.5s ease 0.3s both" }}>Level Up!</div>
+      <div style={{ fontSize: "11px", letterSpacing: "4px", color: "rgba(255,255,255,0.45)", marginTop: "14px" }}>NEUER STATUS</div>
+      <div style={{ fontSize: "28px", fontFamily: font.display, color: "#fff", marginTop: "4px" }}>{era.name}</div>
+      <button onClick={onClose} style={{ marginTop: "36px", padding: "14px 48px", background: "#e24a28", borderRadius: "50px", color: "#fff", fontSize: "15px", fontWeight: "700" }}>Feiern</button>
     </div>
   );
 };
 
-// ─── Auth ───────────────────────────────────────────────────────
+// ─── Auth Screen ─────────────────────────────────────────────────
 const AuthScreen = ({ onLogin }) => {
   const [isLogin, setIsLogin] = useState(true);
   const [email, setEmail] = useState("");
   const [pw, setPw] = useState("");
-  const [username, setUsername] = useState("");
+  const [name, setName] = useState("");
   const [phone, setPhone] = useState("");
   const [dsgvo, setDsgvo] = useState(false);
   const [err, setErr] = useState("");
   const [loading, setLoading] = useState(false);
 
   const submit = async () => {
-    setErr("");
-    if (!email || !pw) { setErr("Bitte alle Felder ausfüllen."); return; }
-    if (!isLogin && !username) { setErr("Bitte Username eingeben."); return; }
+    setErr(""); if (!email || !pw) { setErr("Bitte alle Felder ausfüllen."); return; }
+    if (!isLogin && !name) { setErr("Bitte Username eingeben."); return; }
     if (!isLogin && !dsgvo) { setErr("Bitte Datenschutz akzeptieren."); return; }
     setLoading(true);
     try {
       if (isLogin) {
         const { data, error } = await db.signIn(email, pw);
         if (error) { setErr("Falsche E-Mail oder Passwort."); setLoading(false); return; }
-        // FIX: Retry für Race-Condition
-        let profile = null;
-        for (let i = 0; i < 5; i++) {
-          profile = await db.getProfile(data.user.id);
-          if (profile) break;
-          await new Promise(r => setTimeout(r, 600 * (i + 1)));
-        }
-        onLogin(profile || { id: data.user.id, name: data.user.user_metadata?.name || email.split('@')[0], email, pts: 0, level: 1, streak: 0, total_visits: 0, treat_count: 0, treat_goal: 8, wheel_spun_today: false, is_abo_member: false, is_admin: false });
+        let p = null; for (let i = 0; i < 5; i++) { p = await db.getProfile(data.user.id); if (p) break; await new Promise(r => setTimeout(r, 600 * (i + 1))); }
+        onLogin(p || { id: data.user.id, name: data.user.user_metadata?.name || email.split('@')[0], email, pts: 0, level: 1, streak: 0, total_visits: 0, treat_count: 0, treat_goal: 8, wheel_spun_today: false, is_abo_member: false, is_admin: false });
       } else {
-        const { data, error } = await db.signUp(email, pw, username);
+        const { data, error } = await db.signUp(email, pw, name);
         if (error) { setErr(error.message); setLoading(false); return; }
         if (data.user) {
           await new Promise(r => setTimeout(r, 2000));
-          await db.updateProfile(data.user.id, { name: username, phone }).catch(() => { });
-          let profile = null;
-          for (let i = 0; i < 4; i++) {
-            profile = await db.getProfile(data.user.id);
-            if (profile) break;
-            await new Promise(r => setTimeout(r, 700));
-          }
-          onLogin(profile || { id: data.user.id, name: username, email, phone, pts: 0, level: 1, streak: 0, total_visits: 0, treat_count: 0, treat_goal: 8, wheel_spun_today: false, is_abo_member: false, is_admin: false });
+          await db.updateProfile(data.user.id, { name, phone }).catch(() => { });
+          let p = null; for (let i = 0; i < 4; i++) { p = await db.getProfile(data.user.id); if (p) break; await new Promise(r => setTimeout(r, 700)); }
+          onLogin(p || { id: data.user.id, name, email, phone, pts: 0, level: 1, streak: 0, total_visits: 0, treat_count: 0, treat_goal: 8, wheel_spun_today: false, is_abo_member: false, is_admin: false });
         }
       }
-    } catch (e) { setErr("Verbindungsfehler: " + e.message); }
+    } catch (e) { setErr("Verbindungsfehler."); }
     setLoading(false);
   };
 
-  const inp = (ph, val, set, type = "text") => (
-    <input type={type} placeholder={ph} value={val} onChange={e => set(e.target.value)}
-      style={{ width: "100%", padding: "14px 16px", background: "rgba(255,255,255,0.13)", border: "1px solid rgba(255,255,255,0.22)", borderRadius: "14px", color: "#ffffff", fontSize: "15px", outline: "none", marginBottom: "10px", boxSizing: "border-box" }} />
-  );
-
   return (
-    <div style={{ minHeight: "100vh", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: "32px 24px", background: "#C1272D" }}>
+    <div style={{ minHeight: "100vh", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: `calc(${safeTop} + 40px) 28px calc(${safeBot} + 40px)`, background: "#C1272D" }}>
       <style>{defaultCSS}</style>
-      <div style={{ animation: "fadeUp 0.6s ease", marginBottom: "40px", textAlign: "center" }}>
-        <div style={{ fontSize: "52px", fontFamily: font.display, color: "#ffffff", fontWeight: "700", letterSpacing: "1px" }}>cereza</div>
-        <div style={{ fontSize: "11px", letterSpacing: "5px", color: "rgba(255,255,255,0.5)", marginTop: "6px" }}>LOYALTY CLUB</div>
+      <div style={{ marginBottom: "44px", textAlign: "center", animation: "fadeUp 0.5s ease" }}>
+        <div style={{ fontSize: "56px", fontFamily: font.display, color: "#fff", fontWeight: "700", letterSpacing: "1px" }}>cereza</div>
+        <div style={{ fontSize: "11px", letterSpacing: "5px", color: "rgba(255,255,255,0.45)", marginTop: "6px" }}>LOYALTY CLUB</div>
       </div>
-      <div style={{ width: "100%", maxWidth: "340px", animation: "fadeUp 0.6s ease 0.1s both" }}>
-        {!isLogin && inp("Username", username, setUsername)}
-        {inp("E-Mail", email, setEmail, "email")}
-        {inp("Passwort (min. 6 Zeichen)", pw, setPw, "password")}
-        {!isLogin && inp("Handynummer", phone, setPhone, "tel")}
+      <div style={{ width: "100%", maxWidth: "340px", animation: "fadeUp 0.5s ease 0.1s both" }}>
+        {!isLogin && <input value={name} onChange={e => setName(e.target.value)} placeholder="Username" style={{ width: "100%", padding: "15px 18px", background: "rgba(255,255,255,0.12)", border: "1px solid rgba(255,255,255,0.2)", borderRadius: "14px", color: "#fff", fontSize: "16px", outline: "none", marginBottom: "10px", boxSizing: "border-box" }} />}
+        <input type="email" value={email} onChange={e => setEmail(e.target.value)} placeholder="E-Mail" style={{ width: "100%", padding: "15px 18px", background: "rgba(255,255,255,0.12)", border: "1px solid rgba(255,255,255,0.2)", borderRadius: "14px", color: "#fff", fontSize: "16px", outline: "none", marginBottom: "10px", boxSizing: "border-box" }} />
+        <input type="password" value={pw} onChange={e => setPw(e.target.value)} placeholder="Passwort (min. 6 Zeichen)" style={{ width: "100%", padding: "15px 18px", background: "rgba(255,255,255,0.12)", border: "1px solid rgba(255,255,255,0.2)", borderRadius: "14px", color: "#fff", fontSize: "16px", outline: "none", marginBottom: "10px", boxSizing: "border-box" }} />
+        {!isLogin && <input type="tel" value={phone} onChange={e => setPhone(e.target.value)} placeholder="Handynummer" style={{ width: "100%", padding: "15px 18px", background: "rgba(255,255,255,0.12)", border: "1px solid rgba(255,255,255,0.2)", borderRadius: "14px", color: "#fff", fontSize: "16px", outline: "none", marginBottom: "10px", boxSizing: "border-box" }} />}
         {!isLogin && (
-          <div onClick={() => setDsgvo(!dsgvo)} style={{ display: "flex", alignItems: "flex-start", gap: "10px", marginBottom: "14px", cursor: "pointer", color: "rgba(255,255,255,0.6)", fontSize: "12px", lineHeight: 1.5 }}>
-            <div style={{ width: "18px", height: "18px", borderRadius: "5px", flexShrink: 0, marginTop: "2px", border: `2px solid ${dsgvo ? "#ffffff" : "rgba(255,255,255,0.4)"}`, background: dsgvo ? "#ffffff" : "transparent", display: "flex", alignItems: "center", justifyContent: "center" }}>
+          <div onClick={() => setDsgvo(!dsgvo)} style={{ display: "flex", alignItems: "flex-start", gap: "12px", marginBottom: "16px", cursor: "pointer", color: "rgba(255,255,255,0.65)", fontSize: "13px", lineHeight: 1.5 }}>
+            <div style={{ width: "20px", height: "20px", borderRadius: "6px", flexShrink: 0, marginTop: "1px", border: `2px solid ${dsgvo ? "#fff" : "rgba(255,255,255,0.4)"}`, background: dsgvo ? "#fff" : "transparent", display: "flex", alignItems: "center", justifyContent: "center" }}>
               {dsgvo && <div style={{ width: "10px", height: "10px", background: "#e24a28", borderRadius: "2px" }} />}
             </div>
             Ich akzeptiere die Datenschutzerklärung
           </div>
         )}
-        {err && <div style={{ color: "#ffcccc", fontSize: "13px", marginBottom: "10px", textAlign: "center" }}>{err}</div>}
-        <button onClick={submit} disabled={loading} style={{ width: "100%", padding: "15px", background: "rgba(255,255,255,0.95)", border: "none", borderRadius: "14px", color: "#C1272D", fontSize: "16px", fontWeight: "700", opacity: loading ? 0.7 : 1 }}>
+        {err && <div style={{ color: "#ffcccc", fontSize: "13px", marginBottom: "12px", textAlign: "center" }}>{err}</div>}
+        <button onClick={submit} disabled={loading} style={{ width: "100%", padding: "16px", background: "rgba(255,255,255,0.95)", borderRadius: "14px", color: "#C1272D", fontSize: "16px", fontWeight: "700", opacity: loading ? 0.7 : 1 }}>
           {loading ? "..." : isLogin ? "Einloggen" : "Registrieren"}
         </button>
-        <p style={{ textAlign: "center", marginTop: "20px", color: "rgba(255,255,255,0.5)", fontSize: "13px" }}>
+        <p style={{ textAlign: "center", marginTop: "22px", color: "rgba(255,255,255,0.45)", fontSize: "14px" }}>
           {isLogin ? "Noch kein Mitglied? " : "Schon dabei? "}
           <span onClick={() => { setIsLogin(!isLogin); setErr(""); }} style={{ color: "rgba(255,255,255,0.9)", cursor: "pointer", textDecoration: "underline" }}>
             {isLogin ? "Jetzt beitreten" : "Einloggen"}
@@ -296,46 +262,50 @@ const AuthScreen = ({ onLogin }) => {
   );
 };
 
-// ─── Home Tab ───────────────────────────────────────────────────
+// ─── Home Tab ────────────────────────────────────────────────────
 const HomeTab = ({ user, setUser, setTab }) => {
   const era = ERAS.find(e => e.level === (user.level || 1)) || ERAS[0];
   const next = ERAS.find(e => e.level === (user.level || 1) + 1);
-  const pct = next ? Math.min(100, Math.round(((user.pts - era.ptsNeeded) / (next.ptsNeeded - era.ptsNeeded)) * 100)) : 100;
+  const pct = next ? Math.min(100, Math.round(((user.pts - era.pts) / (next.pts - era.pts)) * 100)) : 100;
   const [fi, setFi] = useState(0);
   const [lb, setLb] = useState(MOCK_LB);
   const [missions, setMissions] = useState(MOCK_MISSIONS);
-  const [facts, setFacts] = useState(FUN_FACTS);
-  const [visitStatus, setVisitStatus] = useState(null);
+  const [facts, setFacts] = useState(FUN_FACTS_DEFAULT);
+  const [visit, setVisitLocal] = useState(null);
 
+  // Realtime für alle Live-Daten im Home Tab
   useEffect(() => {
-    const interval = setInterval(() => setFi(i => (i + 1) % facts.length), 5000);
-    return () => clearInterval(interval);
-  }, [facts]);
-
-  useEffect(() => {
-    db.getLeaderboard().then(d => { if (d.length) setLb(d); });
-    db.getMissions().then(d => { if (d.length) setMissions(d); });
-    db.getFunFacts().then(d => { if (d.length) setFacts(d.map(f => f.text)); });
+    db.getLeaderboard().then(d => { if (d.length) setLb(d) });
+    db.getMissions().then(d => { if (d.length) setMissions(d) });
+    db.getFunFacts().then(d => { if (d.length) setFacts(d.map(f => f.text)) });
     if (user.id) {
       const today = new Date().toISOString().split('T')[0];
-      db.getVisitIntention(user.id, today).then(d => { if (d) setVisitStatus(d.status); }).catch(() => { });
+      db.getVisitIntention(user.id, today).then(d => { if (d) setVisitLocal(d.status) }).catch(() => { });
     }
+    // Realtime: Missionen und Fun Facts
+    const ch = supabase.channel('home-rt')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'missions' }, () => db.getMissions().then(d => { if (d.length) setMissions(d) }))
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'fun_facts' }, () => db.getFunFacts().then(d => { if (d.length) setFacts(d.map(f => f.text)) }))
+      .subscribe();
+    return () => supabase.removeChannel(ch);
   }, []);
 
+  useEffect(() => {
+    const iv = setInterval(() => setFi(i => (i + 1) % facts.length), 5000);
+    return () => clearInterval(iv);
+  }, [facts]);
+
   const setVisit = async (status) => {
-    setVisitStatus(status);
-    if (user.id) {
-      const today = new Date().toISOString().split('T')[0];
-      await db.setVisitIntention(user.id, today, status);
-    }
+    setVisitLocal(status);
+    if (user.id) { const today = new Date().toISOString().split('T')[0]; await db.setVisitIntention(user.id, today, status); }
   };
 
   return (
     <div style={{ background: C.beige, paddingBottom: "24px", minHeight: "100%" }}>
-      {/* Header */}
-      <div style={{ padding: "20px 20px 16px" }}>
-        <div style={{ fontSize: "11px", letterSpacing: "3px", color: C.textLight, fontWeight: "600" }}>WILLKOMMEN ZURÜCK</div>
-        <div style={{ fontSize: "26px", fontFamily: font.display, color: C.text, fontWeight: "700", marginTop: "2px" }}>@{user.name || "user"}</div>
+      {/* Header – mit Safe Area oben */}
+      <div style={{ padding: `calc(${safeTop} + 20px) 20px 16px` }}>
+        <div style={{ fontSize: "12px", letterSpacing: "2px", color: C.textLight, fontWeight: "600", textTransform: "uppercase" }}>Willkommen zurück</div>
+        <div style={{ fontSize: "28px", fontFamily: font.display, color: C.text, fontWeight: "700", marginTop: "2px" }}>@{user.name || "user"}</div>
       </div>
 
       <div style={{ padding: "0 16px" }}>
@@ -343,17 +313,16 @@ const HomeTab = ({ user, setUser, setTab }) => {
         <Card style={{ marginBottom: "12px" }}>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
             <div>
-              <div style={{ fontSize: "10px", fontWeight: "700", letterSpacing: "2px", color: C.textLight, marginBottom: "4px" }}>DEIN STATUS</div>
-              <div style={{ fontSize: "28px", fontFamily: font.display, color: C.orange, fontWeight: "700", lineHeight: 1 }}>{era.name}</div>
+              <div style={{ fontSize: "11px", fontWeight: "700", letterSpacing: "1.5px", color: C.textLight, marginBottom: "4px" }}>DEIN STATUS</div>
+              <div style={{ fontSize: "30px", fontFamily: font.display, color: C.orange, fontWeight: "700", lineHeight: 1 }}>{era.name}</div>
               <div style={{ fontSize: "12px", color: C.textLight, marginTop: "6px" }}>
-                {next ? `${next.name} in ${next.ptsNeeded - (user.pts || 0)} XP` : "Max Level erreicht"}
+                {next ? `Noch ${next.pts - (user.pts || 0)} XP zu ${next.name}` : "Max Level erreicht"}
               </div>
             </div>
-            <div style={{ position: "relative", width: "52px", height: "52px" }}>
-              <svg width="52" height="52" viewBox="0 0 52 52">
-                <circle cx="26" cy="26" r="22" fill="none" stroke={C.border} strokeWidth="4" />
-                <circle cx="26" cy="26" r="22" fill="none" stroke={C.orange} strokeWidth="4"
-                  strokeDasharray={`${pct * 1.38} 138`} strokeLinecap="round" transform="rotate(-90 26 26)" />
+            <div style={{ position: "relative", width: "54px", height: "54px" }}>
+              <svg width="54" height="54" viewBox="0 0 54 54">
+                <circle cx="27" cy="27" r="23" fill="none" stroke={C.border} strokeWidth="4" />
+                <circle cx="27" cy="27" r="23" fill="none" stroke={C.orange} strokeWidth="4" strokeDasharray={`${pct * 1.445} 144.5`} strokeLinecap="round" transform="rotate(-90 27 27)" />
               </svg>
               <div style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center", fontSize: "12px", fontWeight: "700", color: C.text }}>{pct}%</div>
             </div>
@@ -361,38 +330,38 @@ const HomeTab = ({ user, setUser, setTab }) => {
 
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "8px", marginTop: "14px" }}>
             {[{ v: user.pts || 0, l: "XP" }, { v: user.total_visits || 0, l: "Besuche" }, { v: user.streak || 0, l: "Streak" }].map((s, i) => (
-              <div key={i} style={{ textAlign: "center", padding: "10px", background: C.greyBg, borderRadius: "12px" }}>
-                <div style={{ fontSize: "18px", fontWeight: "800", color: C.text }}>{s.v}</div>
-                <div style={{ fontSize: "10px", color: C.textLight, marginTop: "2px" }}>{s.l}</div>
+              <div key={i} style={{ textAlign: "center", padding: "10px 8px", background: C.greyBg, borderRadius: "12px" }}>
+                <div style={{ fontSize: "20px", fontWeight: "800", color: C.text }}>{s.v}</div>
+                <div style={{ fontSize: "10px", color: C.textLight, marginTop: "2px", fontWeight: "500" }}>{s.l}</div>
               </div>
             ))}
           </div>
 
           {/* Treat Tracker */}
-          <div style={{ marginTop: "14px" }}>
-            <div style={{ display: "flex", justifyContent: "space-between", marginBottom: "6px" }}>
-              <div style={{ fontSize: "11px", fontWeight: "600", color: C.textSub }}>Treat Tracker</div>
-              <div style={{ fontSize: "11px", fontWeight: "700", color: C.orange }}>{user.treat_count || 0}/{user.treat_goal || 8}</div>
+          <div style={{ marginTop: "16px" }}>
+            <div style={{ display: "flex", justifyContent: "space-between", marginBottom: "8px" }}>
+              <div style={{ fontSize: "12px", fontWeight: "600", color: C.textSub }}>Treat Tracker</div>
+              <div style={{ fontSize: "12px", fontWeight: "700", color: C.orange }}>{user.treat_count || 0}/{user.treat_goal || 8}</div>
             </div>
             <div style={{ display: "flex", gap: "4px" }}>
               {[...Array(user.treat_goal || 8)].map((_, i) => (
-                <div key={i} style={{ flex: 1, height: "6px", borderRadius: "3px", background: i < (user.treat_count || 0) ? C.orange : C.greyBg, transition: "all 0.3s" }} />
+                <div key={i} style={{ flex: 1, height: "6px", borderRadius: "3px", background: i < (user.treat_count || 0) ? C.orange : C.greyBg, transition: "background 0.3s" }} />
               ))}
             </div>
           </div>
 
-          <button onClick={() => setTab("scan")} style={{ width: "100%", marginTop: "14px", padding: "13px", background: C.text, border: "none", borderRadius: "12px", color: C.white, fontSize: "14px", fontWeight: "700", display: "flex", alignItems: "center", justifyContent: "center", gap: "8px" }}>
-            {Icon.qr} Punkte scannen
+          <button onClick={() => setTab("scan")} style={{ width: "100%", marginTop: "16px", padding: "14px", background: C.text, borderRadius: "14px", color: C.white, fontSize: "15px", fontWeight: "700", display: "flex", alignItems: "center", justifyContent: "center", gap: "10px" }}>
+            {Ico.qr} Punkte scannen
           </button>
         </Card>
 
         {/* Heute kommen? */}
         <Card style={{ marginBottom: "12px" }}>
-          <div style={{ fontSize: "13px", fontWeight: "700", color: C.text, marginBottom: "10px" }}>Kommst du heute vorbei?</div>
+          <div style={{ fontSize: "14px", fontWeight: "700", color: C.text, marginBottom: "12px" }}>Kommst du heute vorbei?</div>
           <div style={{ display: "flex", gap: "8px" }}>
-            {[{ v: "planned", l: "Ja, heute" }, { v: "not", l: "Nicht heute" }].map(opt => (
-              <button key={opt.v} onClick={() => setVisit(opt.v)} style={{ flex: 1, padding: "10px", borderRadius: "12px", border: "none", background: visitStatus === opt.v ? C.orange : C.greyBg, color: visitStatus === opt.v ? C.white : C.textLight, fontSize: "13px", fontWeight: "600", transition: "all 0.2s" }}>
-                {opt.l}
+            {[{ v: "planned", l: "Ja, heute" }, { v: "not", l: "Nicht heute" }].map(o => (
+              <button key={o.v} onClick={() => setVisit(o.v)} style={{ flex: 1, padding: "11px", borderRadius: "12px", background: visit === o.v ? C.orange : C.greyBg, color: visit === o.v ? C.white : C.textLight, fontSize: "14px", fontWeight: "600", transition: "all 0.2s" }}>
+                {o.l}
               </button>
             ))}
           </div>
@@ -400,44 +369,43 @@ const HomeTab = ({ user, setUser, setTab }) => {
 
         {/* Fun Fact */}
         <Card style={{ marginBottom: "12px", background: C.orange, border: "none" }}>
-          <div style={{ fontSize: "10px", fontWeight: "700", letterSpacing: "2px", color: "rgba(255,255,255,0.7)", marginBottom: "6px" }}>FUN FACT</div>
-          <div style={{ fontSize: "14px", color: "#ffffff", lineHeight: 1.5, fontWeight: "500" }}>{facts[fi]}</div>
+          <div style={{ fontSize: "10px", fontWeight: "700", letterSpacing: "2px", color: "rgba(255,255,255,0.65)", marginBottom: "6px" }}>FUN FACT</div>
+          <div style={{ fontSize: "14px", color: "#fff", lineHeight: 1.6, fontWeight: "500" }}>{facts[fi]}</div>
         </Card>
 
-        {/* Missions */}
-        <div style={{ fontSize: "13px", fontWeight: "700", color: C.textSub, marginBottom: "8px", letterSpacing: "0.5px" }}>Aktive Missionen</div>
+        {/* Aktive Missionen */}
+        <div style={{ fontSize: "12px", fontWeight: "700", letterSpacing: "1px", color: C.textSub, marginBottom: "10px", textTransform: "uppercase" }}>Aktive Missionen</div>
         {missions.slice(0, 3).map((m, i) => (
           <Card key={m.id || i} style={{ marginBottom: "8px", padding: "14px" }}>
-            <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
-              <div style={{ width: "36px", height: "36px", borderRadius: "10px", background: C.greyBg, display: "flex", alignItems: "center", justifyContent: "center", fontSize: "16px", flexShrink: 0 }}>{m.icon}</div>
+            <div style={{ display: "flex", alignItems: "center", gap: "14px" }}>
+              <div style={{ width: "40px", height: "40px", borderRadius: "12px", background: C.greyBg, display: "flex", alignItems: "center", justifyContent: "center", fontSize: "18px", flexShrink: 0 }}>{m.icon}</div>
               <div style={{ flex: 1 }}>
                 <div style={{ fontSize: "14px", fontWeight: "700", color: C.text }}>{m.title}</div>
-                <div style={{ fontSize: "11px", color: C.textLight, marginTop: "2px" }}>{m.description}</div>
-                <div style={{ height: "4px", background: C.greyBg, borderRadius: "2px", marginTop: "8px", overflow: "hidden" }}>
-                  <div style={{ height: "100%", width: `${Math.min(100, ((m.progress || 0) / m.goal) * 100)}%`, background: C.green, borderRadius: "2px" }} />
-                </div>
+                <div style={{ fontSize: "12px", color: C.textLight, marginTop: "2px" }}>{m.description}</div>
+                {m.goal > 1 && (
+                  <div style={{ height: "4px", background: C.greyBg, borderRadius: "2px", marginTop: "8px", overflow: "hidden" }}>
+                    <div style={{ height: "100%", width: `${Math.min(100, ((m.progress || 0) / m.goal) * 100)}%`, background: C.green, borderRadius: "2px" }} />
+                  </div>
+                )}
               </div>
-              <div style={{ textAlign: "right", flexShrink: 0 }}>
-                <div style={{ fontSize: "12px", fontWeight: "700", color: C.orange }}>+{m.pts_reward}</div>
-                <div style={{ fontSize: "10px", color: C.textLight }}>{m.progress || 0}/{m.goal}</div>
+              <div style={{ fontSize: "13px", fontWeight: "700", color: (m.progress || 0) >= (m.goal || 1) ? C.green : C.orange, flexShrink: 0 }}>
+                {(m.progress || 0) >= (m.goal || 1) ? "✓" : `+${m.pts_reward}`}
               </div>
             </div>
           </Card>
         ))}
 
-        {/* Leaderboard */}
-        <Card style={{ marginTop: "4px" }}>
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "12px" }}>
+        {/* Bestenliste */}
+        <Card style={{ marginTop: "6px" }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "14px" }}>
             <div style={{ fontSize: "14px", fontWeight: "700", color: C.text }}>Bestenliste</div>
-            <div style={{ fontSize: "10px", fontWeight: "700", color: C.orange, background: "rgba(226,74,40,0.1)", padding: "3px 8px", borderRadius: "6px" }}>Live</div>
+            <div style={{ fontSize: "10px", fontWeight: "700", color: C.orange, background: `${C.orange}18`, padding: "3px 10px", borderRadius: "8px" }}>Live</div>
           </div>
           {lb.slice(0, 5).map((p, i) => (
-            <div key={i} style={{ display: "flex", alignItems: "center", gap: "10px", padding: "8px 0", borderBottom: i < 4 ? `1px solid ${C.greyBg}` : "none" }}>
-              <div style={{ width: "22px", fontSize: "14px", fontWeight: "800", color: i < 3 ? C.orange : C.textLight, textAlign: "center" }}>
-                {i === 0 ? "▲" : i === 1 ? "▲" : i === 2 ? "▲" : p.rank || i + 1}
-              </div>
+            <div key={i} style={{ display: "flex", alignItems: "center", gap: "12px", padding: "9px 0", borderBottom: i < 4 ? `1px solid ${C.greyBg}` : "none" }}>
+              <div style={{ width: "24px", fontSize: "15px", fontWeight: "800", color: i < 3 ? C.orange : C.textLight, textAlign: "center" }}>{i + 1}</div>
               <div style={{ flex: 1, fontSize: "14px", fontWeight: p.name === user.name ? "700" : "500", color: C.text }}>
-                {p.name} {p.name === user.name && <span style={{ fontSize: "10px", color: C.orange }}>(Du)</span>}
+                {p.name}{p.name === user.name && <span style={{ fontSize: "10px", color: C.orange, marginLeft: "4px" }}>(Du)</span>}
               </div>
               <div style={{ fontSize: "13px", fontWeight: "700", color: C.green }}>{p.pts} XP</div>
             </div>
@@ -447,10 +415,10 @@ const HomeTab = ({ user, setUser, setTab }) => {
         {/* Matcha Abo */}
         {!user.is_abo_member && (
           <Card style={{ marginTop: "12px", background: "#2d472a", border: "none" }}>
-            <div style={{ fontSize: "11px", fontWeight: "700", letterSpacing: "2px", color: "rgba(255,255,255,0.6)", marginBottom: "4px" }}>EXKLUSIV</div>
-            <div style={{ fontSize: "18px", fontFamily: font.display, color: "#ffffff", fontWeight: "700" }}>Matcha Society</div>
-            <div style={{ fontSize: "13px", color: "rgba(255,255,255,0.7)", marginTop: "4px" }}>29,99 €/Monat · Unbegrenzte Vorteile</div>
-            <button onClick={() => { const url = import.meta.env.VITE_MATCHA_ABO_URL; if (url) window.open(url, "_blank"); }} style={{ marginTop: "12px", padding: "11px 24px", background: "rgba(255,255,255,0.15)", border: "1px solid rgba(255,255,255,0.3)", borderRadius: "10px", color: "#ffffff", fontSize: "13px", fontWeight: "600" }}>
+            <div style={{ fontSize: "10px", fontWeight: "700", letterSpacing: "2px", color: "rgba(255,255,255,0.55)", marginBottom: "4px" }}>EXKLUSIV</div>
+            <div style={{ fontSize: "20px", fontFamily: font.display, color: "#fff", fontWeight: "700" }}>Matcha Society</div>
+            <div style={{ fontSize: "13px", color: "rgba(255,255,255,0.65)", marginTop: "4px" }}>29,99 €/Monat · Unbegrenzte Vorteile</div>
+            <button onClick={() => { const u = import.meta.env.VITE_MATCHA_ABO_URL; if (u) window.open(u, "_blank"); }} style={{ marginTop: "12px", padding: "11px 24px", background: "rgba(255,255,255,0.15)", border: "1px solid rgba(255,255,255,0.25)", borderRadius: "12px", color: "#fff", fontSize: "13px", fontWeight: "600" }}>
               Mitglied werden
             </button>
           </Card>
@@ -460,7 +428,7 @@ const HomeTab = ({ user, setUser, setTab }) => {
   );
 };
 
-// ─── Missions + Wheel Tab ───────────────────────────────────────
+// ─── Missions + Wheel Tab ────────────────────────────────────────
 const WheelTab = ({ user, setUser }) => {
   const [spinning, setSpinning] = useState(false);
   const [rot, setRot] = useState(0);
@@ -468,9 +436,8 @@ const WheelTab = ({ user, setUser }) => {
   const [spins, setSpins] = useState(0);
   const [loading, setLoading] = useState(true);
   const [missions, setMissions] = useState(MOCK_MISSIONS);
-  const [prizes, setPrizes] = useState(WHEEL_PRIZES_DEFAULT);
-  const maxFreeSpins = 1;
-  const maxPaidSpins = 2;
+  const [prizes, setPrizes] = useState(WHEEL_DEFAULT);
+  const MAX = 2; const FREE = 1;
 
   useEffect(() => {
     const init = async () => {
@@ -479,78 +446,55 @@ const WheelTab = ({ user, setUser }) => {
         if (fresh) {
           setUser(u => ({ ...u, ...fresh }));
           const today = new Date().toISOString().split('T')[0];
-          const lastSpin = fresh.last_spin_date;
-          if (lastSpin === today) {
-            setSpins(fresh.wheel_spun_today ? 2 : 1);
-          } else {
-            setSpins(0);
-          }
+          setSpins(fresh.last_spin_date === today ? (fresh.wheel_spun_today ? 2 : 1) : 0);
         }
       }
-      const dbPrizes = await db.getWheelPrizes();
-      if (dbPrizes.length) setPrizes(dbPrizes);
-      const dbMissions = await db.getMissions();
-      if (dbMissions.length) setMissions(dbMissions);
+      const p = await db.getWheelPrizes(); if (p.length) setPrizes(p);
+      const m = await db.getMissions(); if (m.length) setMissions(m);
       setLoading(false);
     };
     init();
-
-    // Realtime prizes
     if (!user.id) return;
-    const ch = supabase.channel('wheel-prizes').on('postgres_changes', { event: '*', schema: 'public', table: 'wheel_prizes' }, async () => {
-      const p = await db.getWheelPrizes(); if (p.length) setPrizes(p);
-    }).subscribe();
+    const ch = supabase.channel('wheel-rt')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'wheel_prizes' }, async () => { const p = await db.getWheelPrizes(); if (p.length) setPrizes(p) })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'missions' }, async () => { const m = await db.getMissions(); if (m.length) setMissions(m) })
+      .subscribe();
     return () => supabase.removeChannel(ch);
   }, []);
 
-  const canSpin = spins < maxPaidSpins;
-  const needsPay = spins >= maxFreeSpins;
+  const canSpin = spins < MAX; const needsPay = spins >= FREE;
 
   const spin = async () => {
     if (spinning || !canSpin) return;
     const today = new Date().toISOString().split('T')[0];
-
-    // DB-Check: verhindert Spin nach Reload
     if (user.id) {
       const fresh = await db.getProfile(user.id);
       if (fresh && fresh.last_spin_date === today) {
-        const todaySpins = fresh.wheel_spun_today ? 2 : 1;
-        if (todaySpins >= maxPaidSpins) { setSpins(2); return; }
-        setSpins(todaySpins);
+        const s = fresh.wheel_spun_today ? 2 : 1; if (s >= MAX) { setSpins(2); return; } setSpins(s);
       }
     }
-
     if (needsPay) {
       const fresh = user.id ? await db.getProfile(user.id) : null;
-      const currentPts = fresh ? fresh.pts : (user.pts || 0);
-      if (currentPts < 100) return;
-      const np = currentPts - 100;
-      setUser(u => ({ ...u, pts: np }));
-      if (user.id) await db.updateProfile(user.id, { pts: np });
+      const cur = fresh ? (fresh.pts || 0) : (user.pts || 0);
+      if (cur < 100) return;
+      setUser(u => ({ ...u, pts: cur - 100 }));
+      if (user.id) await db.updateProfile(user.id, { pts: cur - 100 });
     }
-
     setSpinning(true); setResult(null); Sound.spin();
     const idx = Math.floor(Math.random() * prizes.length);
     const seg = 360 / prizes.length;
     setRot(r => r + 360 * 7 + (360 - idx * seg - seg / 2));
-
     setTimeout(async () => {
-      setSpinning(false);
-      setSpins(s => s + 1);
-      const prize = prizes[idx];
-      setResult(prize);
+      setSpinning(false); setSpins(s => s + 1);
+      const prize = prizes[idx]; setResult(prize);
       prize.value > 0 ? Sound.win() : Sound.lose();
-
       const fresh = user.id ? await db.getProfile(user.id) : null;
-      const currentPts = fresh ? fresh.pts : (user.pts || 0);
-      const updates = { wheel_spun_today: true, last_spin_date: today };
-      if (prize.value > 0) {
-        updates.pts = currentPts + prize.value;
-        setUser(u => ({ ...u, pts: updates.pts, wheel_spun_today: true }));
-      } else {
-        setUser(u => ({ ...u, wheel_spun_today: true }));
-      }
-      if (user.id) await db.updateProfile(user.id, updates);
+      const cur = fresh ? (fresh.pts || 0) : (user.pts || 0);
+      const today2 = new Date().toISOString().split('T')[0];
+      const upd = { wheel_spun_today: true, last_spin_date: today2 };
+      if (prize.value > 0) { upd.pts = cur + prize.value; setUser(u => ({ ...u, pts: upd.pts, wheel_spun_today: true })); }
+      else setUser(u => ({ ...u, wheel_spun_today: true }));
+      if (user.id) await db.updateProfile(user.id, upd);
     }, 5200);
   };
 
@@ -558,28 +502,26 @@ const WheelTab = ({ user, setUser }) => {
 
   return (
     <div style={{ background: C.beige, paddingBottom: "24px", minHeight: "100%" }}>
-      <div style={{ padding: "20px 20px 14px" }}>
-        <div style={{ fontSize: "11px", letterSpacing: "3px", color: C.textLight, fontWeight: "600" }}>TÄGLICH</div>
-        <div style={{ fontSize: "26px", fontFamily: font.display, color: C.text, fontWeight: "700" }}>Missionen</div>
+      <div style={{ padding: `calc(${safeTop} + 20px) 20px 16px` }}>
+        <div style={{ fontSize: "12px", letterSpacing: "2px", color: C.textLight, fontWeight: "600", textTransform: "uppercase" }}>Täglich</div>
+        <div style={{ fontSize: "28px", fontFamily: font.display, color: C.text, fontWeight: "700" }}>Missionen</div>
       </div>
-
       <div style={{ padding: "0 16px" }}>
-        {/* Missionen */}
         {missions.map((m, i) => (
           <Card key={m.id || i} style={{ marginBottom: "8px", padding: "14px" }}>
-            <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
+            <div style={{ display: "flex", alignItems: "center", gap: "14px" }}>
               <div style={{ width: "40px", height: "40px", borderRadius: "12px", background: C.greyBg, display: "flex", alignItems: "center", justifyContent: "center", fontSize: "18px", flexShrink: 0 }}>{m.icon}</div>
               <div style={{ flex: 1 }}>
                 <div style={{ fontSize: "14px", fontWeight: "700", color: C.text }}>{m.title}</div>
-                <div style={{ fontSize: "11px", color: C.textLight, marginTop: "2px" }}>{m.description}</div>
+                <div style={{ fontSize: "12px", color: C.textLight, marginTop: "2px" }}>{m.description}</div>
                 {m.goal > 1 && (
                   <div style={{ height: "3px", background: C.greyBg, borderRadius: "2px", marginTop: "8px" }}>
                     <div style={{ height: "100%", width: `${Math.min(100, ((m.progress || 0) / m.goal) * 100)}%`, background: C.green, borderRadius: "2px" }} />
                   </div>
                 )}
               </div>
-              <div style={{ fontSize: "13px", fontWeight: "700", color: (m.progress || 0) >= m.goal ? C.green : C.orange, flexShrink: 0 }}>
-                {(m.progress || 0) >= m.goal ? "✓" : `+${m.pts_reward}`}
+              <div style={{ fontSize: "13px", fontWeight: "700", color: (m.progress || 0) >= (m.goal || 1) ? C.green : C.orange, flexShrink: 0 }}>
+                {(m.progress || 0) >= (m.goal || 1) ? "✓" : `+${m.pts_reward}`}
               </div>
             </div>
           </Card>
@@ -588,51 +530,30 @@ const WheelTab = ({ user, setUser }) => {
         {/* Glücksrad */}
         <Card style={{ marginTop: "8px", padding: "20px", textAlign: "center" }}>
           <div style={{ fontSize: "11px", fontWeight: "700", letterSpacing: "2px", color: C.textLight, marginBottom: "4px" }}>TÄGLICH</div>
-          <div style={{ fontSize: "20px", fontFamily: font.display, color: C.text, fontWeight: "700", marginBottom: "16px" }}>Glücksrad</div>
-
+          <div style={{ fontSize: "20px", fontFamily: font.display, color: C.text, fontWeight: "700", marginBottom: "20px" }}>Glücksrad</div>
           <div style={{ display: "flex", flexDirection: "column", alignItems: "center" }}>
             <div style={{ position: "relative" }}>
-              {/* Pointer */}
-              <div style={{ position: "absolute", top: "-2px", left: "50%", transform: "translateX(-50%)", zIndex: 3, width: 0, height: 0, borderLeft: "9px solid transparent", borderRight: "9px solid transparent", borderTop: `16px solid ${C.orange}` }} />
-              {/* Glow ring */}
-              <div style={{ position: "absolute", inset: "-4px", borderRadius: "50%", border: `3px solid ${C.border}`, boxShadow: spinning ? "0 0 24px rgba(226,74,40,0.25)" : "none", transition: "box-shadow 0.5s" }} />
-
-              <svg width={sz} height={sz} viewBox={`0 0 ${sz} ${sz}`} style={{ transform: `rotate(${rot}deg)`, transition: spinning ? "transform 5.2s cubic-bezier(0.12,0.6,0.12,1)" : "none", display: "block" }}>
+              <div style={{ position: "absolute", top: "-3px", left: "50%", transform: "translateX(-50%)", zIndex: 3, width: 0, height: 0, borderLeft: "9px solid transparent", borderRight: "9px solid transparent", borderTop: `16px solid ${C.orange}` }} />
+              <div style={{ position: "absolute", inset: "-5px", borderRadius: "50%", border: `3px solid ${C.border}`, boxShadow: spinning ? "0 0 28px rgba(226,74,40,0.3)" : "none", transition: "box-shadow 0.5s", pointerEvents: "none" }} />
+              <svg width={sz} height={sz} viewBox={`0 0 ${sz} ${sz}`} style={{ transform: `rotate(${rot}deg)`, transition: spinning ? "transform 5.2s cubic-bezier(0.1,0.6,0.1,1)" : "none", display: "block" }}>
                 {prizes.map((p, i) => {
-                  const seg = 360 / prizes.length;
-                  const s = (i * seg - 90) * Math.PI / 180;
-                  const e = ((i + 1) * seg - 90) * Math.PI / 180;
-                  const mid = (s + e) / 2;
-                  return (
-                    <g key={i}>
-                      <path d={`M${cx},${cy} L${cx + r * Math.cos(s)},${cy + r * Math.sin(s)} A${r},${r} 0 0,1 ${cx + r * Math.cos(e)},${cy + r * Math.sin(e)} Z`}
-                        fill={p.color || WHEEL_PRIZES_DEFAULT[i % WHEEL_PRIZES_DEFAULT.length]?.color || "#f5f5f5"}
-                        stroke="#ffffff" strokeWidth="2" />
-                      <text
-                        x={cx + (r * 0.65) * Math.cos(mid)} y={cy + (r * 0.65) * Math.sin(mid)}
-                        transform={`rotate(${i * seg + seg / 2},${cx + (r * 0.65) * Math.cos(mid)},${cy + (r * 0.65) * Math.sin(mid)})`}
-                        textAnchor="middle" dominantBaseline="middle"
-                        fill={WHEEL_TEXT_COLORS[i % WHEEL_TEXT_COLORS.length]}
-                        fontSize="11" fontWeight="700" fontFamily={font.ui}>{p.label}</text>
-                    </g>
-                  );
+                  const seg = 360 / prizes.length, s = (i * seg - 90) * Math.PI / 180, e = ((i + 1) * seg - 90) * Math.PI / 180, mid = (s + e) / 2;
+                  return (<g key={i}>
+                    <path d={`M${cx},${cy} L${cx + r * Math.cos(s)},${cy + r * Math.sin(s)} A${r},${r} 0 0,1 ${cx + r * Math.cos(e)},${cy + r * Math.sin(e)} Z`} fill={p.color || "#f5f5f5"} stroke="#fff" strokeWidth="2" />
+                    <text x={cx + (r * 0.65) * Math.cos(mid)} y={cy + (r * 0.65) * Math.sin(mid)} transform={`rotate(${i * seg + seg / 2},${cx + (r * 0.65) * Math.cos(mid)},${cy + (r * 0.65) * Math.sin(mid)})`} textAnchor="middle" dominantBaseline="middle" fill={WHEEL_TCOLORS[i % WHEEL_TCOLORS.length]} fontSize="11" fontWeight="700" fontFamily={font.ui}>{p.label}</text>
+                  </g>);
                 })}
-                <circle cx={cx} cy={cy} r="32" fill="white" stroke={C.orange} strokeWidth="2.5"
-                  style={{ filter: "drop-shadow(0 2px 8px rgba(226,74,40,0.3))" }} />
-                <text x={cx} y={cy + 11} textAnchor="middle" dominantBaseline="middle"
-                  fill={C.orange} fontSize="30" fontWeight="900" fontFamily="Playfair Display,serif">c</text>
+                <circle cx={cx} cy={cy} r="32" fill="white" stroke={C.orange} strokeWidth="2.5" style={{ filter: "drop-shadow(0 2px 8px rgba(226,74,40,0.3))" }} />
+                <text x={cx} y={cy + 11} textAnchor="middle" dominantBaseline="middle" fill={C.orange} fontSize="30" fontWeight="900" fontFamily="Playfair Display,serif">c</text>
               </svg>
             </div>
-
-            <button onClick={spin} disabled={spinning || !canSpin || (needsPay && (user.pts || 0) < 100)}
-              style={{ marginTop: "16px", padding: "13px 44px", border: "none", borderRadius: "50px", fontSize: "14px", fontWeight: "700", background: !canSpin ? C.greyBg : C.orange, color: !canSpin ? C.textLight : C.white, cursor: !canSpin ? "not-allowed" : "pointer", transition: "all 0.2s" }}>
+            <button onClick={spin} disabled={spinning || !canSpin || (needsPay && (user.pts || 0) < 100)} style={{ marginTop: "18px", padding: "14px 48px", borderRadius: "50px", fontSize: "15px", fontWeight: "700", background: !canSpin ? C.greyBg : C.orange, color: !canSpin ? C.textLight : C.white, transition: "all 0.2s" }}>
               {!canSpin ? "Fertig für heute" : spinning ? "Dreht..." : needsPay ? "Nochmal (100 XP)" : "Drehen"}
             </button>
-            <div style={{ fontSize: "11px", color: C.textLight, marginTop: "6px" }}>{spins}/{maxPaidSpins} Spins heute</div>
-
+            <div style={{ fontSize: "11px", color: C.textLight, marginTop: "6px" }}>{spins}/{MAX} Spins heute</div>
             {result && (
-              <Card style={{ marginTop: "12px", padding: "14px", textAlign: "center", animation: "scaleIn 0.4s", maxWidth: "200px" }}>
-                <div style={{ fontSize: "14px", fontWeight: "800", color: result.value > 0 ? C.orange : C.text }}>
+              <Card style={{ marginTop: "12px", padding: "14px", animation: "scaleIn 0.4s", maxWidth: "200px" }}>
+                <div style={{ fontSize: "15px", fontWeight: "800", color: result.value > 0 ? C.orange : C.text }}>
                   {result.value > 0 ? `+${result.value} XP!` : result.value === -1 ? "2× XP heute!" : "Kein Glück"}
                 </div>
               </Card>
@@ -644,22 +565,19 @@ const WheelTab = ({ user, setUser }) => {
   );
 };
 
-// ─── Scan Tab ───────────────────────────────────────────────────
+// ─── Scan Tab ────────────────────────────────────────────────────
 const ScanTab = ({ user, setUser }) => {
   const [scanning, setScanning] = useState(false);
   const [done, setDone] = useState(false);
   const [pts, setPts] = useState(0);
   const scannerRef = useRef(null);
 
-  const awardPts = async (p) => {
+  const award = async (p) => {
     setPts(p); Sound.scan();
     const fresh = user.id ? await db.getProfile(user.id) : null;
-    const currentPts = fresh ? (fresh.pts || 0) : (user.pts || 0);
-    const currentVisits = fresh ? (fresh.total_visits || 0) : (user.total_visits || 0);
-    const currentTreat = fresh ? (fresh.treat_count || 0) : (user.treat_count || 0);
-    const np = currentPts + p;
-    const nv = currentVisits + 1;
-    const nt = Math.min(currentTreat + 1, user.treat_goal || 8);
+    const np = (fresh?.pts || user.pts || 0) + p;
+    const nv = (fresh?.total_visits || user.total_visits || 0) + 1;
+    const nt = Math.min((fresh?.treat_count || user.treat_count || 0) + 1, user.treat_goal || 8);
     setUser(u => ({ ...u, pts: np, total_visits: nv, treat_count: nt }));
     if (user.id) {
       await db.updateProfile(user.id, { pts: np, total_visits: nv, treat_count: nt, last_visit: new Date().toISOString().split('T')[0] });
@@ -672,61 +590,48 @@ const ScanTab = ({ user, setUser }) => {
     setScanning(true);
     try {
       const { Html5Qrcode } = await import("html5-qrcode");
-      const scanner = new Html5Qrcode("qr-reader");
-      scannerRef.current = scanner;
-      await scanner.start({ facingMode: "environment" }, { fps: 10, qrbox: { width: 200, height: 200 } },
-        async () => { await scanner.stop(); setScanning(false); await awardPts(Math.floor(Math.random() * 100) + 50); },
-        () => { }
-      );
-    } catch (e) {
-      setScanning(false);
-      await awardPts(Math.floor(Math.random() * 100) + 50);
-    }
+      const s = new Html5Qrcode("qr-reader"); scannerRef.current = s;
+      await s.start({ facingMode: "environment" }, { fps: 10, qrbox: { width: 200, height: 200 } }, async () => { await s.stop(); setScanning(false); await award(Math.floor(Math.random() * 100) + 50); }, () => { });
+    } catch (e) { setScanning(false); await award(Math.floor(Math.random() * 100) + 50); }
   };
 
-  useEffect(() => () => { if (scannerRef.current) try { scannerRef.current.stop(); } catch (e) { } }, []);
+  useEffect(() => () => { if (scannerRef.current) try { scannerRef.current.stop() } catch (e) { } }, []);
 
   return (
-    <div style={{ background: C.beige, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: "40px 24px", minHeight: "100%" }}>
+    <div style={{ background: C.beige, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: `calc(${safeTop} + 40px) 24px calc(${safeBot} + 40px)`, minHeight: "100%" }}>
       {!done ? (
         <>
           <div style={{ fontSize: "11px", letterSpacing: "3px", color: C.textLight, fontWeight: "600", marginBottom: "6px" }}>QR CODE</div>
-          <div style={{ fontSize: "26px", fontFamily: font.display, color: C.text, fontWeight: "700", marginBottom: "28px" }}>Punkte sammeln</div>
+          <div style={{ fontSize: "28px", fontFamily: font.display, color: C.text, fontWeight: "700", marginBottom: "28px" }}>Punkte sammeln</div>
           <div id="qr-reader" style={{ width: "240px", height: "240px", borderRadius: "20px", overflow: "hidden", background: "#111", border: `2px solid ${scanning ? C.orange : C.border}`, transition: "border 0.3s" }} />
           {!scanning
-            ? <button onClick={startScan} style={{ marginTop: "20px", padding: "14px 40px", background: C.orange, border: "none", borderRadius: "50px", color: C.white, fontSize: "15px", fontWeight: "700", display: "flex", alignItems: "center", gap: "8px" }}>
-              {Icon.camera} Kamera starten
-            </button>
-            : <button onClick={async () => { if (scannerRef.current) try { await scannerRef.current.stop(); } catch (e) { } setScanning(false); }} style={{ marginTop: "20px", padding: "13px 36px", background: C.greyBg, border: `1px solid ${C.border}`, borderRadius: "50px", color: C.textSub, fontSize: "14px", fontWeight: "600" }}>
-              Abbrechen
-            </button>
+            ? <button onClick={startScan} style={{ marginTop: "22px", padding: "15px 44px", background: C.orange, borderRadius: "50px", color: C.white, fontSize: "15px", fontWeight: "700", display: "flex", alignItems: "center", gap: "10px" }}>{Ico.cam} Kamera starten</button>
+            : <button onClick={async () => { if (scannerRef.current) try { await scannerRef.current.stop() } catch (e) { } setScanning(false) }} style={{ marginTop: "22px", padding: "14px 36px", background: C.greyBg, border: `1px solid ${C.border}`, borderRadius: "50px", color: C.textSub, fontSize: "14px", fontWeight: "600" }}>Abbrechen</button>
           }
           <div style={{ color: C.textLight, fontSize: "12px", marginTop: "14px" }}>Scanne den QR-Code auf deinem Beleg</div>
         </>
       ) : (
         <div style={{ textAlign: "center", animation: "scaleIn 0.4s" }}>
-          <div style={{ color: C.orange, marginBottom: "8px" }}>{Icon.check}</div>
-          <div style={{ fontSize: "40px", fontWeight: "800", color: C.orange, fontFamily: font.display }}>+{pts} XP</div>
+          <div style={{ color: C.orange, marginBottom: "8px" }}>{Ico.check}</div>
+          <div style={{ fontSize: "44px", fontWeight: "900", color: C.orange, fontFamily: font.display }}>+{pts} XP</div>
           <div style={{ color: C.textLight, fontSize: "14px", marginTop: "8px" }}>Punkte gutgeschrieben!</div>
-          <button onClick={() => { setDone(false); setPts(0); }} style={{ marginTop: "20px", padding: "12px 32px", background: C.greyBg, border: `1px solid ${C.border}`, borderRadius: "50px", color: C.text, fontSize: "14px" }}>
-            Nochmal scannen
-          </button>
+          <button onClick={() => { setDone(false); setPts(0); }} style={{ marginTop: "20px", padding: "13px 36px", background: C.greyBg, border: `1px solid ${C.border}`, borderRadius: "50px", color: C.text, fontSize: "14px" }}>Nochmal scannen</button>
         </div>
       )}
     </div>
   );
 };
 
-// ─── Cinder (Vote) Tab ──────────────────────────────────────────
+// ─── Cinder (Vote) Tab ───────────────────────────────────────────
 const VoteTab = ({ user, setUser }) => {
   const [allDishes, setAllDishes] = useState([]);
   const [unvoted, setUnvoted] = useState([]);
-  const [current, setCurrent] = useState(0);
+  const [cur, setCur] = useState(0);
   const [dir, setDir] = useState(null);
   const [dragX, setDragX] = useState(0);
   const [dragStart, setDragStart] = useState(null);
   const [loading, setLoading] = useState(true);
-  const [visitStatus, setVisitStatus] = useState(null);
+  const [visit, setVisitLocal] = useState(null);
 
   useEffect(() => {
     const init = async () => {
@@ -734,62 +639,53 @@ const VoteTab = ({ user, setUser }) => {
       const list = dishes.length ? dishes : MOCK_DISHES;
       setAllDishes(list);
       if (user.id) {
-        const votedIds = await db.getUserVotes(user.id);
-        setUnvoted(list.filter(d => !votedIds.has(d.id)));
+        const voted = await db.getUserVotes(user.id);
+        setUnvoted(list.filter(d => !voted.has(d.id)));
         const today = new Date().toISOString().split('T')[0];
-        db.getVisitIntention(user.id, today).then(d => { if (d) setVisitStatus(d.status); }).catch(() => { });
-      } else {
-        setUnvoted(list);
-      }
+        db.getVisitIntention(user.id, today).then(d => { if (d) setVisitLocal(d.status) }).catch(() => { });
+      } else setUnvoted(list);
       setLoading(false);
     };
     init();
+    if (!user.id) return;
+    const ch = supabase.channel('cinder-rt')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'dishes' }, async () => {
+        const dishes = await db.getDishes(); if (!dishes.length) return;
+        setAllDishes(dishes);
+        const voted = await db.getUserVotes(user.id);
+        setUnvoted(dishes.filter(d => !voted.has(d.id))); setCur(0);
+      }).subscribe();
+    return () => supabase.removeChannel(ch);
   }, []);
 
-  const currentDish = unvoted[current];
-  const done = current >= unvoted.length;
+  const dish = unvoted[cur];
+  const done = cur >= unvoted.length;
 
   const doVote = async (liked) => {
-    if (!currentDish || dir) return;
-    Sound.vote();
-    setDir(liked ? "right" : "left");
+    if (!dish || dir) return;
+    Sound.vote(); setDir(liked ? "right" : "left");
     if (user.id) {
-      await db.voteDish(user.id, currentDish.id, liked).catch(() => { });
-      if (liked) {
-        const fresh = await db.getProfile(user.id);
-        if (fresh) {
-          await db.updateProfile(user.id, { pts: (fresh.pts || 0) + 10 });
-          setUser(u => ({ ...u, pts: (u.pts || 0) + 10 }));
-        }
-      }
+      await db.voteDish(user.id, dish.id, liked).catch(() => { });
+      if (liked) { const fresh = await db.getProfile(user.id); if (fresh) { await db.updateProfile(user.id, { pts: (fresh.pts || 0) + 10 }); setUser(u => ({ ...u, pts: (u.pts || 0) + 10 })); } }
     }
-    setTimeout(() => { setDir(null); setDragX(0); setCurrent(i => i + 1); }, 320);
+    setTimeout(() => { setDir(null); setDragX(0); setCur(i => i + 1); }, 320);
   };
 
   const setVisit = async (status) => {
-    setVisitStatus(status);
-    if (user.id) {
-      const today = new Date().toISOString().split('T')[0];
-      await db.setVisitIntention(user.id, today, status);
-    }
+    setVisitLocal(status);
+    if (user.id) { const today = new Date().toISOString().split('T')[0]; await db.setVisitIntention(user.id, today, status); }
   };
 
-  if (loading) return (
-    <div style={{ background: C.beige, minHeight: "100%", display: "flex", alignItems: "center", justifyContent: "center" }}>
-      <div style={{ color: C.textLight }}>Wird geladen...</div>
-    </div>
-  );
+  if (loading) return (<div style={{ background: C.beige, minHeight: "100%", display: "flex", alignItems: "center", justifyContent: "center" }}><div style={{ color: C.textLight }}>Wird geladen...</div></div>);
 
   return (
     <div style={{ background: C.beige, paddingBottom: "24px", minHeight: "100%" }}>
-      <div style={{ padding: "20px 20px 14px", display: "flex", justifyContent: "space-between", alignItems: "flex-end" }}>
+      <div style={{ padding: `calc(${safeTop} + 20px) 20px 14px`, display: "flex", justifyContent: "space-between", alignItems: "flex-end" }}>
         <div>
-          <div style={{ fontSize: "11px", letterSpacing: "3px", color: C.textLight, fontWeight: "600" }}>CINDER</div>
-          <div style={{ fontSize: "26px", fontFamily: font.display, color: C.text, fontWeight: "700" }}>
-            {done ? "Ergebnisse" : "Was kommt auf die Karte?"}
-          </div>
+          <div style={{ fontSize: "11px", letterSpacing: "3px", color: C.textLight, fontWeight: "600", textTransform: "uppercase" }}>Cinder</div>
+          <div style={{ fontSize: "26px", fontFamily: font.display, color: C.text, fontWeight: "700" }}>{done ? "Ergebnisse" : "Was kommt auf die Karte?"}</div>
         </div>
-        {!done && <div style={{ fontSize: "13px", color: C.textLight, fontWeight: "600" }}>{current + 1}/{unvoted.length}</div>}
+        {!done && <div style={{ fontSize: "13px", color: C.textLight, fontWeight: "600" }}>{cur + 1}/{unvoted.length}</div>}
       </div>
 
       <div style={{ padding: "0 16px" }}>
@@ -797,10 +693,8 @@ const VoteTab = ({ user, setUser }) => {
         <Card style={{ marginBottom: "12px" }}>
           <div style={{ fontSize: "13px", fontWeight: "600", color: C.text, marginBottom: "10px" }}>Kommst du heute vorbei?</div>
           <div style={{ display: "flex", gap: "8px" }}>
-            {[{ v: "planned", l: "Ja, heute" }, { v: "not", l: "Nicht heute" }].map(opt => (
-              <button key={opt.v} onClick={() => setVisit(opt.v)} style={{ flex: 1, padding: "9px", borderRadius: "10px", border: "none", background: visitStatus === opt.v ? C.orange : C.greyBg, color: visitStatus === opt.v ? C.white : C.textLight, fontSize: "12px", fontWeight: "600", transition: "all 0.2s" }}>
-                {opt.l}
-              </button>
+            {[{ v: "planned", l: "Ja, heute" }, { v: "not", l: "Nicht heute" }].map(o => (
+              <button key={o.v} onClick={() => setVisit(o.v)} style={{ flex: 1, padding: "10px", borderRadius: "12px", background: visit === o.v ? C.orange : C.greyBg, color: visit === o.v ? C.white : C.textLight, fontSize: "13px", fontWeight: "600", transition: "all 0.2s" }}>{o.l}</button>
             ))}
           </div>
         </Card>
@@ -811,69 +705,43 @@ const VoteTab = ({ user, setUser }) => {
               onTouchStart={e => setDragStart(e.touches[0].clientX)}
               onTouchMove={e => { if (dragStart !== null) setDragX(e.touches[0].clientX - dragStart); }}
               onTouchEnd={() => { if (Math.abs(dragX) > 70) doVote(dragX > 0); else setDragX(0); setDragStart(null); }}>
-              <Card style={{
-                padding: 0, overflow: "hidden", borderRadius: "20px",
-                boxShadow: "0 8px 32px rgba(0,0,0,0.10)",
-                transform: dir === "left" ? "translateX(-110%) rotate(-18deg)" : dir === "right" ? "translateX(110%) rotate(18deg)" : `translateX(${dragX}px) rotate(${dragX * 0.035}deg)`,
-                opacity: dir ? 0 : Math.max(0.4, 1 - Math.abs(dragX) * 0.003),
-                transition: dir ? "all 0.32s cubic-bezier(0.4,0,0.2,1)" : dragX ? "none" : "all 0.3s",
-              }}>
-                <div style={{ height: "220px", background: `linear-gradient(135deg,${C.beigeDark},${C.beige})`, display: "flex", alignItems: "center", justifyContent: "center", position: "relative" }}>
-                  {currentDish?.image_url
-                    ? <img src={currentDish.image_url} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
-                    : <div style={{ color: C.textLight, opacity: 0.4 }}>{Icon.heart}</div>
-                  }
-                  {Math.abs(dragX) > 30 && (
-                    <div style={{ position: "absolute", inset: 0, background: dragX > 0 ? "rgba(45,71,42,0.35)" : "rgba(226,74,40,0.35)", display: "flex", alignItems: "center", justifyContent: "center" }}>
-                      <div style={{ fontSize: "60px", color: "white" }}>{dragX > 0 ? "♥" : "✕"}</div>
-                    </div>
-                  )}
-                  <div style={{ position: "absolute", bottom: "10px", right: "12px", background: "rgba(0,0,0,0.6)", backdropFilter: "blur(8px)", color: "white", borderRadius: "10px", padding: "3px 10px", fontSize: "11px", fontWeight: "700" }}>
-                    {currentDish?.votes} Votes
-                  </div>
+              <Card style={{ padding: 0, overflow: "hidden", borderRadius: "20px", boxShadow: "0 8px 32px rgba(0,0,0,0.09)", transform: dir === "left" ? "translateX(-110%) rotate(-18deg)" : dir === "right" ? "translateX(110%) rotate(18deg)" : `translateX(${dragX}px) rotate(${dragX * 0.035}deg)`, opacity: dir ? 0 : Math.max(0.4, 1 - Math.abs(dragX) * 0.003), transition: dir ? "all 0.32s cubic-bezier(0.4,0,0.2,1)" : dragX ? "none" : "all 0.3s" }}>
+                <div style={{ height: "220px", background: `linear-gradient(135deg,${C.beige},${C.greyBg})`, display: "flex", alignItems: "center", justifyContent: "center", position: "relative", overflow: "hidden" }}>
+                  {dish?.image_url ? <img src={dish.image_url} style={{ width: "100%", height: "100%", objectFit: "cover" }} /> : <div style={{ opacity: 0.2, color: C.text }}>{Ico.heart}</div>}
+                  {Math.abs(dragX) > 30 && (<div style={{ position: "absolute", inset: 0, background: dragX > 0 ? "rgba(45,71,42,0.35)" : "rgba(226,74,40,0.35)", display: "flex", alignItems: "center", justifyContent: "center" }}><div style={{ fontSize: "64px", color: "white" }}>{dragX > 0 ? "♥" : "✕"}</div></div>)}
+                  <div style={{ position: "absolute", bottom: "10px", right: "12px", background: "rgba(0,0,0,0.6)", backdropFilter: "blur(8px)", color: "white", borderRadius: "10px", padding: "3px 10px", fontSize: "12px", fontWeight: "700" }}>{dish?.votes} Votes</div>
                 </div>
                 <div style={{ padding: "18px" }}>
-                  <div style={{ fontSize: "20px", fontFamily: font.display, fontWeight: "700", color: C.text }}>{currentDish?.name}</div>
-                  <div style={{ fontSize: "13px", color: C.textLight, marginTop: "4px" }}>{currentDish?.description}</div>
-                  <div style={{ fontSize: "11px", color: C.orange, fontWeight: "600", marginTop: "8px" }}>+10 XP für dein Vote</div>
+                  <div style={{ fontSize: "20px", fontFamily: font.display, fontWeight: "700", color: C.text }}>{dish?.name}</div>
+                  <div style={{ fontSize: "13px", color: C.textLight, marginTop: "4px", lineHeight: 1.5 }}>{dish?.description}</div>
+                  <div style={{ fontSize: "12px", color: C.orange, fontWeight: "600", marginTop: "8px" }}>+10 XP für deinen Vote</div>
                 </div>
               </Card>
             </div>
-
-            {/* Buttons – FIX #12 */}
-            <div style={{ display: "flex", justifyContent: "center", gap: "28px", marginTop: "20px", alignItems: "center" }}>
-              <button
-                onPointerDown={e => e.preventDefault()}
-                onClick={() => doVote(false)}
-                style={{ width: "60px", height: "60px", borderRadius: "50%", background: C.card, border: `2px solid ${C.border}`, display: "flex", alignItems: "center", justifyContent: "center", boxShadow: "0 4px 16px rgba(0,0,0,0.08)", color: C.textSub }}>
-                {Icon.x}
-              </button>
-              <button
-                onPointerDown={e => e.preventDefault()}
-                onClick={() => doVote(true)}
-                style={{ width: "72px", height: "72px", borderRadius: "50%", background: C.orange, border: "none", display: "flex", alignItems: "center", justifyContent: "center", boxShadow: `0 6px 24px ${C.orange}55`, color: "white" }}>
-                {Icon.heartFill}
-              </button>
+            {/* Vote Buttons */}
+            <div style={{ display: "flex", justifyContent: "center", gap: "28px", marginTop: "22px", alignItems: "center" }}>
+              <button onPointerDown={e => e.preventDefault()} onClick={() => doVote(false)} style={{ width: "62px", height: "62px", borderRadius: "50%", background: C.card, border: `2px solid ${C.border}`, display: "flex", alignItems: "center", justifyContent: "center", boxShadow: "0 4px 16px rgba(0,0,0,0.07)", color: C.textSub }}>{Ico.x}</button>
+              <button onPointerDown={e => e.preventDefault()} onClick={() => doVote(true)} style={{ width: "74px", height: "74px", borderRadius: "50%", background: C.orange, border: "none", display: "flex", alignItems: "center", justifyContent: "center", boxShadow: `0 6px 24px ${C.orange}55`, color: "white" }}>{Ico.heartFill}</button>
             </div>
             <div style={{ textAlign: "center", color: C.textLight, fontSize: "11px", marginTop: "12px" }}>Swipe oder Buttons</div>
           </>
         ) : (
           <>
             <Card style={{ padding: "20px", textAlign: "center", marginBottom: "14px" }}>
-              <div style={{ color: C.orange, marginBottom: "8px" }}>{Icon.heartFill}</div>
+              <div style={{ color: C.orange, marginBottom: "8px" }}>{Ico.heartFill}</div>
               <div style={{ fontSize: "18px", fontWeight: "700", color: C.text }}>Alle Gerichte bewertet!</div>
               <div style={{ fontSize: "13px", color: C.textLight, marginTop: "4px" }}>Danke für dein Feedback</div>
             </Card>
-            <div style={{ fontSize: "12px", fontWeight: "700", letterSpacing: "1px", color: C.textSub, marginBottom: "10px" }}>AKTUELLE ERGEBNISSE</div>
+            <div style={{ fontSize: "11px", fontWeight: "700", letterSpacing: "1px", color: C.textSub, marginBottom: "10px", textTransform: "uppercase" }}>Aktuelle Ergebnisse</div>
             {[...allDishes].sort((a, b) => (b.votes || 0) - (a.votes || 0)).map((d, i) => (
               <Card key={d.id} style={{ marginBottom: "8px", padding: "14px", display: "flex", alignItems: "center", gap: "12px" }}>
                 <div style={{ width: "28px", height: "28px", borderRadius: "8px", background: i === 0 ? C.orange : C.greyBg, display: "flex", alignItems: "center", justifyContent: "center", fontSize: "12px", fontWeight: "800", color: i === 0 ? C.white : C.textLight, flexShrink: 0 }}>#{i + 1}</div>
                 <div style={{ flex: 1 }}>
-                  <div style={{ fontSize: "14px", fontWeight: "600" }}>{d.name}</div>
+                  <div style={{ fontSize: "14px", fontWeight: "600", color: C.text }}>{d.name}</div>
                   <div style={{ fontSize: "11px", color: C.textLight, marginTop: "2px" }}>{d.description}</div>
                 </div>
                 <div style={{ textAlign: "right" }}>
-                  <div style={{ fontSize: "16px", fontWeight: "800", color: C.orange }}>{d.votes || 0}</div>
+                  <div style={{ fontSize: "17px", fontWeight: "800", color: C.orange }}>{d.votes || 0}</div>
                   <div style={{ fontSize: "10px", color: C.textLight }}>Votes</div>
                 </div>
               </Card>
@@ -885,9 +753,9 @@ const VoteTab = ({ user, setUser }) => {
   );
 };
 
-// ─── Profile Tab ────────────────────────────────────────────────
+// ─── Profile Tab ─────────────────────────────────────────────────
 const ProfileTab = ({ user, setUser, onLogout, theme }) => {
-  const { mode, setMode, glowColor, setGlowColor, isGlowHour } = theme || {};
+  const { mode, setMode, glow, setGlow, isGlow } = theme || {};
   const era = ERAS.find(e => e.level === (user.level || 1)) || ERAS[0];
   const [editing, setEditing] = useState(false);
   const [uname, setUname] = useState(user.name || "");
@@ -895,24 +763,24 @@ const ProfileTab = ({ user, setUser, onLogout, theme }) => {
   const [items, setItems] = useState(MOCK_SHOP);
   const [rd, setRd] = useState(null);
   const [showShare, setShowShare] = useState(false);
-  const [socialTab, setSocialTab] = useState("score");
+  const [social, setSocial] = useState("score");
   const [friends, setFriends] = useState([]);
   const [gifts, setGifts] = useState([]);
   const [searchQ, setSearchQ] = useState("");
-  const [searchResults, setSearchResults] = useState([]);
+  const [searchRes, setSearchRes] = useState([]);
   const [giftTarget, setGiftTarget] = useState(null);
-  const [giftAmount, setGiftAmount] = useState(50);
+  const [giftAmt, setGiftAmt] = useState(50);
   const [giftMsg, setGiftMsg] = useState("");
   const [vibes, setVibes] = useState([]);
   const [uploadingVibe, setUploadingVibe] = useState(false);
 
-  useEffect(() => { db.getShopItems().then(d => { if (d.length) setItems(d); }); }, []);
+  useEffect(() => { db.getShopItems().then(d => { if (d.length) setItems(d) }); db.getApprovedVibes().then(setVibes); }, []);
   useEffect(() => {
     if (!user.id) return;
     db.getFriendRequests(user.id).then(setFriends);
     db.getMyGifts(user.id).then(setGifts);
     db.getApprovedVibes().then(setVibes);
-  }, [socialTab]);
+  }, [social]);
 
   const save = async () => {
     setUser(u => ({ ...u, name: uname, instagram: insta }));
@@ -922,50 +790,29 @@ const ProfileTab = ({ user, setUser, onLogout, theme }) => {
 
   const redeem = async (item) => {
     const fresh = user.id ? await db.getProfile(user.id) : null;
-    const currentPts = fresh ? (fresh.pts || 0) : (user.pts || 0);
-    const currentLevel = fresh ? (fresh.level || 1) : (user.level || 1);
-    if (currentPts < item.cost || currentLevel < item.min_level) return;
-    const result = await db.redeemItem(user.id, item.id, item.cost);
-    if (result?.error) return;
-    setUser(u => ({ ...u, pts: currentPts - item.cost }));
+    const p = fresh?.pts || (user.pts || 0); const l = fresh?.level || (user.level || 1);
+    if (p < item.cost || l < item.min_level) return;
+    const res = await db.redeemItem(user.id, item.id, item.cost);
+    if (res?.error) return;
+    setUser(u => ({ ...u, pts: p - item.cost }));
     Sound.redeem(); setRd(item); setTimeout(() => setRd(null), 3000);
   };
 
   const searchUsers = async (q) => {
-    setSearchQ(q);
-    if (q.length < 2) { setSearchResults([]); return; }
-    const res = await db.searchUsers(q);
-    setSearchResults(res.filter(r => r.id !== user.id));
-  };
-
-  const sendRequest = async (targetId) => {
-    await db.sendFriendRequest(user.id, targetId);
-    setSearchResults([]); setSearchQ("");
-    db.getFriendRequests(user.id).then(setFriends);
-  };
-
-  const respondRequest = async (id, status) => {
-    await db.respondFriendRequest(id, status);
-    db.getFriendRequests(user.id).then(setFriends);
+    setSearchQ(q); if (q.length < 2) { setSearchRes([]); return; }
+    const r = await db.searchUsers(q); setSearchRes(r.filter(x => x.id !== user.id));
   };
 
   const sendGiftPts = async () => {
-    if (!giftTarget || giftAmount < 10 || giftAmount > 200) return;
+    if (!giftTarget || giftAmt < 10 || giftAmt > 200) return;
     const fresh = user.id ? await db.getProfile(user.id) : null;
-    const currentPts = fresh ? (fresh.pts || 0) : (user.pts || 0);
-    if (currentPts < giftAmount) return;
-    const result = await db.sendGift(user.id, giftTarget.id, "pts", giftAmount, null, giftMsg);
-    if (result?.error) { alert(result.error); return; }
-    await db.updateProfile(user.id, { pts: currentPts - giftAmount });
-    setUser(u => ({ ...u, pts: currentPts - giftAmount }));
-    Sound.gift(); setGiftTarget(null); setGiftAmount(50); setGiftMsg("");
-    db.getMyGifts(user.id).then(setGifts);
-  };
-
-  const claimGift = async (giftId) => {
-    await db.claimGift(giftId, user.id);
-    const fresh = await db.getProfile(user.id);
-    if (fresh) setUser(u => ({ ...u, ...fresh }));
+    const cur = fresh?.pts || (user.pts || 0);
+    if (cur < giftAmt) return;
+    const res = await db.sendGift(user.id, giftTarget.id, "pts", giftAmt, null, giftMsg);
+    if (res?.error) { alert(res.error); return; }
+    await db.updateProfile(user.id, { pts: cur - giftAmt });
+    setUser(u => ({ ...u, pts: cur - giftAmt }));
+    Sound.gift(); setGiftTarget(null); setGiftAmt(50); setGiftMsg("");
     db.getMyGifts(user.id).then(setGifts);
   };
 
@@ -975,248 +822,174 @@ const ProfileTab = ({ user, setUser, onLogout, theme }) => {
     else { navigator.clipboard?.writeText(link); setShowShare(true); setTimeout(() => setShowShare(false), 2000); }
   };
 
-  const uploadVibePhoto = async (file) => {
-    if (!file || !user.id) return;
-    setUploadingVibe(true);
-    const result = await db.uploadVibe(user.id, file);
-    if (result?.error) alert(result.error);
-    else { db.getApprovedVibes().then(setVibes); }
-    setUploadingVibe(false);
-  };
-
   const myFriends = friends.filter(f => f.status === "accepted");
-  const pendingReceived = friends.filter(f => f.status === "pending" && f.receiver_id === user.id);
+  const pendingRcv = friends.filter(f => f.status === "pending" && f.receiver_id === user.id);
 
   return (
     <div style={{ background: C.beige, paddingBottom: "32px", minHeight: "100%" }}>
-      {/* Redemption Overlay */}
-      {rd && (
-        <div style={{ position: "fixed", inset: 0, zIndex: 999, background: "rgba(0,0,0,0.9)", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", animation: "scaleIn 0.3s" }}>
-          <div style={{ fontSize: "36px", color: C.white, marginBottom: "8px" }}>{Icon.check}</div>
-          <div style={{ color: C.white, fontSize: "18px", fontWeight: "700" }}>Eingelöst!</div>
-          <div style={{ color: "rgba(255,255,255,0.5)", fontSize: "12px", marginTop: "4px" }}>Zeige dies an der Kasse</div>
-          <div style={{ color: C.white, fontSize: "22px", fontFamily: font.display, fontWeight: "700", marginTop: "12px" }}>{rd.name}</div>
-        </div>
-      )}
-      {showShare && (
-        <div style={{ position: "fixed", top: "20px", left: "50%", transform: "translateX(-50%)", background: C.green, color: C.white, padding: "10px 20px", borderRadius: "12px", fontSize: "13px", fontWeight: "600", zIndex: 999, animation: "fadeUp 0.3s" }}>
-          Link kopiert!
+      {rd && (<div style={{ position: "fixed", inset: 0, zIndex: 999, background: "rgba(0,0,0,0.92)", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", animation: "scaleIn 0.3s" }}><div style={{ color: C.white, marginBottom: "8px" }}>{Ico.check}</div><div style={{ color: C.white, fontSize: "20px", fontWeight: "700" }}>Eingelöst!</div><div style={{ color: "rgba(255,255,255,0.5)", fontSize: "13px", marginTop: "4px" }}>Zeige dies an der Kasse</div><div style={{ color: C.white, fontSize: "22px", fontFamily: font.display, marginTop: "12px" }}>{rd.name}</div></div>)}
+      {showShare && (<div style={{ position: "fixed", top: "24px", left: "50%", transform: "translateX(-50%)", background: C.green, color: C.white, padding: "11px 22px", borderRadius: "12px", fontSize: "13px", fontWeight: "600", zIndex: 999, animation: "fadeUp 0.3s" }}>Link kopiert!</div>)}
+      {giftTarget && (
+        <div style={{ position: "fixed", inset: 0, zIndex: 9999, background: "rgba(0,0,0,0.5)", display: "flex", alignItems: "flex-end" }}>
+          <div style={{ background: C.card, borderRadius: "24px 24px 0 0", padding: "24px 20px", width: "100%", boxSizing: "border-box", paddingBottom: `calc(24px + ${safeBot})` }}>
+            <div style={{ fontSize: "17px", fontWeight: "700", color: C.text, marginBottom: "16px" }}>XP schenken an @{giftTarget.name}</div>
+            <input type="number" value={giftAmt} onChange={e => setGiftAmt(Number(e.target.value))} min="10" max="200" style={{ width: "100%", padding: "13px 16px", border: `1px solid ${C.border}`, borderRadius: "13px", fontSize: "16px", outline: "none", boxSizing: "border-box", marginBottom: "10px", background: C.card, color: C.text }} />
+            <input value={giftMsg} onChange={e => setGiftMsg(e.target.value)} placeholder="Nachricht (optional)" style={{ width: "100%", padding: "13px 16px", border: `1px solid ${C.border}`, borderRadius: "13px", fontSize: "16px", outline: "none", boxSizing: "border-box", marginBottom: "12px", background: C.card, color: C.text }} />
+            <div style={{ fontSize: "12px", color: C.textLight, marginBottom: "14px" }}>Max. 200 XP/Monat verschenkbar</div>
+            <button onClick={sendGiftPts} style={{ width: "100%", padding: "14px", background: C.orange, borderRadius: "14px", color: C.white, fontSize: "15px", fontWeight: "700", marginBottom: "8px" }}>Senden</button>
+            <button onClick={() => setGiftTarget(null)} style={{ width: "100%", padding: "13px", background: "transparent", border: `1px solid ${C.border}`, borderRadius: "14px", color: C.textLight, fontSize: "14px" }}>Abbrechen</button>
+          </div>
         </div>
       )}
 
       {/* Header */}
-      <div style={{ padding: "20px 20px 0", textAlign: "center" }}>
-        <div style={{ position: "relative", display: "inline-block", marginBottom: "10px" }}>
-          {user.avatar_url
-            ? <img src={user.avatar_url} style={{ width: "72px", height: "72px", borderRadius: "50%", objectFit: "cover", border: `3px solid ${C.card}` }} />
-            : <div style={{ width: "72px", height: "72px", borderRadius: "50%", background: C.orange, display: "flex", alignItems: "center", justifyContent: "center", fontSize: "26px", color: C.white, fontWeight: "700" }}>{(user.name || "U")[0].toUpperCase()}</div>
-          }
-          <label style={{ position: "absolute", bottom: "-2px", right: "-2px", width: "24px", height: "24px", borderRadius: "50%", background: C.card, border: `1px solid ${C.border}`, display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer" }}>
-            <div style={{ fontSize: "12px", color: C.textLight }}>+</div>
-            <input type="file" accept="image/*" style={{ display: "none" }} onChange={async e => {
-              const file = e.target.files?.[0]; if (!file || !user.id) return;
-              const result = await db.uploadAvatar(user.id, file);
-              if (result?.url) setUser(u => ({ ...u, avatar_url: result.url }));
-              else if (result?.error) alert(result.error);
-            }} />
+      <div style={{ padding: `calc(${safeTop} + 20px) 20px 0`, textAlign: "center" }}>
+        <div style={{ position: "relative", display: "inline-block", marginBottom: "12px" }}>
+          {user.avatar_url ? <img src={user.avatar_url} style={{ width: "76px", height: "76px", borderRadius: "50%", objectFit: "cover", border: `3px solid ${C.card}` }} />
+            : <div style={{ width: "76px", height: "76px", borderRadius: "50%", background: C.orange, display: "flex", alignItems: "center", justifyContent: "center", fontSize: "28px", color: C.white, fontWeight: "700" }}>{(user.name || "U")[0].toUpperCase()}</div>}
+          <label style={{ position: "absolute", bottom: "-2px", right: "-2px", width: "26px", height: "26px", borderRadius: "50%", background: C.card, border: `1.5px solid ${C.border}`, display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", fontSize: "14px", color: C.textLight }}>
+            +<input type="file" accept="image/*" style={{ display: "none" }} onChange={async e => { const f = e.target.files?.[0]; if (!f || !user.id) return; const r = await db.uploadAvatar(user.id, f); if (r?.url) setUser(u => ({ ...u, avatar_url: r.url })); }} />
           </label>
         </div>
         <div style={{ fontSize: "20px", fontFamily: font.display, fontWeight: "700", color: C.text }}>@{user.name || "user"}</div>
         <div style={{ fontSize: "12px", color: C.textLight, marginTop: "2px" }}>{era.name} · Level {user.level || 1}</div>
-
-        <div style={{ display: "flex", gap: "8px", justifyContent: "center", marginTop: "12px" }}>
-          <button onClick={shareApp} style={{ padding: "8px 16px", background: C.card, border: `1px solid ${C.border}`, borderRadius: "20px", fontSize: "12px", fontWeight: "600", color: C.text, display: "flex", alignItems: "center", gap: "6px" }}>
-            {Icon.share} Teilen
-          </button>
-          <button onClick={shareApp} style={{ padding: "8px 16px", background: C.orange, border: "none", borderRadius: "20px", fontSize: "12px", fontWeight: "600", color: C.white }}>
-            + Einladen
-          </button>
+        <div style={{ display: "flex", gap: "8px", justifyContent: "center", marginTop: "14px" }}>
+          <button onClick={shareApp} style={{ padding: "9px 18px", background: C.card, border: `1px solid ${C.border}`, borderRadius: "20px", fontSize: "13px", fontWeight: "600", color: C.text, display: "flex", alignItems: "center", gap: "6px" }}>{Ico.share} Teilen</button>
+          <button onClick={shareApp} style={{ padding: "9px 18px", background: C.orange, border: "none", borderRadius: "20px", fontSize: "13px", fontWeight: "600", color: C.white }}>+ Einladen</button>
         </div>
       </div>
 
       <div style={{ padding: "16px" }}>
         {/* Stats */}
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "8px", marginBottom: "12px" }}>
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "8px", marginBottom: "14px" }}>
           {[{ v: user.pts || 0, l: "XP" }, { v: user.total_visits || 0, l: "Besuche" }, { v: user.streak || 0, l: "Streak" }].map((s, i) => (
             <Card key={i} style={{ padding: "12px", textAlign: "center" }}>
-              <div style={{ fontSize: "18px", fontWeight: "800", color: C.text }}>{s.v}</div>
+              <div style={{ fontSize: "20px", fontWeight: "800", color: C.text }}>{s.v}</div>
               <div style={{ fontSize: "10px", color: C.textLight, marginTop: "2px" }}>{s.l}</div>
             </Card>
           ))}
         </div>
 
         {/* Social Tabs */}
-        <div style={{ display: "flex", gap: "4px", marginBottom: "12px", background: C.greyBg, borderRadius: "14px", padding: "3px" }}>
-          {[{ id: "score", l: "Rewards" }, { id: "friends", l: "Freunde" }, { id: "gifts", l: "Geschenke" }, { id: "vibes", l: "Vibes" }].map(st => (
-            <button key={st.id} onClick={() => setSocialTab(st.id)} style={{ flex: 1, padding: "9px 4px", borderRadius: "11px", border: "none", background: socialTab === st.id ? C.card : "transparent", color: socialTab === st.id ? C.text : C.textLight, fontSize: "11px", fontWeight: socialTab === st.id ? "700" : "500", transition: "all 0.2s" }}>
-              {st.l}
-            </button>
+        <div style={{ display: "flex", gap: "3px", marginBottom: "14px", background: C.greyBg, borderRadius: "14px", padding: "3px" }}>
+          {[{ id: "score", l: "Rewards" }, { id: "friends", l: "Freunde" }, { id: "gifts", l: "Geschenke" }, { id: "vibes", l: "Vibes" }].map(s => (
+            <button key={s.id} onClick={() => setSocial(s.id)} style={{ flex: 1, padding: "9px 4px", borderRadius: "11px", background: social === s.id ? C.card : "transparent", color: social === s.id ? C.text : C.textLight, fontSize: "11px", fontWeight: social === s.id ? "700" : "500", border: "none", transition: "all 0.2s" }}>{s.l}</button>
           ))}
         </div>
 
-        {/* Score / Rewards */}
-        {socialTab === "score" && (
+        {social === "score" && (
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "8px" }}>
+            {items.map(item => {
+              const ok = (user.pts || 0) >= item.cost && (user.level || 1) >= item.min_level;
+              const locked = (user.level || 1) < item.min_level;
+              return (<Card key={item.id} onClick={() => ok && redeem(item)} style={{ padding: "14px", textAlign: "center", opacity: locked ? 0.4 : 1, cursor: ok ? "pointer" : "default", border: ok ? `2px solid ${C.orange}` : `1px solid ${C.border}` }}>
+                <div style={{ fontSize: "26px", marginBottom: "6px" }}>{item.icon}</div>
+                <div style={{ fontSize: "13px", fontWeight: "700", color: C.text }}>{item.name}</div>
+                <div style={{ marginTop: "8px", padding: "3px 10px", borderRadius: "10px", fontSize: "10px", fontWeight: "700", background: ok ? C.orange : C.greyBg, color: ok ? C.white : C.textLight, display: "inline-block" }}>
+                  {locked ? `Level ${item.min_level}` : `${item.cost} XP`}
+                </div>
+              </Card>);
+            })}
+          </div>
+        )}
+
+        {social === "friends" && (
           <div>
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "8px" }}>
-              {items.map((item, i) => {
-                const ok = (user.pts || 0) >= item.cost && (user.level || 1) >= item.min_level;
-                const locked = (user.level || 1) < item.min_level;
-                return (
-                  <Card key={item.id} onClick={() => ok && redeem(item)} style={{ padding: "14px", textAlign: "center", opacity: locked ? 0.4 : 1, cursor: ok ? "pointer" : "default", border: ok ? `2px solid ${C.orange}` : `1px solid ${C.border}` }}>
-                    <div style={{ fontSize: "24px", marginBottom: "6px" }}>{item.icon}</div>
-                    <div style={{ fontSize: "12px", fontWeight: "700", color: C.text }}>{item.name}</div>
-                    <div style={{ marginTop: "8px", padding: "3px 10px", borderRadius: "10px", fontSize: "10px", fontWeight: "700", background: ok ? C.orange : C.greyBg, color: ok ? C.white : C.textLight, display: "inline-block" }}>
-                      {locked ? `Level ${item.min_level}` : `${item.cost} XP`}
-                    </div>
+            <input value={searchQ} onChange={e => searchUsers(e.target.value)} placeholder="User suchen..." style={{ width: "100%", padding: "13px 16px", border: `1px solid ${C.border}`, borderRadius: "14px", fontSize: "16px", outline: "none", boxSizing: "border-box", marginBottom: "10px", background: C.card, color: C.text }} />
+            {searchRes.map(r => (
+              <Card key={r.id} style={{ marginBottom: "8px", padding: "13px", display: "flex", alignItems: "center", gap: "12px" }}>
+                <div style={{ width: "38px", height: "38px", borderRadius: "50%", background: C.orange, display: "flex", alignItems: "center", justifyContent: "center", color: C.white, fontWeight: "700" }}>{(r.name || "?")[0].toUpperCase()}</div>
+                <div style={{ flex: 1 }}><div style={{ fontSize: "14px", fontWeight: "600" }}>@{r.name}</div><div style={{ fontSize: "12px", color: C.textLight }}>Level {r.level || 1} · {r.pts || 0} XP</div></div>
+                <button onClick={async () => { await db.sendFriendRequest(user.id, r.id); setSearchRes([]); setSearchQ(""); db.getFriendRequests(user.id).then(setFriends); }} style={{ padding: "9px 16px", background: C.orange, borderRadius: "10px", color: C.white, fontSize: "13px", fontWeight: "600" }}>+ Anfrage</button>
+              </Card>
+            ))}
+            {pendingRcv.length > 0 && (<>
+              <div style={{ fontSize: "11px", fontWeight: "700", color: C.textSub, marginBottom: "8px", textTransform: "uppercase" }}>Anfragen</div>
+              {pendingRcv.map(f => (
+                <Card key={f.id} style={{ marginBottom: "8px", padding: "13px", display: "flex", alignItems: "center", gap: "12px" }}>
+                  <div style={{ width: "38px", height: "38px", borderRadius: "50%", background: C.greyBg, display: "flex", alignItems: "center", justifyContent: "center", fontWeight: "700" }}>{(f.sender?.name || "?")[0].toUpperCase()}</div>
+                  <div style={{ flex: 1 }}><div style={{ fontSize: "14px", fontWeight: "600" }}>@{f.sender?.name}</div></div>
+                  <button onClick={async () => { await db.respondFriendRequest(f.id, "accepted"); db.getFriendRequests(user.id).then(setFriends); }} style={{ padding: "8px 14px", background: C.green, borderRadius: "10px", color: C.white, fontSize: "13px", fontWeight: "600" }}>✓</button>
+                  <button onClick={async () => { await db.respondFriendRequest(f.id, "rejected"); db.getFriendRequests(user.id).then(setFriends); }} style={{ padding: "8px 12px", background: C.greyBg, border: `1px solid ${C.border}`, borderRadius: "10px", color: C.textLight, fontSize: "13px" }}>✕</button>
+                </Card>
+              ))}
+            </>)}
+            {myFriends.length > 0 && (<>
+              <div style={{ fontSize: "11px", fontWeight: "700", color: C.textSub, marginBottom: "8px", marginTop: "6px", textTransform: "uppercase" }}>Freunde ({myFriends.length})</div>
+              {myFriends.map(f => {
+                const other = f.sender_id === user.id ? f.receiver : f.sender; return (
+                  <Card key={f.id} style={{ marginBottom: "8px", padding: "13px", display: "flex", alignItems: "center", gap: "12px" }}>
+                    <div style={{ width: "38px", height: "38px", borderRadius: "50%", background: C.orange, display: "flex", alignItems: "center", justifyContent: "center", color: C.white, fontWeight: "700" }}>{(other?.name || "?")[0].toUpperCase()}</div>
+                    <div style={{ flex: 1 }}><div style={{ fontSize: "14px", fontWeight: "600" }}>@{other?.name}</div><div style={{ fontSize: "12px", color: C.textLight }}>Level {other?.level || 1}</div></div>
+                    <button onClick={() => setGiftTarget(other)} style={{ padding: "9px", background: C.greyBg, border: `1px solid ${C.border}`, borderRadius: "10px", color: C.text, display: "flex", alignItems: "center" }}>{Ico.gift}</button>
                   </Card>
                 );
               })}
-            </div>
+            </>)}
           </div>
         )}
 
-        {/* Freunde */}
-        {socialTab === "friends" && (
-          <div>
-            <input value={searchQ} onChange={e => searchUsers(e.target.value)} placeholder="User suchen..."
-              style={{ width: "100%", padding: "11px 14px", border: `1px solid ${C.border}`, borderRadius: "12px", fontSize: "14px", outline: "none", boxSizing: "border-box", marginBottom: "10px", background: C.card, color: C.text }} />
-            {searchResults.map(r => (
-              <Card key={r.id} style={{ marginBottom: "6px", padding: "12px", display: "flex", alignItems: "center", gap: "10px" }}>
-                <div style={{ width: "36px", height: "36px", borderRadius: "50%", background: C.orange, display: "flex", alignItems: "center", justifyContent: "center", color: C.white, fontWeight: "700" }}>{(r.name || "?")[0].toUpperCase()}</div>
-                <div style={{ flex: 1 }}>
-                  <div style={{ fontSize: "14px", fontWeight: "600" }}>@{r.name}</div>
-                  <div style={{ fontSize: "11px", color: C.textLight }}>Level {r.level || 1} · {r.pts || 0} XP</div>
-                </div>
-                <button onClick={() => sendRequest(r.id)} style={{ padding: "8px 14px", background: C.orange, border: "none", borderRadius: "10px", color: C.white, fontSize: "12px", fontWeight: "600" }}>+ Anfrage</button>
-              </Card>
-            ))}
-            {pendingReceived.length > 0 && (
-              <>
-                <div style={{ fontSize: "12px", fontWeight: "700", color: C.textSub, marginBottom: "8px" }}>ANFRAGEN</div>
-                {pendingReceived.map(f => (
-                  <Card key={f.id} style={{ marginBottom: "6px", padding: "12px", display: "flex", alignItems: "center", gap: "10px" }}>
-                    <div style={{ width: "36px", height: "36px", borderRadius: "50%", background: C.greyBg, display: "flex", alignItems: "center", justifyContent: "center", fontWeight: "700" }}>{(f.sender?.name || "?")[0].toUpperCase()}</div>
-                    <div style={{ flex: 1 }}>
-                      <div style={{ fontSize: "14px", fontWeight: "600" }}>@{f.sender?.name}</div>
-                    </div>
-                    <button onClick={() => respondRequest(f.id, "accepted")} style={{ padding: "7px 12px", background: C.green, border: "none", borderRadius: "10px", color: C.white, fontSize: "12px", fontWeight: "600" }}>✓</button>
-                    <button onClick={() => respondRequest(f.id, "rejected")} style={{ padding: "7px 12px", background: C.greyBg, border: `1px solid ${C.border}`, borderRadius: "10px", color: C.textLight, fontSize: "12px" }}>✕</button>
-                  </Card>
-                ))}
-              </>
-            )}
-            {myFriends.length > 0 && (
-              <>
-                <div style={{ fontSize: "12px", fontWeight: "700", color: C.textSub, marginBottom: "8px", marginTop: "6px" }}>FREUNDE ({myFriends.length})</div>
-                {myFriends.map(f => {
-                  const other = f.sender_id === user.id ? f.receiver : f.sender;
-                  return (
-                    <Card key={f.id} style={{ marginBottom: "6px", padding: "12px", display: "flex", alignItems: "center", gap: "10px" }}>
-                      <div style={{ width: "36px", height: "36px", borderRadius: "50%", background: C.orange, display: "flex", alignItems: "center", justifyContent: "center", color: C.white, fontWeight: "700" }}>{(other?.name || "?")[0].toUpperCase()}</div>
-                      <div style={{ flex: 1 }}>
-                        <div style={{ fontSize: "14px", fontWeight: "600" }}>@{other?.name}</div>
-                        <div style={{ fontSize: "11px", color: C.textLight }}>Level {other?.level || 1}</div>
-                      </div>
-                      <button onClick={() => setGiftTarget(other)} style={{ padding: "8px", background: C.greyBg, border: `1px solid ${C.border}`, borderRadius: "10px", color: C.text, display: "flex", alignItems: "center" }}>
-                        {Icon.gift}
-                      </button>
-                    </Card>
-                  );
-                })}
-              </>
-            )}
-            {/* Gift modal */}
-            {giftTarget && (
-              <div style={{ position: "fixed", inset: 0, zIndex: 9999, background: "rgba(0,0,0,0.5)", display: "flex", alignItems: "flex-end" }}>
-                <div style={{ background: C.card, borderRadius: "20px 20px 0 0", padding: "24px", width: "100%", boxSizing: "border-box" }}>
-                  <div style={{ fontSize: "16px", fontWeight: "700", marginBottom: "16px" }}>XP schenken an @{giftTarget.name}</div>
-                  <input type="number" value={giftAmount} onChange={e => setGiftAmount(Number(e.target.value))} min="10" max="200"
-                    style={{ width: "100%", padding: "12px 14px", border: `1px solid ${C.border}`, borderRadius: "12px", fontSize: "16px", outline: "none", boxSizing: "border-box", marginBottom: "8px" }} />
-                  <input value={giftMsg} onChange={e => setGiftMsg(e.target.value)} placeholder="Nachricht (optional)"
-                    style={{ width: "100%", padding: "12px 14px", border: `1px solid ${C.border}`, borderRadius: "12px", fontSize: "14px", outline: "none", boxSizing: "border-box", marginBottom: "14px" }} />
-                  <div style={{ fontSize: "11px", color: C.textLight, marginBottom: "12px" }}>Max. 200 XP/Monat verschenkbar</div>
-                  <button onClick={sendGiftPts} style={{ width: "100%", padding: "13px", background: C.orange, border: "none", borderRadius: "12px", color: C.white, fontSize: "15px", fontWeight: "700", marginBottom: "8px" }}>Senden</button>
-                  <button onClick={() => setGiftTarget(null)} style={{ width: "100%", padding: "12px", background: "transparent", border: `1px solid ${C.border}`, borderRadius: "12px", color: C.textLight, fontSize: "14px" }}>Abbrechen</button>
-                </div>
-              </div>
-            )}
-          </div>
-        )}
-
-        {/* Geschenke */}
-        {socialTab === "gifts" && (
+        {social === "gifts" && (
           <div>
             {gifts.length === 0 && <div style={{ textAlign: "center", padding: "30px", color: C.textLight }}>Noch keine Geschenke</div>}
             {gifts.map(g => (
               <Card key={g.id} style={{ marginBottom: "8px", padding: "14px" }}>
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
                   <div>
-                    <div style={{ fontSize: "13px", fontWeight: "700" }}>
-                      {g.sender_id === user.id ? `→ @${g.receiver?.name}` : `← @${g.sender?.name}`}
-                    </div>
-                    <div style={{ fontSize: "12px", color: C.textLight, marginTop: "2px" }}>
-                      {g.type === "pts" ? `${g.amount} XP` : g.type}
-                      {g.message ? ` · "${g.message}"` : ""}
-                    </div>
+                    <div style={{ fontSize: "14px", fontWeight: "700", color: C.text }}>{g.sender_id === user.id ? `→ @${g.receiver?.name}` : `← @${g.sender?.name}`}</div>
+                    <div style={{ fontSize: "12px", color: C.textLight, marginTop: "2px" }}>{g.type === "pts" ? `${g.amount} XP` : g.type}{g.message ? ` · "${g.message}"` : ""}</div>
                   </div>
                   {g.receiver_id === user.id && g.status === "pending" && (
-                    <button onClick={() => claimGift(g.id)} style={{ padding: "8px 14px", background: C.orange, border: "none", borderRadius: "10px", color: C.white, fontSize: "12px", fontWeight: "700" }}>Annehmen</button>
+                    <button onClick={async () => { await db.claimGift(g.id, user.id); const f = await db.getProfile(user.id); if (f) setUser(u => ({ ...u, ...f })); db.getMyGifts(user.id).then(setGifts); }} style={{ padding: "9px 16px", background: C.orange, borderRadius: "10px", color: C.white, fontSize: "13px", fontWeight: "700" }}>Annehmen</button>
                   )}
-                  {g.status === "claimed" && <div style={{ fontSize: "11px", color: C.green, fontWeight: "600" }}>Erhalten</div>}
+                  {g.status === "claimed" && <div style={{ fontSize: "11px", color: C.green, fontWeight: "700" }}>Erhalten</div>}
                 </div>
               </Card>
             ))}
           </div>
         )}
 
-        {/* Vibes */}
-        {socialTab === "vibes" && (
+        {social === "vibes" && (
           <div>
-            <div style={{ display: "flex", alignItems: "center", gap: "10px", marginBottom: "12px" }}>
-              <label style={{ flex: 1, padding: "12px", background: C.orange, border: "none", borderRadius: "12px", color: C.white, fontSize: "13px", fontWeight: "700", textAlign: "center", cursor: "pointer" }}>
-                {uploadingVibe ? "Wird hochgeladen..." : "Vibe hochladen"}
-                <input type="file" accept="image/*" style={{ display: "none" }} onChange={e => { const f = e.target.files?.[0]; if (f) uploadVibePhoto(f); }} />
-              </label>
-            </div>
-            {vibes.length === 0 && <div style={{ textAlign: "center", padding: "30px", color: C.textLight }}>Noch keine Vibes</div>}
+            <label style={{ display: "block", width: "100%", padding: "13px", background: C.orange, borderRadius: "14px", color: C.white, fontSize: "14px", fontWeight: "700", textAlign: "center", cursor: "pointer", marginBottom: "12px", boxSizing: "border-box" }}>
+              {uploadingVibe ? "Wird hochgeladen..." : "Vibe hochladen"}
+              <input type="file" accept="image/*" style={{ display: "none" }} onChange={async e => { const f = e.target.files?.[0]; if (!f) return; setUploadingVibe(true); await db.uploadVibe(user.id, f); setUploadingVibe(false); db.getApprovedVibes().then(setVibes); }} />
+            </label>
+            {vibes.length === 0 && <div style={{ textAlign: "center", padding: "24px", color: C.textLight }}>Noch keine freigegebenen Vibes</div>}
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "8px" }}>
-              {vibes.map(v => (
-                <div key={v.id} style={{ borderRadius: "14px", overflow: "hidden", aspectRatio: "1" }}>
-                  <img src={v.url} style={{ width: "100%", height: "100%", objectFit: "cover", filter: "sepia(0.3) contrast(1.1) saturate(0.9)" }} />
-                </div>
-              ))}
+              {vibes.map(v => (<div key={v.id} style={{ borderRadius: "14px", overflow: "hidden", aspectRatio: "1" }}><img src={v.url} style={{ width: "100%", height: "100%", objectFit: "cover", filter: "sepia(0.3) contrast(1.1) saturate(0.9)" }} /></div>))}
             </div>
           </div>
         )}
 
-        {/* Profil Info */}
-        <Card style={{ marginTop: "12px", marginBottom: "10px" }}>
+        {/* Profil bearbeiten */}
+        <Card style={{ marginTop: "14px", marginBottom: "10px" }}>
           {editing ? (
             <>
-              <div style={{ fontSize: "11px", fontWeight: "700", letterSpacing: "1px", marginBottom: "10px", color: C.textSub }}>PROFIL BEARBEITEN</div>
-              <input value={uname} onChange={e => setUname(e.target.value)} placeholder="Username" style={{ width: "100%", padding: "11px 14px", border: `1px solid ${C.border}`, borderRadius: "12px", fontSize: "14px", marginBottom: "8px", outline: "none", boxSizing: "border-box" }} />
-              <input value={insta} onChange={e => setInsta(e.target.value)} placeholder="@instagram" style={{ width: "100%", padding: "11px 14px", border: `1px solid ${C.border}`, borderRadius: "12px", fontSize: "14px", marginBottom: "12px", outline: "none", boxSizing: "border-box" }} />
-              <button onClick={save} style={{ width: "100%", padding: "12px", background: C.orange, border: "none", borderRadius: "12px", color: C.white, fontSize: "14px", fontWeight: "700" }}>Speichern</button>
+              <div style={{ fontSize: "11px", fontWeight: "700", letterSpacing: "1px", marginBottom: "12px", color: C.textSub }}>PROFIL BEARBEITEN</div>
+              <input value={uname} onChange={e => setUname(e.target.value)} placeholder="Username" style={{ width: "100%", padding: "13px 16px", border: `1px solid ${C.border}`, borderRadius: "13px", fontSize: "16px", marginBottom: "10px", outline: "none", boxSizing: "border-box", background: C.card, color: C.text }} />
+              <input value={insta} onChange={e => setInsta(e.target.value)} placeholder="@instagram" style={{ width: "100%", padding: "13px 16px", border: `1px solid ${C.border}`, borderRadius: "13px", fontSize: "16px", marginBottom: "14px", outline: "none", boxSizing: "border-box", background: C.card, color: C.text }} />
+              <button onClick={save} style={{ width: "100%", padding: "13px", background: C.orange, borderRadius: "13px", color: C.white, fontSize: "15px", fontWeight: "700" }}>Speichern</button>
             </>
           ) : (
             <>
               {[{ l: "Username", v: `@${user.name || "user"}` }, { l: "E-Mail", v: user.email }, { l: "Instagram", v: user.instagram || "—" }, { l: "Telefon", v: user.phone || "—" }].map((r, i) => (
-                <div key={i} style={{ padding: "8px 0", borderBottom: i < 3 ? `1px solid ${C.greyBg}` : "none" }}>
+                <div key={i} style={{ padding: "9px 0", borderBottom: i < 3 ? `1px solid ${C.greyBg}` : "none" }}>
                   <div style={{ fontSize: "10px", color: C.textLight, fontWeight: "600" }}>{r.l}</div>
-                  <div style={{ fontSize: "13px", fontWeight: "500", marginTop: "2px" }}>{r.v}</div>
+                  <div style={{ fontSize: "14px", fontWeight: "500", marginTop: "2px", color: C.text }}>{r.v}</div>
                 </div>
               ))}
-              <button onClick={() => setEditing(true)} style={{ width: "100%", marginTop: "12px", padding: "11px", background: C.greyBg, border: `1px solid ${C.border}`, borderRadius: "12px", color: C.text, fontSize: "13px", fontWeight: "600" }}>Profil bearbeiten</button>
+              <button onClick={() => setEditing(true)} style={{ width: "100%", marginTop: "12px", padding: "12px", background: C.greyBg, border: `1px solid ${C.border}`, borderRadius: "13px", color: C.text, fontSize: "14px", fontWeight: "600" }}>Profil bearbeiten</button>
             </>
           )}
         </Card>
 
         {/* Era Journey */}
         <Card style={{ marginBottom: "10px" }}>
-          <div style={{ fontSize: "11px", fontWeight: "700", letterSpacing: "1.5px", marginBottom: "12px", color: C.textSub }}>ERA JOURNEY</div>
+          <div style={{ fontSize: "11px", fontWeight: "700", letterSpacing: "1.5px", marginBottom: "14px", color: C.textSub }}>ERA JOURNEY</div>
           <div style={{ display: "flex", gap: "6px", justifyContent: "center" }}>
             {ERAS.map((e, i) => (
-              <div key={i} style={{ width: "44px", height: "44px", borderRadius: "50%", background: (user.level || 1) >= e.level ? C.orange : C.greyBg, display: "flex", alignItems: "center", justifyContent: "center", fontSize: "13px", fontWeight: "800", color: (user.level || 1) >= e.level ? C.white : C.textLight, border: (user.level || 1) === e.level ? `3px solid ${C.text}` : "none" }}>
+              <div key={i} style={{ width: "46px", height: "46px", borderRadius: "50%", background: (user.level || 1) >= e.level ? C.orange : C.greyBg, display: "flex", alignItems: "center", justifyContent: "center", fontSize: "13px", fontWeight: "800", color: (user.level || 1) >= e.level ? C.white : C.textLight, border: (user.level || 1) === e.level ? `3px solid ${C.text}` : "none" }}>
                 {(user.level || 1) >= e.level ? e.level : "—"}
               </div>
             ))}
@@ -1224,28 +997,24 @@ const ProfileTab = ({ user, setUser, onLogout, theme }) => {
         </Card>
 
         {/* Einstellungen */}
-        <Card style={{ marginBottom: "10px" }}>
-          <div style={{ fontSize: "11px", fontWeight: "700", letterSpacing: "1.5px", marginBottom: "12px", color: C.textSub }}>EINSTELLUNGEN</div>
+        <Card style={{ marginBottom: "14px" }}>
+          <div style={{ fontSize: "11px", fontWeight: "700", letterSpacing: "1.5px", marginBottom: "14px", color: C.textSub }}>EINSTELLUNGEN</div>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "10px 0", borderBottom: `1px solid ${C.greyBg}` }}>
-            <div style={{ fontSize: "14px", color: C.text }}>Dark Mode</div>
-            <div onClick={() => setMode?.(mode === "dark" ? "light" : "dark")} style={{ width: "46px", height: "26px", borderRadius: "13px", background: mode === "dark" ? C.orange : C.greyBg, cursor: "pointer", position: "relative", transition: "all 0.3s" }}>
-              <div style={{ width: "22px", height: "22px", borderRadius: "50%", background: C.white, position: "absolute", top: "2px", left: mode === "dark" ? "22px" : "2px", transition: "all 0.3s", boxShadow: "0 1px 4px rgba(0,0,0,0.2)" }} />
+            <div style={{ fontSize: "15px", color: C.text }}>Dark Mode</div>
+            <div onClick={() => setMode?.(mode === "dark" ? "light" : "dark")} style={{ width: "48px", height: "27px", borderRadius: "14px", background: mode === "dark" ? C.orange : C.greyBg, cursor: "pointer", position: "relative", transition: "all 0.3s" }}>
+              <div style={{ width: "23px", height: "23px", borderRadius: "50%", background: C.white, position: "absolute", top: "2px", left: mode === "dark" ? "23px" : "2px", transition: "all 0.3s", boxShadow: "0 1px 4px rgba(0,0,0,0.2)" }} />
             </div>
           </div>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "10px 0" }}>
-            <div>
-              <div style={{ fontSize: "14px", color: C.text }}>Glow Hour Farbe</div>
-              {isGlowHour && <div style={{ fontSize: "10px", color: C.orange, fontWeight: "600" }}>Glow Hour aktiv!</div>}
-            </div>
+            <div><div style={{ fontSize: "15px", color: C.text }}>Glow Hour Farbe</div>{isGlow && <div style={{ fontSize: "11px", color: C.orange, fontWeight: "600" }}>Glow Hour aktiv!</div>}</div>
             <div style={{ display: "flex", gap: "8px" }}>
-              <div onClick={() => setGlowColor?.("rosa")} style={{ width: "28px", height: "28px", borderRadius: "50%", background: "#f8e8ee", border: glowColor === "rosa" ? `2px solid #d4618c` : `2px solid ${C.border}`, cursor: "pointer" }} />
-              <div onClick={() => setGlowColor?.("gruen")} style={{ width: "28px", height: "28px", borderRadius: "50%", background: "#e8f5e9", border: glowColor === "gruen" ? `2px solid #4CAF50` : `2px solid ${C.border}`, cursor: "pointer" }} />
+              <div onClick={() => setGlow?.("rosa")} style={{ width: "30px", height: "30px", borderRadius: "50%", background: "#f8e8ee", border: glow === "rosa" ? `2.5px solid #db2777` : `2px solid ${C.border}`, cursor: "pointer" }} />
+              <div onClick={() => setGlow?.("gruen")} style={{ width: "30px", height: "30px", borderRadius: "50%", background: "#dcfce7", border: glow === "gruen" ? `2.5px solid #16a34a` : `2px solid ${C.border}`, cursor: "pointer" }} />
             </div>
           </div>
         </Card>
 
-        {/* Ausloggen */}
-        <button onClick={onLogout} style={{ width: "100%", padding: "13px", background: "transparent", border: `1px solid ${C.border}`, borderRadius: "14px", color: C.textLight, fontSize: "14px", fontWeight: "600" }}>
+        <button onClick={onLogout} style={{ width: "100%", padding: "14px", background: "transparent", border: `1px solid ${C.border}`, borderRadius: "14px", color: C.textLight, fontSize: "15px", fontWeight: "600" }}>
           Ausloggen
         </button>
       </div>
@@ -1253,7 +1022,7 @@ const ProfileTab = ({ user, setUser, onLogout, theme }) => {
   );
 };
 
-// ─── Admin Login ─────────────────────────────────────────────────
+// ─── Admin Login ──────────────────────────────────────────────────
 const AdminLogin = ({ onLogin, onBack }) => {
   const [email, setEmail] = useState("");
   const [pw, setPw] = useState("");
@@ -1265,38 +1034,66 @@ const AdminLogin = ({ onLogin, onBack }) => {
     try {
       const { data, error } = await db.signIn(email, pw);
       if (error) { setErr("Falsche Zugangsdaten"); setLoading(false); return; }
-      await new Promise(r => setTimeout(r, 600));
-      let profile = await db.getProfile(data.user.id);
-      if (!profile) {
-        await new Promise(r => setTimeout(r, 1000));
-        profile = await db.getProfile(data.user.id);
-      }
-      if (profile?.is_admin) onLogin(profile);
+      await new Promise(r => setTimeout(r, 700));
+      let p = await db.getProfile(data.user.id);
+      if (!p) { await new Promise(r => setTimeout(r, 1000)); p = await db.getProfile(data.user.id); }
+      if (p?.is_admin) onLogin(p);
       else { setErr("Kein Admin-Zugang"); await db.signOut(); }
-    } catch (e) { setErr("Verbindungsfehler: " + e.message); }
+    } catch (e) { setErr("Verbindungsfehler"); }
     setLoading(false);
   };
 
   return (
-    <div style={{ minHeight: "100vh", background: C.beige, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: "24px" }}>
+    <div style={{ minHeight: "100vh", background: C.beige, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: `calc(${safeTop} + 32px) 24px calc(${safeBot} + 32px)` }}>
       <style>{defaultCSS}</style>
       <div style={{ fontSize: "28px", fontFamily: font.display, color: C.text, marginBottom: "28px", fontWeight: "700" }}>Admin Login</div>
-      <div style={{ width: "100%", maxWidth: "300px" }}>
-        <input type="email" placeholder="Admin E-Mail" value={email} onChange={e => setEmail(e.target.value)}
-          style={{ width: "100%", padding: "13px 14px", background: C.card, border: `1px solid ${C.border}`, borderRadius: "12px", color: C.text, fontSize: "14px", outline: "none", marginBottom: "8px", boxSizing: "border-box" }} />
-        <input type="password" placeholder="Passwort" value={pw} onChange={e => setPw(e.target.value)}
-          style={{ width: "100%", padding: "13px 14px", background: C.card, border: `1px solid ${C.border}`, borderRadius: "12px", color: C.text, fontSize: "14px", outline: "none", marginBottom: "10px", boxSizing: "border-box" }} />
-        {err && <div style={{ color: C.orange, fontSize: "12px", textAlign: "center", marginBottom: "8px" }}>{err}</div>}
-        <button onClick={submit} disabled={loading} style={{ width: "100%", padding: "14px", background: C.orange, border: "none", borderRadius: "12px", color: C.white, fontSize: "15px", fontWeight: "700", opacity: loading ? 0.7 : 1 }}>
-          {loading ? "..." : "Einloggen"}
-        </button>
-        <button onClick={onBack} style={{ width: "100%", marginTop: "8px", padding: "12px", background: "transparent", border: `1px solid ${C.border}`, borderRadius: "12px", color: C.textLight, fontSize: "13px" }}>← Zurück</button>
+      <div style={{ width: "100%", maxWidth: "320px" }}>
+        <input type="email" value={email} onChange={e => setEmail(e.target.value)} placeholder="Admin E-Mail" style={{ width: "100%", padding: "14px 16px", background: C.card, border: `1px solid ${C.border}`, borderRadius: "14px", color: C.text, fontSize: "16px", outline: "none", marginBottom: "10px", boxSizing: "border-box" }} />
+        <input type="password" value={pw} onChange={e => setPw(e.target.value)} placeholder="Passwort" style={{ width: "100%", padding: "14px 16px", background: C.card, border: `1px solid ${C.border}`, borderRadius: "14px", color: C.text, fontSize: "16px", outline: "none", marginBottom: "12px", boxSizing: "border-box" }} />
+        {err && <div style={{ color: C.orange, fontSize: "13px", textAlign: "center", marginBottom: "10px" }}>{err}</div>}
+        <button onClick={submit} disabled={loading} style={{ width: "100%", padding: "15px", background: C.orange, borderRadius: "14px", color: C.white, fontSize: "16px", fontWeight: "700", opacity: loading ? 0.7 : 1 }}>{loading ? "..." : "Einloggen"}</button>
+        <button onClick={onBack} style={{ width: "100%", marginTop: "8px", padding: "13px", background: "transparent", border: `1px solid ${C.border}`, borderRadius: "14px", color: C.textLight, fontSize: "14px" }}>← Zurück</button>
       </div>
     </div>
   );
 };
 
-// ─── Admin Panel ─────────────────────────────────────────────────
+// ─── Admin Panel ──────────────────────────────────────────────────
+// WICHTIG: Inputs als eigene Komponenten definiert → kein Fokusverlust beim Tippen
+const AdminInput = ({ label, value, onChange, type = "text" }) => (
+  <div style={{ marginBottom: "12px" }}>
+    <div style={{ fontSize: "11px", color: "#999", marginBottom: "5px", fontWeight: "600", letterSpacing: "0.5px" }}>{label}</div>
+    <input
+      type={type}
+      value={value ?? ''}
+      onChange={e => onChange(e.target.value)}
+      style={{ width: "100%", padding: "12px 14px", border: "1px solid #e8e8e8", borderRadius: "12px", fontSize: "16px", outline: "none", boxSizing: "border-box", background: "#fff", color: "#111", fontFamily: "inherit" }}
+    />
+  </div>
+);
+
+const AdminToggle = ({ label, value, onChange }) => (
+  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "12px 0", borderBottom: "1px solid #f5f5f5" }}>
+    <div style={{ fontSize: "15px", color: "#111" }}>{label}</div>
+    <div onClick={() => onChange(!value)} style={{ width: "48px", height: "27px", borderRadius: "14px", background: value ? "#e24a28" : "#f5f5f5", cursor: "pointer", position: "relative", transition: "background 0.25s" }}>
+      <div style={{ width: "23px", height: "23px", borderRadius: "50%", background: "#fff", position: "absolute", top: "2px", left: value ? "23px" : "2px", transition: "left 0.25s", boxShadow: "0 1px 4px rgba(0,0,0,0.2)" }} />
+    </div>
+  </div>
+);
+
+const AdminModal = ({ title, onSave, onClose, children }) => (
+  <div style={{ position: "fixed", inset: 0, zIndex: 99999, background: "rgba(0,0,0,0.55)", display: "flex", alignItems: "flex-end" }}>
+    <div style={{ background: "#fff", borderRadius: "22px 22px 0 0", padding: "22px 20px", width: "100%", maxHeight: "80vh", overflowY: "auto", boxSizing: "border-box", paddingBottom: `calc(22px + env(safe-area-inset-bottom,0px))` }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "20px" }}>
+        <div style={{ fontSize: "18px", fontWeight: "700", color: "#111" }}>{title}</div>
+        <button onClick={onClose} style={{ background: "#f5f5f5", borderRadius: "10px", padding: "8px 14px", color: "#111", fontSize: "14px" }}>✕</button>
+      </div>
+      {children}
+      <button onClick={onSave} style={{ width: "100%", padding: "14px", background: "#e24a28", borderRadius: "14px", color: "#fff", fontSize: "16px", fontWeight: "700", marginTop: "16px" }}>Speichern</button>
+    </div>
+  </div>
+);
+
 const AdminPanel = ({ onClose }) => {
   const [tab, setTab] = useState("stats");
   const [users, setUsers] = useState([]);
@@ -1312,6 +1109,10 @@ const AdminPanel = ({ onClose }) => {
   const [pushTitle, setPushTitle] = useState("");
   const [pushBody, setPushBody] = useState("");
   const [toast, setToast] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [searchQ, setSearchQ] = useState("");
+
+  // Edit states - separate damit kein Re-render der anderen Inputs passiert
   const [editUser, setEditUser] = useState(null);
   const [editMission, setEditMission] = useState(null);
   const [editDish, setEditDish] = useState(null);
@@ -1319,254 +1120,182 @@ const AdminPanel = ({ onClose }) => {
   const [editPrize, setEditPrize] = useState(null);
   const [editGlow, setEditGlow] = useState(null);
   const [newFact, setNewFact] = useState("");
-  const [searchQ, setSearchQ] = useState("");
-  const [loading, setLoading] = useState(true);
 
-  const showToast = (msg, ok = true) => { setToast({ msg, ok }); setTimeout(() => setToast(null), 2500); };
+  const toast2 = (m, ok = true) => { setToast({ m, ok }); setTimeout(() => setToast(null), 2500) };
 
-  const loadAll = async () => {
+  const loadAll = useCallback(async () => {
     setLoading(true);
     const [u, m, f, p, s, r, v, vis] = await Promise.all([
       db.getAllProfiles(), db.getMissions(), db.getFunFacts(),
       db.getWheelPrizes(), db.getShopItems(), db.getPendingRedemptions(),
       db.getPendingVibes(), db.getTodayVisitors(),
     ]);
-    const { data: d } = await supabase.from('dishes').select('*, dish_votes(vote)').eq('active', true);
+    const { data: d } = await supabase.from('dishes').select('*,dish_votes(vote)').eq('active', true);
     const { data: gh } = await supabase.from('glow_hours').select('*').order('id');
     setUsers(u); setMissions(m); setFacts(f); setPrizes(p); setShopItems(s);
     setRedemptions(r); setVibes(v); setVisitors(vis);
     setDishes((d || []).map(x => ({ ...x, votes: x.dish_votes?.filter(v => v.vote).length || 0 })));
-    setGlowHours(gh || []);
-    setLoading(false);
-  };
+    setGlowHours(gh || []); setLoading(false);
+  }, []);
 
-  useEffect(() => { loadAll(); }, []);
+  useEffect(() => { loadAll(); }, [loadAll]);
 
-  const totalPts = users.reduce((s, u) => s + (u.pts || 0), 0);
-  const avgPts = users.length ? Math.round(totalPts / users.length) : 0;
-  const today = new Date().toISOString().split('T')[0];
-  const todayUsers = users.filter(u => u.last_visit === today).length;
+  const today2 = new Date().toISOString().split('T')[0];
+  const stats = [
+    { v: users.length, l: "Registrierte User" },
+    { v: users.filter(u => u.last_visit === today2).length, l: "Heute aktiv" },
+    { v: users.filter(u => u.is_abo_member).length, l: "Abo Mitglieder" },
+    { v: users.length ? Math.round(users.reduce((s, u) => s + (u.pts || 0), 0) / users.length) : 0, l: "⌀ XP/User" },
+    { v: users.reduce((s, u) => s + (u.pts || 0), 0).toLocaleString(), l: "XP gesamt" },
+    { v: visitors.length, l: "Besuche heute" },
+    { v: redemptions.length, l: "Offene Einlösungen" },
+    { v: vibes.length, l: "Vibes zur Freigabe" },
+  ];
 
-  const saveUser = async () => {
-    if (!editUser) return;
-    await db.updateProfile(editUser.id, { name: editUser.name, pts: parseInt(editUser.pts) || 0, level: parseInt(editUser.level) || 1, is_admin: editUser.is_admin, is_abo_member: editUser.is_abo_member, streak: parseInt(editUser.streak) || 0, total_visits: parseInt(editUser.total_visits) || 0 });
-    showToast("Gespeichert ✓"); setEditUser(null); db.getAllProfiles().then(setUsers);
-  };
-  const saveMission = async () => {
-    if (!editMission) return;
-    if (editMission.id) await supabase.from('missions').update({ title: editMission.title, description: editMission.description, pts_reward: parseInt(editMission.pts_reward) || 0, icon: editMission.icon, goal: parseInt(editMission.goal) || 1, active: editMission.active }).eq('id', editMission.id);
-    else await supabase.from('missions').insert({ title: editMission.title, description: editMission.description || '', pts_reward: parseInt(editMission.pts_reward) || 100, icon: editMission.icon || '★', goal: parseInt(editMission.goal) || 1, active: true });
-    showToast("Gespeichert ✓"); setEditMission(null); db.getMissions().then(setMissions);
-  };
-  const saveDish = async () => {
-    if (!editDish) return;
-    if (editDish.id) await supabase.from('dishes').update({ name: editDish.name, description: editDish.description, active: editDish.active }).eq('id', editDish.id);
-    else await supabase.from('dishes').insert({ name: editDish.name, description: editDish.description || '', active: true });
-    showToast("Gespeichert ✓"); setEditDish(null);
-    const { data: d } = await supabase.from('dishes').select('*, dish_votes(vote)').eq('active', true);
-    setDishes((d || []).map(x => ({ ...x, votes: x.dish_votes?.filter(v => v.vote).length || 0 })));
-  };
-  const saveShop = async () => {
-    if (!editShop) return;
-    if (editShop.id) await supabase.from('shop_items').update({ name: editShop.name, description: editShop.description, icon: editShop.icon, cost: parseInt(editShop.cost) || 0, min_level: parseInt(editShop.min_level) || 1, active: editShop.active }).eq('id', editShop.id);
-    else await supabase.from('shop_items').insert({ name: editShop.name, description: editShop.description || '', icon: editShop.icon || '🎁', cost: parseInt(editShop.cost) || 0, min_level: parseInt(editShop.min_level) || 1, active: true });
-    showToast("Gespeichert ✓"); setEditShop(null); db.getShopItems().then(setShopItems);
-  };
-  const savePrize = async () => {
-    if (!editPrize) return;
-    if (editPrize.id) await supabase.from('wheel_prizes').update({ label: editPrize.label, value: parseInt(editPrize.value) || 0, color: editPrize.color, active: editPrize.active }).eq('id', editPrize.id);
-    else await supabase.from('wheel_prizes').insert({ label: editPrize.label, value: parseInt(editPrize.value) || 0, color: editPrize.color || '#fde8e8', active: true });
-    showToast("Gespeichert ✓"); setEditPrize(null); db.getWheelPrizes().then(setPrizes);
-  };
-  const saveGlow = async () => {
-    if (!editGlow) return;
-    if (editGlow.id) await supabase.from('glow_hours').update({ day_of_week: parseInt(editGlow.day_of_week), start_time: editGlow.start_time, end_time: editGlow.end_time, multiplier: parseInt(editGlow.multiplier) || 2, active: editGlow.active }).eq('id', editGlow.id);
-    else await supabase.from('glow_hours').insert({ day_of_week: parseInt(editGlow.day_of_week) || 1, start_time: editGlow.start_time || '12:00', end_time: editGlow.end_time || '14:00', multiplier: 2, active: true });
-    showToast("Gespeichert ✓"); setEditGlow(null);
-    supabase.from('glow_hours').select('*').order('id').then(r => setGlowHours(r.data || []));
-  };
+  const DAYS = ['Sonntag', 'Montag', 'Dienstag', 'Mittwoch', 'Donnerstag', 'Freitag', 'Samstag'];
+  const filtered = users.filter(u => !searchQ || u.name?.toLowerCase().includes(searchQ.toLowerCase()) || u.email?.toLowerCase().includes(searchQ.toLowerCase()));
 
-  const days = ['Sonntag', 'Montag', 'Dienstag', 'Mittwoch', 'Donnerstag', 'Freitag', 'Samstag'];
-  const adminTabs = [
+  const saveFn = async (fn, clearFn) => { await fn(); toast2("Gespeichert ✓"); clearFn(); await loadAll(); };
+
+  const TABS = [
     { id: "stats", l: "Statistiken" }, { id: "users", l: "User" }, { id: "redemptions", l: "Kasse" },
     { id: "shop", l: "Shop" }, { id: "missions", l: "Missionen" }, { id: "dishes", l: "Gerichte" },
     { id: "glow", l: "Glow" }, { id: "prizes", l: "Rad" }, { id: "facts", l: "Fakten" },
     { id: "vibes", l: "Vibes" }, { id: "visits", l: "Heute" }, { id: "push", l: "Push" },
   ];
 
-  const inp = (label, val, onChange, type = "text") => (
-    <div style={{ marginBottom: "10px" }}>
-      <div style={{ fontSize: "11px", color: C.textLight, marginBottom: "4px", fontWeight: "600" }}>{label}</div>
-      <input type={type} value={val ?? ''} onChange={e => onChange(e.target.value)}
-        style={{ width: "100%", padding: "10px 12px", border: `1px solid ${C.border}`, borderRadius: "10px", fontSize: "14px", outline: "none", boxSizing: "border-box", background: C.card, color: C.text }} />
-    </div>
-  );
-
-  const toggle = (label, val, onChange) => (
-    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "10px 0", borderBottom: `1px solid ${C.greyBg}` }}>
-      <div style={{ fontSize: "14px", color: C.text }}>{label}</div>
-      <div onClick={() => onChange(!val)} style={{ width: "44px", height: "24px", borderRadius: "12px", background: val ? C.orange : C.greyBg, cursor: "pointer", position: "relative", transition: "all 0.2s" }}>
-        <div style={{ width: "20px", height: "20px", borderRadius: "50%", background: C.white, position: "absolute", top: "2px", left: val ? "22px" : "2px", transition: "all 0.2s" }} />
-      </div>
-    </div>
-  );
-
-  const Modal = ({ title, onSave, onClose, children }) => (
-    <div style={{ position: "fixed", inset: 0, zIndex: 99999, background: "rgba(0,0,0,0.55)", display: "flex", alignItems: "flex-end" }}>
-      <div style={{ background: C.card, borderRadius: "20px 20px 0 0", padding: "22px", width: "100%", maxHeight: "80vh", overflowY: "auto", boxSizing: "border-box" }}>
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "18px" }}>
-          <div style={{ fontSize: "17px", fontWeight: "700", color: C.text }}>{title}</div>
-          <button onClick={onClose} style={{ background: C.greyBg, border: "none", borderRadius: "10px", padding: "7px 12px", color: C.text, fontSize: "14px" }}>✕</button>
-        </div>
-        {children}
-        <button onClick={onSave} style={{ width: "100%", padding: "13px", background: C.orange, border: "none", borderRadius: "12px", color: C.white, fontSize: "15px", fontWeight: "700", marginTop: "14px" }}>Speichern</button>
-      </div>
-    </div>
-  );
-
-  const filteredUsers = users.filter(u => !searchQ || u.name?.toLowerCase().includes(searchQ.toLowerCase()) || u.email?.toLowerCase().includes(searchQ.toLowerCase()));
-
   return (
-    <div style={{ position: "fixed", inset: 0, zIndex: 9999, background: C.beige, display: "flex", flexDirection: "column", overflow: "hidden" }}>
+    <div style={{ position: "fixed", inset: 0, zIndex: 9999, background: "#f5f5f5", display: "flex", flexDirection: "column", overflow: "hidden", fontFamily: font.ui }}>
       <style>{defaultCSS}</style>
 
-      {toast && <div style={{ position: "fixed", top: "16px", left: "50%", transform: "translateX(-50%)", background: toast.ok ? C.green : C.orange, color: C.white, padding: "10px 20px", borderRadius: "20px", fontSize: "13px", fontWeight: "600", zIndex: 999999, animation: "fadeUp 0.3s" }}>{toast.msg}</div>}
+      {toast && <div style={{ position: "fixed", top: `calc(${safeTop} + 12px)`, left: "50%", transform: "translateX(-50%)", background: toast.ok ? "#2d472a" : "#e24a28", color: "#fff", padding: "10px 22px", borderRadius: "22px", fontSize: "13px", fontWeight: "700", zIndex: 999999, animation: "fadeUp 0.3s" }}>{toast.m}</div>}
 
-      {/* Edit Modals */}
+      {/* Modals */}
       {editUser && (
-        <Modal title="User bearbeiten" onSave={saveUser} onClose={() => setEditUser(null)}>
-          {inp("Name", editUser.name, v => setEditUser(p => ({ ...p, name: v })))}
-          {inp("XP", editUser.pts, v => setEditUser(p => ({ ...p, pts: v })), "number")}
-          {inp("Level (1-5)", editUser.level, v => setEditUser(p => ({ ...p, level: v })), "number")}
-          {inp("Streak", editUser.streak, v => setEditUser(p => ({ ...p, streak: v })), "number")}
-          {inp("Besuche", editUser.total_visits, v => setEditUser(p => ({ ...p, total_visits: v })), "number")}
-          {toggle("Admin", editUser.is_admin, v => setEditUser(p => ({ ...p, is_admin: v })))}
-          {toggle("Abo", editUser.is_abo_member, v => setEditUser(p => ({ ...p, is_abo_member: v })))}
-          <button onClick={async () => { if (!confirm("Wirklich löschen?")) return; await supabase.from('profiles').delete().eq('id', editUser.id); showToast("Gelöscht"); setEditUser(null); db.getAllProfiles().then(setUsers) }}
-            style={{ width: "100%", padding: "11px", background: "transparent", border: "1px solid #e24a28", borderRadius: "10px", color: "#e24a28", fontSize: "13px", marginTop: "8px", cursor: "pointer" }}>User löschen</button>
-        </Modal>
+        <AdminModal title="User bearbeiten" onSave={() => saveFn(() => db.updateProfile(editUser.id, { name: editUser.name, pts: parseInt(editUser.pts) || 0, level: parseInt(editUser.level) || 1, is_admin: editUser.is_admin, is_abo_member: editUser.is_abo_member, streak: parseInt(editUser.streak) || 0, total_visits: parseInt(editUser.total_visits) || 0 }), () => setEditUser(null))} onClose={() => setEditUser(null)}>
+          <AdminInput label="Name" value={editUser.name} onChange={v => setEditUser(p => ({ ...p, name: v }))} />
+          <AdminInput label="XP" value={editUser.pts} onChange={v => setEditUser(p => ({ ...p, pts: v }))} type="number" />
+          <AdminInput label="Level (1-5)" value={editUser.level} onChange={v => setEditUser(p => ({ ...p, level: v }))} type="number" />
+          <AdminInput label="Streak" value={editUser.streak} onChange={v => setEditUser(p => ({ ...p, streak: v }))} type="number" />
+          <AdminInput label="Besuche gesamt" value={editUser.total_visits} onChange={v => setEditUser(p => ({ ...p, total_visits: v }))} type="number" />
+          <AdminToggle label="Admin" value={editUser.is_admin} onChange={v => setEditUser(p => ({ ...p, is_admin: v }))} />
+          <AdminToggle label="Abo Mitglied" value={editUser.is_abo_member} onChange={v => setEditUser(p => ({ ...p, is_abo_member: v }))} />
+          <button onClick={async () => { if (!confirm("Wirklich löschen?")) return; await supabase.from('profiles').delete().eq('id', editUser.id); toast2("Gelöscht"); setEditUser(null); loadAll(); }} style={{ width: "100%", padding: "12px", background: "transparent", border: "1px solid #e24a28", borderRadius: "12px", color: "#e24a28", fontSize: "14px", marginTop: "10px" }}>User löschen</button>
+        </AdminModal>
       )}
       {editMission && (
-        <Modal title={editMission.id ? "Mission bearbeiten" : "Neue Mission"} onSave={saveMission} onClose={() => setEditMission(null)}>
-          {inp("Titel", editMission.title, v => setEditMission(p => ({ ...p, title: v })))}
-          {inp("Beschreibung", editMission.description, v => setEditMission(p => ({ ...p, description: v })))}
-          {inp("Icon", editMission.icon, v => setEditMission(p => ({ ...p, icon: v })))}
-          {inp("XP Belohnung", editMission.pts_reward, v => setEditMission(p => ({ ...p, pts_reward: v })), "number")}
-          {inp("Ziel", editMission.goal, v => setEditMission(p => ({ ...p, goal: v })), "number")}
-          {editMission.id && toggle("Aktiv", editMission.active, v => setEditMission(p => ({ ...p, active: v })))}
-        </Modal>
+        <AdminModal title={editMission.id ? "Mission bearbeiten" : "Neue Mission"} onSave={() => saveFn(async () => { if (editMission.id) await supabase.from('missions').update({ title: editMission.title, description: editMission.description, pts_reward: parseInt(editMission.pts_reward) || 0, icon: editMission.icon, goal: parseInt(editMission.goal) || 1, active: editMission.active }).eq('id', editMission.id); else await supabase.from('missions').insert({ title: editMission.title, description: editMission.description || '', pts_reward: parseInt(editMission.pts_reward) || 100, icon: editMission.icon || '★', goal: parseInt(editMission.goal) || 1, active: true }); }, () => setEditMission(null))} onClose={() => setEditMission(null)}>
+          <AdminInput label="Titel" value={editMission.title} onChange={v => setEditMission(p => ({ ...p, title: v }))} />
+          <AdminInput label="Beschreibung" value={editMission.description} onChange={v => setEditMission(p => ({ ...p, description: v }))} />
+          <AdminInput label="Icon" value={editMission.icon} onChange={v => setEditMission(p => ({ ...p, icon: v }))} />
+          <AdminInput label="XP Belohnung" value={editMission.pts_reward} onChange={v => setEditMission(p => ({ ...p, pts_reward: v }))} type="number" />
+          <AdminInput label="Ziel" value={editMission.goal} onChange={v => setEditMission(p => ({ ...p, goal: v }))} type="number" />
+          {editMission.id && <AdminToggle label="Aktiv" value={editMission.active} onChange={v => setEditMission(p => ({ ...p, active: v }))} />}
+        </AdminModal>
       )}
       {editDish && (
-        <Modal title={editDish.id ? "Gericht bearbeiten" : "Neues Gericht"} onSave={saveDish} onClose={() => setEditDish(null)}>
-          {inp("Name", editDish.name, v => setEditDish(p => ({ ...p, name: v })))}
-          {inp("Beschreibung", editDish.description, v => setEditDish(p => ({ ...p, description: v })))}
-          {editDish.id && toggle("Aktiv", editDish.active, v => setEditDish(p => ({ ...p, active: v })))}
-          {editDish.id && <button onClick={async () => { if (!confirm("Alle Votes zurücksetzen?")) return; await supabase.from('dish_votes').delete().eq('dish_id', editDish.id); showToast("Votes zurückgesetzt"); setEditDish(null); loadAll() }} style={{ width: "100%", padding: "10px", background: "transparent", border: `1px solid ${C.border}`, borderRadius: "10px", color: C.textLight, fontSize: "13px", marginTop: "8px", cursor: "pointer" }}>Votes zurücksetzen</button>}
-        </Modal>
+        <AdminModal title={editDish.id ? "Gericht bearbeiten" : "Neues Gericht"} onSave={() => saveFn(async () => { if (editDish.id) await supabase.from('dishes').update({ name: editDish.name, description: editDish.description, active: editDish.active }).eq('id', editDish.id); else await supabase.from('dishes').insert({ name: editDish.name, description: editDish.description || '', active: true }); }, () => setEditDish(null))} onClose={() => setEditDish(null)}>
+          <AdminInput label="Name" value={editDish.name} onChange={v => setEditDish(p => ({ ...p, name: v }))} />
+          <AdminInput label="Beschreibung" value={editDish.description} onChange={v => setEditDish(p => ({ ...p, description: v }))} />
+          {editDish.id && <AdminToggle label="Aktiv" value={editDish.active} onChange={v => setEditDish(p => ({ ...p, active: v }))} />}
+          {editDish.id && <button onClick={async () => { if (!confirm("Alle Votes zurücksetzen?")) return; await supabase.from('dish_votes').delete().eq('dish_id', editDish.id); toast2("Votes zurückgesetzt"); setEditDish(null); loadAll(); }} style={{ width: "100%", padding: "11px", background: "transparent", border: "1px solid #e8e8e8", borderRadius: "12px", color: "#999", fontSize: "14px", marginTop: "8px" }}>Votes zurücksetzen</button>}
+        </AdminModal>
       )}
       {editShop && (
-        <Modal title={editShop.id ? "Shop Item" : "Neues Item"} onSave={saveShop} onClose={() => setEditShop(null)}>
-          {inp("Name", editShop.name, v => setEditShop(p => ({ ...p, name: v })))}
-          {inp("Beschreibung", editShop.description, v => setEditShop(p => ({ ...p, description: v })))}
-          {inp("Icon", editShop.icon, v => setEditShop(p => ({ ...p, icon: v })))}
-          {inp("XP Kosten", editShop.cost, v => setEditShop(p => ({ ...p, cost: v })), "number")}
-          {inp("Min. Level", editShop.min_level, v => setEditShop(p => ({ ...p, min_level: v })), "number")}
-          {editShop.id && toggle("Aktiv", editShop.active, v => setEditShop(p => ({ ...p, active: v })))}
-        </Modal>
+        <AdminModal title={editShop.id ? "Shop Item" : "Neues Item"} onSave={() => saveFn(async () => { if (editShop.id) await supabase.from('shop_items').update({ name: editShop.name, description: editShop.description, icon: editShop.icon, cost: parseInt(editShop.cost) || 0, min_level: parseInt(editShop.min_level) || 1, active: editShop.active }).eq('id', editShop.id); else await supabase.from('shop_items').insert({ name: editShop.name, description: editShop.description || '', icon: editShop.icon || '🎁', cost: parseInt(editShop.cost) || 0, min_level: parseInt(editShop.min_level) || 1, active: true }); }, () => setEditShop(null))} onClose={() => setEditShop(null)}>
+          <AdminInput label="Name" value={editShop.name} onChange={v => setEditShop(p => ({ ...p, name: v }))} />
+          <AdminInput label="Beschreibung" value={editShop.description} onChange={v => setEditShop(p => ({ ...p, description: v }))} />
+          <AdminInput label="Icon" value={editShop.icon} onChange={v => setEditShop(p => ({ ...p, icon: v }))} />
+          <AdminInput label="XP Kosten" value={editShop.cost} onChange={v => setEditShop(p => ({ ...p, cost: v }))} type="number" />
+          <AdminInput label="Min. Level" value={editShop.min_level} onChange={v => setEditShop(p => ({ ...p, min_level: v }))} type="number" />
+          {editShop.id && <AdminToggle label="Aktiv" value={editShop.active} onChange={v => setEditShop(p => ({ ...p, active: v }))} />}
+        </AdminModal>
       )}
       {editPrize && (
-        <Modal title={editPrize.id ? "Preis bearbeiten" : "Neuer Preis"} onSave={savePrize} onClose={() => setEditPrize(null)}>
-          {inp("Label", editPrize.label, v => setEditPrize(p => ({ ...p, label: v })))}
-          {inp("Wert (XP, 0=nichts, -1=2x)", editPrize.value, v => setEditPrize(p => ({ ...p, value: v })), "number")}
-          {inp("Farbe (Hex)", editPrize.color, v => setEditPrize(p => ({ ...p, color: v })))}
-          {editPrize.id && toggle("Aktiv", editPrize.active, v => setEditPrize(p => ({ ...p, active: v })))}
-        </Modal>
+        <AdminModal title={editPrize.id ? "Preis bearbeiten" : "Neuer Preis"} onSave={() => saveFn(async () => { if (editPrize.id) await supabase.from('wheel_prizes').update({ label: editPrize.label, value: parseInt(editPrize.value) || 0, color: editPrize.color, active: editPrize.active }).eq('id', editPrize.id); else await supabase.from('wheel_prizes').insert({ label: editPrize.label, value: parseInt(editPrize.value) || 0, color: editPrize.color || '#fde8e8', active: true }); }, () => setEditPrize(null))} onClose={() => setEditPrize(null)}>
+          <AdminInput label="Label" value={editPrize.label} onChange={v => setEditPrize(p => ({ ...p, label: v }))} />
+          <AdminInput label="Wert (XP, 0=nichts, -1=2x)" value={editPrize.value} onChange={v => setEditPrize(p => ({ ...p, value: v }))} type="number" />
+          <AdminInput label="Farbe (Hex)" value={editPrize.color} onChange={v => setEditPrize(p => ({ ...p, color: v }))} />
+          {editPrize.id && <AdminToggle label="Aktiv" value={editPrize.active} onChange={v => setEditPrize(p => ({ ...p, active: v }))} />}
+        </AdminModal>
       )}
       {editGlow && (
-        <Modal title={editGlow.id ? "Glow Hour" : "Neue Glow Hour"} onSave={saveGlow} onClose={() => setEditGlow(null)}>
-          <div style={{ marginBottom: "10px" }}>
-            <div style={{ fontSize: "11px", color: C.textLight, marginBottom: "4px", fontWeight: "600" }}>Tag</div>
-            <select value={editGlow.day_of_week ?? 1} onChange={e => setEditGlow(p => ({ ...p, day_of_week: e.target.value }))}
-              style={{ width: "100%", padding: "10px 12px", border: `1px solid ${C.border}`, borderRadius: "10px", fontSize: "14px", outline: "none", background: C.card, color: C.text }}>
-              {days.map((d, i) => <option key={i} value={i}>{d}</option>)}
+        <AdminModal title={editGlow.id ? "Glow Hour" : "Neue Glow Hour"} onSave={() => saveFn(async () => { if (editGlow.id) await supabase.from('glow_hours').update({ day_of_week: parseInt(editGlow.day_of_week), start_time: editGlow.start_time, end_time: editGlow.end_time, multiplier: parseInt(editGlow.multiplier) || 2, active: editGlow.active }).eq('id', editGlow.id); else await supabase.from('glow_hours').insert({ day_of_week: parseInt(editGlow.day_of_week) || 1, start_time: editGlow.start_time || '12:00', end_time: editGlow.end_time || '14:00', multiplier: 2, active: true }); }, () => setEditGlow(null))} onClose={() => setEditGlow(null)}>
+          <div style={{ marginBottom: "12px" }}>
+            <div style={{ fontSize: "11px", color: "#999", marginBottom: "5px", fontWeight: "600" }}>Tag</div>
+            <select value={editGlow.day_of_week ?? 1} onChange={e => setEditGlow(p => ({ ...p, day_of_week: e.target.value }))} style={{ width: "100%", padding: "12px 14px", border: "1px solid #e8e8e8", borderRadius: "12px", fontSize: "16px", outline: "none", background: "#fff", color: "#111" }}>
+              {DAYS.map((d, i) => <option key={i} value={i}>{d}</option>)}
             </select>
           </div>
-          {inp("Start (HH:MM)", editGlow.start_time, v => setEditGlow(p => ({ ...p, start_time: v })))}
-          {inp("Ende (HH:MM)", editGlow.end_time, v => setEditGlow(p => ({ ...p, end_time: v })))}
-          {inp("Multiplikator", editGlow.multiplier, v => setEditGlow(p => ({ ...p, multiplier: v })), "number")}
-          {editGlow.id && toggle("Aktiv", editGlow.active, v => setEditGlow(p => ({ ...p, active: v })))}
-        </Modal>
+          <AdminInput label="Start (HH:MM)" value={editGlow.start_time} onChange={v => setEditGlow(p => ({ ...p, start_time: v }))} />
+          <AdminInput label="Ende (HH:MM)" value={editGlow.end_time} onChange={v => setEditGlow(p => ({ ...p, end_time: v }))} />
+          <AdminInput label="Multiplikator" value={editGlow.multiplier} onChange={v => setEditGlow(p => ({ ...p, multiplier: v }))} type="number" />
+          {editGlow.id && <AdminToggle label="Aktiv" value={editGlow.active} onChange={v => setEditGlow(p => ({ ...p, active: v }))} />}
+        </AdminModal>
       )}
 
       {/* Header */}
-      <div style={{ padding: "14px 16px 10px", borderBottom: `1px solid ${C.border}`, background: C.card, display: "flex", justifyContent: "space-between", alignItems: "center", flexShrink: 0 }}>
-        <div>
-          <div style={{ fontSize: "17px", fontWeight: "800", color: C.text }}>Admin Panel</div>
-          <div style={{ fontSize: "11px", color: C.textLight }}>Cereza · Frankfurt</div>
-        </div>
-        <button onClick={onClose} style={{ background: C.greyBg, border: `1px solid ${C.border}`, borderRadius: "10px", padding: "8px 16px", color: C.text, fontSize: "13px", fontWeight: "600" }}>Schließen</button>
+      <div style={{ padding: `calc(${safeTop} + 14px) 16px 10px`, borderBottom: "1px solid #e8e8e8", background: "#fff", display: "flex", justifyContent: "space-between", alignItems: "center", flexShrink: 0 }}>
+        <div><div style={{ fontSize: "18px", fontWeight: "800", color: "#111" }}>Admin Panel</div><div style={{ fontSize: "11px", color: "#999" }}>Cereza · Frankfurt</div></div>
+        <button onClick={onClose} style={{ background: "#f5f5f5", border: "1px solid #e8e8e8", borderRadius: "12px", padding: "9px 18px", color: "#111", fontSize: "14px", fontWeight: "600" }}>Schließen</button>
       </div>
 
       {/* Tab Bar */}
-      <div style={{ display: "flex", gap: "4px", padding: "8px 10px", overflowX: "auto", borderBottom: `1px solid ${C.greyBg}`, background: C.card, flexShrink: 0 }}>
-        {adminTabs.map(t => (
-          <button key={t.id} onClick={() => setTab(t.id)} style={{ padding: "7px 12px", borderRadius: "20px", border: "none", background: tab === t.id ? C.orange : C.greyBg, color: tab === t.id ? C.white : C.textLight, fontSize: "11px", fontWeight: "600", cursor: "pointer", whiteSpace: "nowrap", transition: "all 0.2s" }}>{t.l}</button>
+      <div style={{ display: "flex", gap: "4px", padding: "8px 10px", overflowX: "auto", borderBottom: "1px solid #f0f0f0", background: "#fff", flexShrink: 0 }}>
+        {TABS.map(t => (
+          <button key={t.id} onClick={() => setTab(t.id)} style={{ padding: "8px 14px", borderRadius: "20px", background: tab === t.id ? "#e24a28" : "#f5f5f5", color: tab === t.id ? "#fff" : "#666", fontSize: "12px", fontWeight: "600", whiteSpace: "nowrap", transition: "all 0.2s" }}>{t.l}</button>
         ))}
       </div>
 
       {/* Content */}
       <div style={{ flex: 1, overflowY: "auto", padding: "12px", WebkitOverflowScrolling: "touch" }}>
-        {loading && <div style={{ textAlign: "center", padding: "40px", color: C.textLight }}>Wird geladen...</div>}
+        {loading && <div style={{ textAlign: "center", padding: "40px", color: "#999" }}>Wird geladen...</div>}
 
         {/* Stats */}
         {!loading && tab === "stats" && (
           <div>
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "8px", marginBottom: "12px" }}>
-              {[{ v: users.length, l: "Registrierte User" }, { v: todayUsers, l: "Heute aktiv" }, { v: users.filter(u => u.is_abo_member).length, l: "Abo Mitglieder" }, { v: avgPts, l: "⌀ XP/User" }, { v: totalPts.toLocaleString(), l: "XP gesamt" }, { v: visitors.length, l: "Besuche heute" }, { v: redemptions.length, l: "Offene Einlösungen" }, { v: vibes.length, l: "Vibes zur Freigabe" }].map((s, i) => (
-                <Card key={i} style={{ padding: "14px" }}>
-                  <div style={{ fontSize: "22px", fontWeight: "800", color: C.orange }}>{s.v}</div>
-                  <div style={{ fontSize: "11px", color: C.textLight, marginTop: "2px" }}>{s.l}</div>
-                </Card>
+              {stats.map((s, i) => (
+                <div key={i} style={{ background: "#fff", borderRadius: "16px", padding: "14px", border: "1px solid #e8e8e8" }}>
+                  <div style={{ fontSize: "24px", fontWeight: "800", color: "#e24a28" }}>{s.v}</div>
+                  <div style={{ fontSize: "11px", color: "#999", marginTop: "2px" }}>{s.l}</div>
+                </div>
               ))}
             </div>
-            <Card>
-              <div style={{ fontSize: "12px", fontWeight: "700", marginBottom: "12px", color: C.textSub }}>LEVEL VERTEILUNG</div>
+            <div style={{ background: "#fff", borderRadius: "16px", padding: "16px", border: "1px solid #e8e8e8" }}>
+              <div style={{ fontSize: "12px", fontWeight: "700", marginBottom: "14px", color: "#555", letterSpacing: "0.5px" }}>LEVEL VERTEILUNG</div>
               {[1, 2, 3, 4, 5].map(l => {
-                const count = users.filter(u => (u.level || 1) === l).length;
-                return (
-                  <div key={l} style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "8px" }}>
-                    <div style={{ width: "60px", fontSize: "12px", color: C.textLight }}>Level {l}</div>
-                    <div style={{ flex: 1, height: "16px", background: C.greyBg, borderRadius: "8px", overflow: "hidden" }}>
-                      <div style={{ height: "100%", width: `${users.length ? (count / users.length) * 100 : 0}%`, background: C.orange, borderRadius: "8px", transition: "width 0.5s" }} />
+                const count = users.filter(u => (u.level || 1) === l).length; return (
+                  <div key={l} style={{ display: "flex", alignItems: "center", gap: "10px", marginBottom: "10px" }}>
+                    <div style={{ width: "58px", fontSize: "12px", color: "#999" }}>Level {l}</div>
+                    <div style={{ flex: 1, height: "16px", background: "#f5f5f5", borderRadius: "8px", overflow: "hidden" }}>
+                      <div style={{ height: "100%", width: `${users.length ? (count / users.length) * 100 : 0}%`, background: "#e24a28", borderRadius: "8px", transition: "width 0.5s" }} />
                     </div>
-                    <div style={{ width: "28px", fontSize: "12px", fontWeight: "700", textAlign: "right" }}>{count}</div>
+                    <div style={{ width: "24px", fontSize: "12px", fontWeight: "700", textAlign: "right", color: "#111" }}>{count}</div>
                   </div>
                 );
               })}
-            </Card>
+            </div>
           </div>
         )}
 
         {/* Users */}
         {!loading && tab === "users" && (
           <div>
-            <input value={searchQ} onChange={e => setSearchQ(e.target.value)} placeholder="User suchen..."
-              style={{ width: "100%", padding: "11px 14px", border: `1px solid ${C.border}`, borderRadius: "12px", fontSize: "14px", outline: "none", boxSizing: "border-box", marginBottom: "10px", background: C.card, color: C.text }} />
-            {filteredUsers.map(u => (
-              <Card key={u.id} style={{ marginBottom: "6px", padding: "12px" }}>
-                <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
-                  <div style={{ width: "38px", height: "38px", borderRadius: "50%", background: C.orange, display: "flex", alignItems: "center", justifyContent: "center", color: C.white, fontSize: "15px", fontWeight: "800", flexShrink: 0 }}>{(u.name || "U")[0].toUpperCase()}</div>
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={{ fontSize: "13px", fontWeight: "700" }}>@{u.name} {u.is_admin && <span style={{ background: C.orange, color: C.white, fontSize: "8px", padding: "1px 5px", borderRadius: "4px" }}>ADMIN</span>}</div>
-                    <div style={{ fontSize: "10px", color: C.textLight, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{u.email}</div>
-                  </div>
-                  <div style={{ textAlign: "right", flexShrink: 0 }}>
-                    <div style={{ fontSize: "14px", fontWeight: "800", color: C.orange }}>{u.pts || 0}</div>
-                    <div style={{ fontSize: "9px", color: C.textLight }}>Lvl {u.level || 1}</div>
-                  </div>
-                  <button onClick={() => setEditUser({ ...u })} style={{ background: C.greyBg, border: `1px solid ${C.border}`, borderRadius: "8px", padding: "7px 10px", fontSize: "12px", flexShrink: 0 }}>✏</button>
+            <input value={searchQ} onChange={e => setSearchQ(e.target.value)} placeholder="User suchen..." style={{ width: "100%", padding: "13px 16px", border: "1px solid #e8e8e8", borderRadius: "14px", fontSize: "16px", outline: "none", boxSizing: "border-box", marginBottom: "10px", background: "#fff", color: "#111" }} />
+            {filtered.map(u => (
+              <div key={u.id} style={{ background: "#fff", borderRadius: "16px", padding: "13px", border: "1px solid #e8e8e8", marginBottom: "6px", display: "flex", alignItems: "center", gap: "12px" }}>
+                <div style={{ width: "40px", height: "40px", borderRadius: "50%", background: "#e24a28", display: "flex", alignItems: "center", justifyContent: "center", color: "#fff", fontSize: "16px", fontWeight: "800", flexShrink: 0 }}>{(u.name || "U")[0].toUpperCase()}</div>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontSize: "14px", fontWeight: "700", color: "#111" }}>@{u.name}{u.is_admin && <span style={{ background: "#e24a28", color: "#fff", fontSize: "9px", padding: "1px 6px", borderRadius: "4px", marginLeft: "6px" }}>ADMIN</span>}</div>
+                  <div style={{ fontSize: "11px", color: "#999", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{u.email}</div>
                 </div>
-              </Card>
+                <div style={{ textAlign: "right", flexShrink: 0 }}>
+                  <div style={{ fontSize: "15px", fontWeight: "800", color: "#e24a28" }}>{u.pts || 0}</div>
+                  <div style={{ fontSize: "10px", color: "#999" }}>Lvl {u.level || 1}</div>
+                </div>
+                <button onClick={() => setEditUser({ ...u })} style={{ background: "#f5f5f5", border: "1px solid #e8e8e8", borderRadius: "10px", padding: "8px 12px", fontSize: "14px", flexShrink: 0, color: "#555" }}>{Ico.edit}</button>
+              </div>
             ))}
           </div>
         )}
@@ -1574,20 +1303,17 @@ const AdminPanel = ({ onClose }) => {
         {/* Kasse */}
         {!loading && tab === "redemptions" && (
           <div>
-            <div style={{ fontSize: "12px", color: C.textSub, marginBottom: "10px" }}>Offene Einlösungen an der Kasse bestätigen</div>
-            {redemptions.length === 0 && <div style={{ textAlign: "center", padding: "30px", color: C.textLight }}>Keine offenen Einlösungen</div>}
+            <div style={{ fontSize: "12px", color: "#999", marginBottom: "10px" }}>Offene Einlösungen bestätigen</div>
+            {redemptions.length === 0 && <div style={{ textAlign: "center", padding: "30px", color: "#999" }}>Keine offenen Einlösungen</div>}
             {redemptions.map(r => (
-              <Card key={r.id} style={{ marginBottom: "8px", padding: "14px" }}>
-                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                  <div>
-                    <div style={{ fontSize: "14px", fontWeight: "700" }}>{r.item?.icon} {r.item?.name || "Unbekannt"}</div>
-                    <div style={{ fontSize: "12px", color: C.textLight }}>@{r.profile?.name} · {r.pts_spent} XP</div>
-                    <div style={{ fontSize: "10px", color: C.textLight }}>Läuft ab: {new Date(r.expires_at).toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' })}</div>
-                  </div>
-                  <button onClick={async () => { await db.confirmRedemption(r.id); showToast("Bestätigt ✓"); db.getPendingRedemptions().then(setRedemptions) }}
-                    style={{ background: C.green, border: "none", borderRadius: "12px", padding: "11px 16px", color: C.white, fontSize: "13px", fontWeight: "700" }}>✓ OK</button>
+              <div key={r.id} style={{ background: "#fff", borderRadius: "16px", padding: "14px", border: "1px solid #e8e8e8", marginBottom: "8px", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                <div>
+                  <div style={{ fontSize: "15px", fontWeight: "700", color: "#111" }}>{r.item?.icon} {r.item?.name || "Unbekannt"}</div>
+                  <div style={{ fontSize: "12px", color: "#999" }}>@{r.profile?.name} · {r.pts_spent} XP</div>
+                  <div style={{ fontSize: "11px", color: "#999" }}>Läuft ab: {new Date(r.expires_at).toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' })}</div>
                 </div>
-              </Card>
+                <button onClick={async () => { await db.confirmRedemption(r.id); toast2("Bestätigt ✓"); db.getPendingRedemptions().then(setRedemptions); }} style={{ background: "#2d472a", borderRadius: "12px", padding: "12px 18px", color: "#fff", fontSize: "14px", fontWeight: "700" }}>✓ OK</button>
+              </div>
             ))}
           </div>
         )}
@@ -1595,16 +1321,13 @@ const AdminPanel = ({ onClose }) => {
         {/* Shop */}
         {!loading && tab === "shop" && (
           <div>
-            <button onClick={() => setEditShop({ name: "", description: "", icon: "🎁", cost: 500, min_level: 1 })} style={{ width: "100%", padding: "12px", background: C.orange, border: "none", borderRadius: "12px", color: C.white, fontSize: "14px", fontWeight: "700", marginBottom: "10px" }}>+ Neues Item</button>
+            <button onClick={() => setEditShop({ name: "", description: "", icon: "🎁", cost: 500, min_level: 1 })} style={{ width: "100%", padding: "13px", background: "#e24a28", borderRadius: "14px", color: "#fff", fontSize: "15px", fontWeight: "700", marginBottom: "10px" }}>+ Neues Item</button>
             {shopItems.map(item => (
-              <Card key={item.id} style={{ marginBottom: "6px", padding: "12px", display: "flex", alignItems: "center", gap: "10px" }}>
-                <div style={{ fontSize: "24px" }}>{item.icon}</div>
-                <div style={{ flex: 1 }}>
-                  <div style={{ fontSize: "14px", fontWeight: "700" }}>{item.name}</div>
-                  <div style={{ fontSize: "11px", color: C.textLight }}>{item.cost} XP · Level {item.min_level}+</div>
-                </div>
-                <button onClick={() => setEditShop({ ...item })} style={{ background: C.greyBg, border: `1px solid ${C.border}`, borderRadius: "8px", padding: "7px 10px", fontSize: "12px" }}>✏</button>
-              </Card>
+              <div key={item.id} style={{ background: "#fff", borderRadius: "16px", padding: "13px", border: "1px solid #e8e8e8", marginBottom: "6px", display: "flex", alignItems: "center", gap: "12px" }}>
+                <div style={{ fontSize: "26px" }}>{item.icon}</div>
+                <div style={{ flex: 1 }}><div style={{ fontSize: "15px", fontWeight: "700", color: "#111" }}>{item.name}</div><div style={{ fontSize: "12px", color: "#999" }}>{item.cost} XP · Level {item.min_level}+</div></div>
+                <button onClick={() => setEditShop({ ...item })} style={{ background: "#f5f5f5", border: "1px solid #e8e8e8", borderRadius: "10px", padding: "8px 12px", color: "#555" }}>{Ico.edit}</button>
+              </div>
             ))}
           </div>
         )}
@@ -1612,16 +1335,13 @@ const AdminPanel = ({ onClose }) => {
         {/* Missionen */}
         {!loading && tab === "missions" && (
           <div>
-            <button onClick={() => setEditMission({ title: "", description: "", icon: "★", pts_reward: 100, goal: 1 })} style={{ width: "100%", padding: "12px", background: C.orange, border: "none", borderRadius: "12px", color: C.white, fontSize: "14px", fontWeight: "700", marginBottom: "10px" }}>+ Neue Mission</button>
+            <button onClick={() => setEditMission({ title: "", description: "", icon: "★", pts_reward: 100, goal: 1 })} style={{ width: "100%", padding: "13px", background: "#e24a28", borderRadius: "14px", color: "#fff", fontSize: "15px", fontWeight: "700", marginBottom: "10px" }}>+ Neue Mission</button>
             {missions.map(m => (
-              <Card key={m.id} style={{ marginBottom: "6px", padding: "12px", display: "flex", alignItems: "center", gap: "10px" }}>
+              <div key={m.id} style={{ background: "#fff", borderRadius: "16px", padding: "13px", border: "1px solid #e8e8e8", marginBottom: "6px", display: "flex", alignItems: "center", gap: "12px" }}>
                 <div style={{ fontSize: "22px" }}>{m.icon}</div>
-                <div style={{ flex: 1 }}>
-                  <div style={{ fontSize: "14px", fontWeight: "700" }}>{m.title}</div>
-                  <div style={{ fontSize: "11px", color: C.textLight }}>{m.description} · +{m.pts_reward} XP</div>
-                </div>
-                <button onClick={() => setEditMission({ ...m })} style={{ background: C.greyBg, border: `1px solid ${C.border}`, borderRadius: "8px", padding: "7px 10px", fontSize: "12px" }}>✏</button>
-              </Card>
+                <div style={{ flex: 1 }}><div style={{ fontSize: "15px", fontWeight: "700", color: "#111" }}>{m.title}</div><div style={{ fontSize: "12px", color: "#999" }}>{m.description} · +{m.pts_reward} XP</div></div>
+                <button onClick={() => setEditMission({ ...m })} style={{ background: "#f5f5f5", border: "1px solid #e8e8e8", borderRadius: "10px", padding: "8px 12px", color: "#555" }}>{Ico.edit}</button>
+              </div>
             ))}
           </div>
         )}
@@ -1629,31 +1349,25 @@ const AdminPanel = ({ onClose }) => {
         {/* Gerichte */}
         {!loading && tab === "dishes" && (
           <div>
-            <button onClick={() => setEditDish({ name: "", description: "" })} style={{ width: "100%", padding: "12px", background: C.orange, border: "none", borderRadius: "12px", color: C.white, fontSize: "14px", fontWeight: "700", marginBottom: "10px" }}>+ Neues Gericht</button>
+            <button onClick={() => setEditDish({ name: "", description: "" })} style={{ width: "100%", padding: "13px", background: "#e24a28", borderRadius: "14px", color: "#fff", fontSize: "15px", fontWeight: "700", marginBottom: "10px" }}>+ Neues Gericht</button>
             {dishes.map(d => (
-              <Card key={d.id} style={{ marginBottom: "6px", padding: "12px", display: "flex", alignItems: "center", gap: "10px" }}>
-                <div style={{ flex: 1 }}>
-                  <div style={{ fontSize: "14px", fontWeight: "700" }}>{d.name}</div>
-                  <div style={{ fontSize: "11px", color: C.textLight }}>♥ {d.votes} Votes</div>
-                </div>
-                <button onClick={() => setEditDish({ ...d })} style={{ background: C.greyBg, border: `1px solid ${C.border}`, borderRadius: "8px", padding: "7px 10px", fontSize: "12px" }}>✏</button>
-              </Card>
+              <div key={d.id} style={{ background: "#fff", borderRadius: "16px", padding: "13px", border: "1px solid #e8e8e8", marginBottom: "6px", display: "flex", alignItems: "center", gap: "12px" }}>
+                <div style={{ flex: 1 }}><div style={{ fontSize: "15px", fontWeight: "700", color: "#111" }}>{d.name}</div><div style={{ fontSize: "12px", color: "#999" }}>♥ {d.votes} Votes</div></div>
+                <button onClick={() => setEditDish({ ...d })} style={{ background: "#f5f5f5", border: "1px solid #e8e8e8", borderRadius: "10px", padding: "8px 12px", color: "#555" }}>{Ico.edit}</button>
+              </div>
             ))}
           </div>
         )}
 
-        {/* Glow Hours */}
+        {/* Glow */}
         {!loading && tab === "glow" && (
           <div>
-            <button onClick={() => setEditGlow({ day_of_week: 1, start_time: "12:00", end_time: "14:00", multiplier: 2, active: true })} style={{ width: "100%", padding: "12px", background: C.orange, border: "none", borderRadius: "12px", color: C.white, fontSize: "14px", fontWeight: "700", marginBottom: "10px" }}>+ Neue Glow Hour</button>
+            <button onClick={() => setEditGlow({ day_of_week: 1, start_time: "12:00", end_time: "14:00", multiplier: 2, active: true })} style={{ width: "100%", padding: "13px", background: "#e24a28", borderRadius: "14px", color: "#fff", fontSize: "15px", fontWeight: "700", marginBottom: "10px" }}>+ Neue Glow Hour</button>
             {glowHours.map(g => (
-              <Card key={g.id} style={{ marginBottom: "6px", padding: "12px", display: "flex", alignItems: "center", gap: "10px" }}>
-                <div style={{ flex: 1 }}>
-                  <div style={{ fontSize: "14px", fontWeight: "700" }}>{days[g.day_of_week]}</div>
-                  <div style={{ fontSize: "11px", color: C.textLight }}>{g.start_time} – {g.end_time} · {g.multiplier}× XP · {g.active ? "Aktiv" : "Inaktiv"}</div>
-                </div>
-                <button onClick={() => setEditGlow({ ...g })} style={{ background: C.greyBg, border: `1px solid ${C.border}`, borderRadius: "8px", padding: "7px 10px", fontSize: "12px" }}>✏</button>
-              </Card>
+              <div key={g.id} style={{ background: "#fff", borderRadius: "16px", padding: "13px", border: "1px solid #e8e8e8", marginBottom: "6px", display: "flex", alignItems: "center", gap: "12px" }}>
+                <div style={{ flex: 1 }}><div style={{ fontSize: "15px", fontWeight: "700", color: "#111" }}>{DAYS[g.day_of_week]}</div><div style={{ fontSize: "12px", color: "#999" }}>{g.start_time} – {g.end_time} · {g.multiplier}× XP · {g.active ? "Aktiv" : "Inaktiv"}</div></div>
+                <button onClick={() => setEditGlow({ ...g })} style={{ background: "#f5f5f5", border: "1px solid #e8e8e8", borderRadius: "10px", padding: "8px 12px", color: "#555" }}>{Ico.edit}</button>
+              </div>
             ))}
           </div>
         )}
@@ -1661,16 +1375,13 @@ const AdminPanel = ({ onClose }) => {
         {/* Rad */}
         {!loading && tab === "prizes" && (
           <div>
-            <button onClick={() => setEditPrize({ label: "", value: 100, color: "#fde8e8" })} style={{ width: "100%", padding: "12px", background: C.orange, border: "none", borderRadius: "12px", color: C.white, fontSize: "14px", fontWeight: "700", marginBottom: "10px" }}>+ Neuer Preis</button>
+            <button onClick={() => setEditPrize({ label: "", value: 100, color: "#fde8e8" })} style={{ width: "100%", padding: "13px", background: "#e24a28", borderRadius: "14px", color: "#fff", fontSize: "15px", fontWeight: "700", marginBottom: "10px" }}>+ Neuer Preis</button>
             {prizes.map(p => (
-              <Card key={p.id} style={{ marginBottom: "6px", padding: "12px", display: "flex", alignItems: "center", gap: "10px" }}>
-                <div style={{ width: "24px", height: "24px", borderRadius: "6px", background: p.color, flexShrink: 0 }} />
-                <div style={{ flex: 1 }}>
-                  <div style={{ fontSize: "14px", fontWeight: "700" }}>{p.label}</div>
-                  <div style={{ fontSize: "11px", color: C.textLight }}>{p.value > 0 ? `+${p.value} XP` : p.value === -1 ? "2× Multiplikator" : "Kein Gewinn"}</div>
-                </div>
-                <button onClick={() => setEditPrize({ ...p })} style={{ background: C.greyBg, border: `1px solid ${C.border}`, borderRadius: "8px", padding: "7px 10px", fontSize: "12px" }}>✏</button>
-              </Card>
+              <div key={p.id} style={{ background: "#fff", borderRadius: "16px", padding: "13px", border: "1px solid #e8e8e8", marginBottom: "6px", display: "flex", alignItems: "center", gap: "12px" }}>
+                <div style={{ width: "26px", height: "26px", borderRadius: "8px", background: p.color, flexShrink: 0 }} />
+                <div style={{ flex: 1 }}><div style={{ fontSize: "15px", fontWeight: "700", color: "#111" }}>{p.label}</div><div style={{ fontSize: "12px", color: "#999" }}>{p.value > 0 ? `+${p.value} XP` : p.value === -1 ? "2× XP" : "Kein Gewinn"}</div></div>
+                <button onClick={() => setEditPrize({ ...p })} style={{ background: "#f5f5f5", border: "1px solid #e8e8e8", borderRadius: "10px", padding: "8px 12px", color: "#555" }}>{Ico.edit}</button>
+              </div>
             ))}
           </div>
         )}
@@ -1678,18 +1389,15 @@ const AdminPanel = ({ onClose }) => {
         {/* Fakten */}
         {!loading && tab === "facts" && (
           <div>
-            <div style={{ display: "flex", gap: "6px", marginBottom: "10px" }}>
-              <input value={newFact} onChange={e => setNewFact(e.target.value)} placeholder="Neuer Fun Fact..."
-                style={{ flex: 1, padding: "11px 14px", border: `1px solid ${C.border}`, borderRadius: "12px", fontSize: "14px", outline: "none", background: C.card, color: C.text }} />
-              <button onClick={async () => { if (!newFact.trim()) return; await db.addFunFact(newFact); setNewFact(""); db.getFunFacts().then(setFacts); showToast("Hinzugefügt ✓") }}
-                style={{ padding: "11px 16px", background: C.orange, border: "none", borderRadius: "12px", color: C.white, fontSize: "14px", fontWeight: "700" }}>+</button>
+            <div style={{ display: "flex", gap: "8px", marginBottom: "12px" }}>
+              <input value={newFact} onChange={e => setNewFact(e.target.value)} placeholder="Neuer Fun Fact..." style={{ flex: 1, padding: "13px 16px", border: "1px solid #e8e8e8", borderRadius: "14px", fontSize: "16px", outline: "none", background: "#fff", color: "#111" }} />
+              <button onClick={async () => { if (!newFact.trim()) return; await db.addFunFact(newFact); setNewFact(""); db.getFunFacts().then(setFacts); toast2("Hinzugefügt ✓"); }} style={{ padding: "13px 18px", background: "#e24a28", borderRadius: "14px", color: "#fff", fontSize: "16px", fontWeight: "700" }}>+</button>
             </div>
             {facts.map(f => (
-              <Card key={f.id} style={{ marginBottom: "6px", padding: "12px", display: "flex", alignItems: "center", gap: "10px" }}>
-                <div style={{ flex: 1, fontSize: "13px" }}>{f.text}</div>
-                <button onClick={async () => { await db.deleteFunFact(f.id); db.getFunFacts().then(setFacts) }}
-                  style={{ background: C.greyBg, border: "none", borderRadius: "8px", padding: "6px 10px", fontSize: "12px", color: C.textLight }}>✕</button>
-              </Card>
+              <div key={f.id} style={{ background: "#fff", borderRadius: "14px", padding: "13px", border: "1px solid #e8e8e8", marginBottom: "6px", display: "flex", alignItems: "center", gap: "10px" }}>
+                <div style={{ flex: 1, fontSize: "14px", color: "#111" }}>{f.text}</div>
+                <button onClick={async () => { await db.deleteFunFact(f.id); db.getFunFacts().then(setFacts); }} style={{ background: "#f5f5f5", borderRadius: "8px", padding: "6px 12px", fontSize: "14px", color: "#999" }}>✕</button>
+              </div>
             ))}
           </div>
         )}
@@ -1697,19 +1405,17 @@ const AdminPanel = ({ onClose }) => {
         {/* Vibes */}
         {!loading && tab === "vibes" && (
           <div>
-            <div style={{ fontSize: "12px", color: C.textSub, marginBottom: "10px" }}>Fotos zur Freigabe ({vibes.length})</div>
-            {vibes.length === 0 && <div style={{ textAlign: "center", padding: "30px", color: C.textLight }}>Keine Fotos zur Freigabe</div>}
+            <div style={{ fontSize: "12px", color: "#999", marginBottom: "10px" }}>Fotos zur Freigabe ({vibes.length})</div>
+            {vibes.length === 0 && <div style={{ textAlign: "center", padding: "30px", color: "#999" }}>Keine Fotos zur Freigabe</div>}
             {vibes.map(v => (
-              <Card key={v.id} style={{ marginBottom: "8px", padding: "12px" }}>
+              <div key={v.id} style={{ background: "#fff", borderRadius: "16px", padding: "12px", border: "1px solid #e8e8e8", marginBottom: "8px" }}>
                 <img src={v.url} style={{ width: "100%", borderRadius: "10px", marginBottom: "8px", filter: "sepia(0.3) contrast(1.1)" }} />
-                <div style={{ fontSize: "11px", color: C.textLight, marginBottom: "10px" }}>@{v.profile?.name} · {new Date(v.created_at).toLocaleDateString('de-DE')}</div>
-                <div style={{ display: "flex", gap: "6px" }}>
-                  <button onClick={async () => { await db.approveVibe(v.id, true); showToast("Freigegeben ✓"); db.getPendingVibes().then(setVibes) }}
-                    style={{ flex: 1, padding: "10px", background: C.green, border: "none", borderRadius: "10px", color: C.white, fontSize: "13px", fontWeight: "700" }}>✓ Freigeben</button>
-                  <button onClick={async () => { await supabase.from('vibe_photos').delete().eq('id', v.id); showToast("Abgelehnt"); db.getPendingVibes().then(setVibes) }}
-                    style={{ flex: 1, padding: "10px", background: C.greyBg, border: `1px solid ${C.border}`, borderRadius: "10px", color: C.textLight, fontSize: "13px", fontWeight: "700" }}>✕ Ablehnen</button>
+                <div style={{ fontSize: "12px", color: "#999", marginBottom: "10px" }}>@{v.profile?.name} · {new Date(v.created_at).toLocaleDateString('de-DE')}</div>
+                <div style={{ display: "flex", gap: "8px" }}>
+                  <button onClick={async () => { await db.approveVibe(v.id, true); toast2("Freigegeben ✓"); db.getPendingVibes().then(setVibes); }} style={{ flex: 1, padding: "11px", background: "#2d472a", borderRadius: "12px", color: "#fff", fontSize: "14px", fontWeight: "700" }}>✓ Freigeben</button>
+                  <button onClick={async () => { await supabase.from('vibe_photos').delete().eq('id', v.id); toast2("Abgelehnt"); db.getPendingVibes().then(setVibes); }} style={{ flex: 1, padding: "11px", background: "#f5f5f5", border: "1px solid #e8e8e8", borderRadius: "12px", color: "#999", fontSize: "14px", fontWeight: "700" }}>✕ Ablehnen</button>
                 </div>
-              </Card>
+              </div>
             ))}
           </div>
         )}
@@ -1717,18 +1423,13 @@ const AdminPanel = ({ onClose }) => {
         {/* Heute */}
         {!loading && tab === "visits" && (
           <div>
-            <div style={{ fontSize: "12px", color: C.textSub, marginBottom: "10px" }}>Angemeldete Besuche heute ({visitors.length})</div>
-            {visitors.length === 0 && <div style={{ textAlign: "center", padding: "30px", color: C.textLight }}>Noch keine Anmeldungen</div>}
+            <div style={{ fontSize: "12px", color: "#999", marginBottom: "10px" }}>Angemeldete Besuche heute ({visitors.length})</div>
+            {visitors.length === 0 && <div style={{ textAlign: "center", padding: "30px", color: "#999" }}>Noch keine Anmeldungen</div>}
             {visitors.map(v => (
-              <Card key={v.id} style={{ marginBottom: "6px", padding: "12px", display: "flex", alignItems: "center", gap: "10px" }}>
-                <div style={{ width: "36px", height: "36px", borderRadius: "50%", background: C.greyBg, display: "flex", alignItems: "center", justifyContent: "center", fontWeight: "700" }}>
-                  {(v.profile?.name || "?")[0].toUpperCase()}
-                </div>
-                <div style={{ flex: 1 }}>
-                  <div style={{ fontSize: "14px", fontWeight: "700" }}>@{v.profile?.name || "User"}</div>
-                  <div style={{ fontSize: "11px", color: C.green, fontWeight: "600" }}>Kommt heute</div>
-                </div>
-              </Card>
+              <div key={v.id} style={{ background: "#fff", borderRadius: "14px", padding: "13px", border: "1px solid #e8e8e8", marginBottom: "6px", display: "flex", alignItems: "center", gap: "12px" }}>
+                <div style={{ width: "38px", height: "38px", borderRadius: "50%", background: "#f5f5f5", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: "700", fontSize: "16px" }}>{(v.profile?.name || "?")[0].toUpperCase()}</div>
+                <div style={{ flex: 1 }}><div style={{ fontSize: "15px", fontWeight: "700", color: "#111" }}>@{v.profile?.name || "User"}</div><div style={{ fontSize: "12px", color: "#2d472a", fontWeight: "600" }}>Kommt heute</div></div>
+              </div>
             ))}
           </div>
         )}
@@ -1736,21 +1437,17 @@ const AdminPanel = ({ onClose }) => {
         {/* Push */}
         {!loading && tab === "push" && (
           <div>
-            <Card style={{ marginBottom: "10px" }}>
-              <div style={{ fontSize: "13px", fontWeight: "700", marginBottom: "12px" }}>Broadcast an alle User</div>
-              <input value={pushTitle} onChange={e => setPushTitle(e.target.value)} placeholder="Titel"
-                style={{ width: "100%", padding: "11px 14px", border: `1px solid ${C.border}`, borderRadius: "12px", fontSize: "14px", marginBottom: "8px", outline: "none", boxSizing: "border-box", background: C.card, color: C.text }} />
-              <input value={pushBody} onChange={e => setPushBody(e.target.value)} placeholder="Nachricht"
-                style={{ width: "100%", padding: "11px 14px", border: `1px solid ${C.border}`, borderRadius: "12px", fontSize: "14px", marginBottom: "12px", outline: "none", boxSizing: "border-box", background: C.card, color: C.text }} />
-              <button onClick={async () => { if (!pushTitle) return; await sendPushToAll(pushTitle, pushBody); await supabase.from("admin_notifications").insert({ title: pushTitle, body: pushBody, sent_to: "all" }); showToast("Gesendet ✓"); setPushTitle(""); setPushBody("") }}
-                style={{ width: "100%", padding: "13px", background: C.orange, border: "none", borderRadius: "12px", color: C.white, fontSize: "14px", fontWeight: "700" }}>Senden</button>
-            </Card>
-            <div style={{ fontSize: "12px", fontWeight: "700", color: C.textSub, marginBottom: "8px" }}>SCHNELL-NACHRICHTEN</div>
-            {[{ t: "Glow Hour startet!", b: "Doppelte XP für die nächsten 2 Stunden!" }, { t: "Neue Missionen", b: "Schau dir die Challenges dieser Woche an!" }, { t: "Glücksrad wartet", b: "Du hast heute noch nicht gedreht." }, { t: "Neues Gericht zum Voten", b: "Swipe jetzt in Cinder!" }].map((q, i) => (
-              <button key={i} onClick={async () => { await sendPushToAll(q.t, q.b); await supabase.from("admin_notifications").insert({ title: q.t, body: q.b, sent_to: "all" }); showToast("Gesendet ✓") }}
-                style={{ width: "100%", padding: "12px 14px", background: C.card, border: `1px solid ${C.border}`, borderRadius: "12px", marginBottom: "6px", textAlign: "left", display: "block" }}>
-                <div style={{ fontSize: "13px", fontWeight: "600", color: C.text }}>{q.t}</div>
-                <div style={{ fontSize: "11px", color: C.textLight }}>{q.b}</div>
+            <div style={{ background: "#fff", borderRadius: "16px", padding: "16px", border: "1px solid #e8e8e8", marginBottom: "12px" }}>
+              <div style={{ fontSize: "14px", fontWeight: "700", color: "#111", marginBottom: "14px" }}>Broadcast an alle User</div>
+              <input value={pushTitle} onChange={e => setPushTitle(e.target.value)} placeholder="Titel" style={{ width: "100%", padding: "13px 16px", border: "1px solid #e8e8e8", borderRadius: "13px", fontSize: "16px", outline: "none", boxSizing: "border-box", marginBottom: "10px", background: "#fff", color: "#111" }} />
+              <input value={pushBody} onChange={e => setPushBody(e.target.value)} placeholder="Nachricht" style={{ width: "100%", padding: "13px 16px", border: "1px solid #e8e8e8", borderRadius: "13px", fontSize: "16px", outline: "none", boxSizing: "border-box", marginBottom: "14px", background: "#fff", color: "#111" }} />
+              <button onClick={async () => { if (!pushTitle) return; await sendPushToAll(pushTitle, pushBody); await supabase.from("admin_notifications").insert({ title: pushTitle, body: pushBody, sent_to: "all" }); toast2("Gesendet ✓"); setPushTitle(""); setPushBody(""); }} style={{ width: "100%", padding: "14px", background: "#e24a28", borderRadius: "14px", color: "#fff", fontSize: "15px", fontWeight: "700" }}>Senden</button>
+            </div>
+            <div style={{ fontSize: "12px", fontWeight: "700", color: "#999", marginBottom: "8px", letterSpacing: "0.5px" }}>SCHNELL-NACHRICHTEN</div>
+            {[{ t: "Glow Hour startet!", b: "Doppelte XP für die nächsten 2 Stunden!" }, { t: "Neue Missionen", b: "Schau dir die Challenges dieser Woche an!" }, { t: "Glücksrad wartet", b: "Du hast heute noch nicht gedreht." }, { t: "Neues Gericht", b: "Swipe jetzt in Cinder!" }].map((q, i) => (
+              <button key={i} onClick={async () => { await sendPushToAll(q.t, q.b); await supabase.from("admin_notifications").insert({ title: q.t, body: q.b, sent_to: "all" }); toast2("Gesendet ✓"); }} style={{ width: "100%", padding: "13px 16px", background: "#fff", border: "1px solid #e8e8e8", borderRadius: "14px", marginBottom: "6px", textAlign: "left", display: "block" }}>
+                <div style={{ fontSize: "14px", fontWeight: "600", color: "#111" }}>{q.t}</div>
+                <div style={{ fontSize: "12px", color: "#999" }}>{q.b}</div>
               </button>
             ))}
           </div>
@@ -1760,7 +1457,7 @@ const AdminPanel = ({ onClose }) => {
   );
 };
 
-// ─── Main App ───────────────────────────────────────────────────
+// ─── Main App ─────────────────────────────────────────────────────
 export default function App() {
   const [user, setUser] = useState(null);
   const [tab, setTab] = useState("home");
@@ -1769,56 +1466,42 @@ export default function App() {
   const [loading, setLoading] = useState(true);
   const [toast, setToast] = useState(null);
   const theme = useTheme();
-  const { t, mode, setMode, glowColor, setGlowColor, isGlowHour } = theme;
+  const { t, mode, setMode, glow, setGlow, isGlow } = theme;
   applyTheme(t);
   const CSS = getCSS(t);
 
-  // ── Session restore ──────────────────────────────────────────
+  // Session restore
   useEffect(() => {
     const restore = async () => {
       try {
         const { data: { session } } = await supabase.auth.getSession();
         if (session?.user) {
-          let profile = null;
-          for (let i = 0; i < 5; i++) {
-            profile = await db.getProfile(session.user.id);
-            if (profile) break;
-            await new Promise(r => setTimeout(r, 500 * (i + 1)));
-          }
-          if (profile) setUser(profile);
+          let p = null;
+          for (let i = 0; i < 5; i++) { p = await db.getProfile(session.user.id); if (p) break; await new Promise(r => setTimeout(r, 500 * (i + 1))); }
+          if (p) setUser(p);
           else setUser({ id: session.user.id, name: session.user.user_metadata?.name || session.user.email?.split('@')[0], email: session.user.email, pts: 0, level: 1, streak: 0, total_visits: 0, treat_count: 0, treat_goal: 8, wheel_spun_today: false, is_abo_member: false, is_admin: false });
         }
       } catch (e) { console.error('Session restore:', e); }
       setLoading(false);
     };
     restore();
-
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
       if (event === 'SIGNED_OUT') { setUser(null); setAdminMode(false); }
-      if (event === 'SIGNED_IN' && session?.user) {
-        let profile = null;
-        for (let i = 0; i < 4; i++) {
-          profile = await db.getProfile(session.user.id);
-          if (profile) break;
-          await new Promise(r => setTimeout(r, 500));
-        }
-        if (profile) setUser(profile);
-      }
+      if (event === 'SIGNED_IN' && session?.user) { let p = null; for (let i = 0; i < 4; i++) { p = await db.getProfile(session.user.id); if (p) break; await new Promise(r => setTimeout(r, 500)); } if (p) setUser(p); }
     });
     return () => subscription?.unsubscribe();
   }, []);
 
-  // ── Realtime profile sync ────────────────────────────────────
+  // Realtime profile sync
   useEffect(() => {
     if (!user?.id) return;
     const ch = supabase.channel('profile-sync-' + user.id)
-      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'profiles', filter: `id=eq.${user.id}` },
-        (payload) => { setUser(prev => ({ ...prev, ...payload.new })); })
+      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'profiles', filter: `id=eq.${user.id}` }, (payload) => { setUser(prev => ({ ...prev, ...payload.new })); })
       .subscribe();
     return () => supabase.removeChannel(ch);
   }, [user?.id]);
 
-  // ── Push notifications ───────────────────────────────────────
+  // Push notifications
   useEffect(() => {
     if (!user?.id) return;
     requestPushPermission(user.id).catch(() => { });
@@ -1829,24 +1512,20 @@ export default function App() {
     return () => { if (typeof unsub === 'function') unsub(); };
   }, [user?.id]);
 
-  // ── Level up check ───────────────────────────────────────────
+  // Level up
   useEffect(() => {
     if (!user) return;
-    const ne = [...ERAS].reverse().find(e => (user.pts || 0) >= e.ptsNeeded);
-    if (ne && ne.level > (user.level || 1)) {
-      setUser(u => ({ ...u, level: ne.level }));
-      if (user.id) db.updateProfile(user.id, { level: ne.level });
-      setShowLevelUp(ne.level); Sound.levelUp();
-    }
+    const ne = [...ERAS].reverse().find(e => (user.pts || 0) >= e.pts);
+    if (ne && ne.level > (user.level || 1)) { setUser(u => ({ ...u, level: ne.level })); if (user.id) db.updateProfile(user.id, { level: ne.level }); setShowLevelUp(ne.level); Sound.lvl(); }
   }, [user?.pts]);
 
-  // ── Render states ────────────────────────────────────────────
+  // Loading screen
   if (loading) return (
     <div style={{ position: "fixed", inset: 0, background: "#C1272D", display: "flex", alignItems: "center", justifyContent: "center" }}>
       <style>{defaultCSS}</style>
-      <div style={{ textAlign: "center" }}>
-        <div style={{ fontSize: "44px", fontFamily: font.display, color: "#ffffff", fontWeight: "700" }}>cereza</div>
-        <div style={{ fontSize: "11px", letterSpacing: "4px", color: "rgba(255,255,255,0.5)", marginTop: "8px" }}>LOYALTY CLUB</div>
+      <div style={{ textAlign: "center", animation: "fadeUp 0.5s ease" }}>
+        <div style={{ fontSize: "52px", fontFamily: font.display, color: "#fff", fontWeight: "700" }}>cereza</div>
+        <div style={{ fontSize: "11px", letterSpacing: "5px", color: "rgba(255,255,255,0.4)", marginTop: "8px" }}>LOYALTY CLUB</div>
       </div>
     </div>
   );
@@ -1856,31 +1535,28 @@ export default function App() {
   if (!user) return (
     <div style={{ position: "fixed", inset: 0, maxWidth: "430px", margin: "0 auto" }}>
       <AuthScreen onLogin={setUser} />
-      <div onClick={() => setAdminMode("login")} style={{ position: "fixed", bottom: "10px", left: "50%", transform: "translateX(-50%)", color: "rgba(0,0,0,0.05)", fontSize: "9px", cursor: "pointer", padding: "6px 12px", userSelect: "none" }}>admin</div>
+      <div onClick={() => setAdminMode("login")} style={{ position: "fixed", bottom: `calc(${safeBot} + 10px)`, left: "50%", transform: "translateX(-50%)", color: "rgba(0,0,0,0.04)", fontSize: "9px", cursor: "pointer", padding: "8px 16px", userSelect: "none" }}>admin</div>
     </div>
   );
 
-  const nav = [
-    { id: "home", icon: Icon.home, l: "Home" },
-    { id: "missions", icon: Icon.target, l: "Missions" },
-    { id: "scan", icon: Icon.qr, l: "Scan" },
-    { id: "cinder", icon: Icon.heart, l: "Cinder" },
-    { id: "profile", icon: Icon.user, l: "Profil" },
+  const NAV = [
+    { id: "home", icon: Ico.home, l: "Home" },
+    { id: "missions", icon: Ico.target, l: "Missions" },
+    { id: "scan", icon: Ico.qr, l: "Scan" },
+    { id: "cinder", icon: Ico.heart, l: "Cinder" },
+    { id: "profile", icon: Ico.user, l: "Profil" },
   ];
 
   return (
-    <div style={{ position: "fixed", inset: 0, maxWidth: "430px", margin: "0 auto", fontFamily: font.ui, background: t.bg, display: "flex", flexDirection: "column", overflow: "hidden", transition: "background 0.4s" }}>
+    <div style={{ position: "fixed", inset: 0, maxWidth: "430px", margin: "0 auto", fontFamily: font.ui, background: t.bg, display: "flex", flexDirection: "column", overflow: "hidden", transition: "background 0.35s" }}>
       <style>{CSS}</style>
       {showLevelUp && <LevelUpOverlay level={showLevelUp} onClose={() => setShowLevelUp(null)} />}
 
       {/* Toast */}
       {toast && (
-        <div style={{ position: "fixed", top: "max(16px,env(safe-area-inset-top,16px))", left: "50%", transform: "translateX(-50%)", background: t.card, border: `1px solid ${t.border}`, borderRadius: "16px", padding: "12px 18px", zIndex: 9998, boxShadow: "0 8px 32px rgba(0,0,0,0.15)", maxWidth: "340px", width: "90%", animation: "fadeUp 0.3s", display: "flex", gap: "10px", alignItems: "center" }}>
+        <div style={{ position: "fixed", top: `calc(${safeTop} + 16px)`, left: "50%", transform: "translateX(-50%)", background: t.card, border: `1px solid ${t.border}`, borderRadius: "16px", padding: "12px 18px", zIndex: 9998, boxShadow: "0 8px 32px rgba(0,0,0,0.14)", maxWidth: "340px", width: "90%", animation: "fadeUp 0.3s", display: "flex", gap: "10px", alignItems: "center" }}>
           <div style={{ width: "8px", height: "8px", borderRadius: "50%", background: t.accent, flexShrink: 0 }} />
-          <div>
-            <div style={{ fontSize: "13px", fontWeight: "600", color: t.text }}>{toast.title}</div>
-            {toast.body && <div style={{ fontSize: "11px", color: t.textLight, marginTop: "2px" }}>{toast.body}</div>}
-          </div>
+          <div><div style={{ fontSize: "13px", fontWeight: "600", color: t.text }}>{toast.title}</div>{toast.body && <div style={{ fontSize: "11px", color: t.textLight, marginTop: "2px" }}>{toast.body}</div>}</div>
         </div>
       )}
 
@@ -1895,18 +1571,17 @@ export default function App() {
         </div>
       </div>
 
-      {/* iOS Tab Bar */}
-      <div style={{ flexShrink: 0, background: t.navBg, backdropFilter: "blur(24px)", WebkitBackdropFilter: "blur(24px)", borderTop: `0.5px solid ${t.navBorder}`, paddingBottom: "env(safe-area-inset-bottom,0px)", transition: "all 0.3s" }}>
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(5,1fr)", padding: "8px 0 4px", maxWidth: "430px", margin: "0 auto" }}>
-          {nav.map(n => {
+      {/* iOS Tab Bar – mit Safe Area unten */}
+      <div style={{ flexShrink: 0, background: t.navBg, backdropFilter: "blur(24px)", WebkitBackdropFilter: "blur(24px)", borderTop: `0.5px solid ${t.navBorder}`, paddingBottom: safeBot, transition: "all 0.3s" }}>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(5,1fr)", padding: "8px 0 2px", maxWidth: "430px", margin: "0 auto" }}>
+          {NAV.map(n => {
             const a = tab === n.id;
             return (
-              <button key={n.id} onClick={() => { Sound.tap(); setTab(n.id); }}
-                style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: "3px", background: "none", border: "none", padding: "6px 0", color: a ? t.accent : t.textLight, transition: "all 0.2s" }}>
-                <div style={{ padding: "4px", borderRadius: "10px", background: a ? t.accent + "18" : "transparent", transform: a ? "scale(1.08)" : "scale(1)", transition: "all 0.2s", color: a ? t.accent : t.textLight }}>
+              <button key={n.id} onClick={() => { Sound.tap(); setTab(n.id); }} style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: "3px", background: "none", padding: "6px 0", color: a ? t.accent : t.textLight, transition: "all 0.2s" }}>
+                <div style={{ padding: "4px 8px", borderRadius: "12px", background: a ? t.accent + "1a" : "transparent", transform: a ? "scale(1.08)" : "scale(1)", transition: "all 0.2s", color: a ? t.accent : t.textLight }}>
                   {n.icon}
                 </div>
-                <span style={{ fontSize: "10px", fontWeight: a ? "700" : "500", letterSpacing: "0.1px" }}>{n.l}</span>
+                <span style={{ fontSize: "10px", fontWeight: a ? "700" : "500", letterSpacing: "0.1px", lineHeight: 1 }}>{n.l}</span>
               </button>
             );
           })}

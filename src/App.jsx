@@ -1258,17 +1258,23 @@ const ProfileTab = ({ user, setUser, onLogout, theme }) => {
                 const f = e.target.files?.[0]; if (!f || !user?.id) return;
                 const ext = (f.name.split('.').pop() || 'jpg').toLowerCase();
                 const path = `vibes/${user.id}_${Date.now()}.${ext}`;
-                const { error } = await supabase.storage.from('avatars').upload(path, f, { upsert: false, contentType: f.type || 'image/jpeg' });
-                if (!error) {
-                  const { data: u } = supabase.storage.from('avatars').getPublicUrl(path);
-                  await supabase.from('vibe_photos').insert({ user_id: user.id, url: u.publicUrl + '?t=' + Date.now(), approved: false });
-                  alert("Hochgeladen! Wartet auf Admin-Freigabe.");
-                } else { alert("Upload fehlgeschlagen: " + error.message); }
+                const { error: upErr } = await supabase.storage.from('avatars').upload(path, f, { upsert: false, contentType: f.type || 'image/jpeg' });
+                if (upErr) { alert("Upload fehlgeschlagen: " + upErr.message); return; }
+                const { data: urlData } = supabase.storage.from('avatars').getPublicUrl(path);
+                const url = urlData.publicUrl + '?t=' + Date.now();
+                const { error: dbErr } = await supabase.from('vibe_photos').insert({ user_id: user.id, url, approved: false });
+                if (dbErr) { alert("Fehler: " + dbErr.message); return; }
+                alert("Hochgeladen! Wartet auf Admin-Freigabe.");
+                db.getApprovedVibes().then(setVibes);
               }} />
             </label>
             {vibes.length === 0 && <div style={{ textAlign: "center", padding: "24px", color: C.textLight }}>Noch keine freigegebenen Vibes</div>}
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "8px" }}>
-              {vibes.map(v => <div key={v.id} style={{ borderRadius: "14px", overflow: "hidden", aspectRatio: "1" }}><img src={v.url} style={{ width: "100%", height: "100%", objectFit: "cover", filter: "sepia(0.3) contrast(1.1) saturate(0.9)" }} /></div>)}
+              {vibes.map(v => (
+                <div key={v.id} style={{ borderRadius: "14px", overflow: "hidden", aspectRatio: "1" }}>
+                  <img src={v.url} style={{ width: "100%", height: "100%", objectFit: "cover", filter: "sepia(0.3) contrast(1.1) saturate(0.9)" }} />
+                </div>
+              ))}
             </div>
           </div>
         )}

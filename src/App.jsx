@@ -114,8 +114,9 @@ const getCSS = t => `
   #root{height:100%;width:100%;overflow:hidden;position:fixed;inset:0;background:${t.bg};overscroll-behavior:none}
   input,textarea,select{user-select:text;-webkit-user-select:text;font-family:inherit;font-size:16px}
   ::-webkit-scrollbar{display:none}
-  button{-webkit-appearance:none;appearance:none;font-family:inherit;cursor:pointer;border:none;outline:none}
+  button{-webkit-appearance:none;appearance:none;font-family:inherit;cursor:pointer;border:none;outline:none;-webkit-tap-highlight-color:transparent;user-select:none;-webkit-user-select:none}
   button:active{opacity:0.75;transform:scale(0.97)}
+  nav button:active{opacity:0.6;transform:scale(0.92)!important;transition:transform 0.08s ease}
   @keyframes fadeUp{from{opacity:0;transform:translateY(12px)}to{opacity:1;transform:translateY(0)}}
   @keyframes fadeIn{from{opacity:0}to{opacity:1}}
   @keyframes scaleIn{from{transform:scale(0.8);opacity:0}to{transform:scale(1);opacity:1}}
@@ -2701,8 +2702,11 @@ export default function App() {
     {id:"profile",  icon:I.user,   l:"Profil"},
   ];
 
+  // Höhe der Nav Bar für Content-Padding berechnen
+  const NAV_H = 56; // Buttons-Bereich
+
   return (
-    <div style={{ position:"fixed",inset:0,maxWidth:"430px",margin:"0 auto",fontFamily:font.ui,background:t.bg,display:"flex",flexDirection:"column",overflow:"hidden" }}>
+    <div style={{ position:"fixed",inset:0,maxWidth:"430px",margin:"0 auto",fontFamily:font.ui,background:t.bg,overflow:"hidden" }}>
       <style>{CSS}</style>
       {showLevelUp && <LevelUpOverlay level={showLevelUp} onClose={() => setShowLevelUp(null)}/>}
       {toast && (
@@ -2715,39 +2719,94 @@ export default function App() {
         </div>
       )}
 
-      {/* Content – kein overscroll */}
-      <div style={{ flex:1,overflow:"hidden",minHeight:0 }}>
-        <div style={{ height:"100%",overflowY:"auto",overflowX:"hidden",WebkitOverflowScrolling:"touch",overscrollBehavior:"none" }}>
-          {tab==="home"     && <HomeTab    user={user} setUser={setUser} setTab={setTab}/>}
-          {tab==="missions" && <WheelTab   user={user} setUser={setUser}/>}
-          {tab==="scan"     && <ScanTab    user={user} setUser={setUser}/>}
-          {tab==="fam"      && <FamTab     user={user} C={C} font={font}/>}
-          {tab==="profile"  && <ProfileTab user={user} setUser={setUser} onLogout={async () => { await db.signOut(); setUser(null); }} theme={theme}/>}
-        </div>
+      {/* Content – kein overscroll, Platz für fixierte Nav unten */}
+      <div style={{ position:"absolute",top:0,left:0,right:0,bottom:0,overflowY:"auto",overflowX:"hidden",WebkitOverflowScrolling:"touch",overscrollBehavior:"none",paddingBottom:`calc(${NAV_H}px + env(safe-area-inset-bottom, 0px))` }}>
+        {tab==="home"     && <HomeTab    user={user} setUser={setUser} setTab={setTab}/>}
+        {tab==="missions" && <WheelTab   user={user} setUser={setUser}/>}
+        {tab==="scan"     && <ScanTab    user={user} setUser={setUser}/>}
+        {tab==="fam"      && <FamTab     user={user} C={C} font={font}/>}
+        {tab==="profile"  && <ProfileTab user={user} setUser={setUser} onLogout={async () => { await db.signOut(); setUser(null); }} theme={theme}/>}
       </div>
 
-      {/* Tab Bar – immer am untersten Displayrand */}
-      <div style={{
-        flexShrink:0,
+      {/* ─── Bottom Navigation Bar ─── Native-App-Quality ─── */}
+      <nav style={{
+        position:"fixed",
+        bottom:0,
+        left:0,
+        right:0,
+        maxWidth:"430px",
+        margin:"0 auto",
+        zIndex:9990,
+        /* Glassmorphism */
         background:t.navBg,
-        backdropFilter:"blur(24px)",
-        WebkitBackdropFilter:"blur(24px)",
+        backdropFilter:"blur(28px) saturate(1.6)",
+        WebkitBackdropFilter:"blur(28px) saturate(1.6)",
         borderTop:`0.5px solid ${t.navBorder}`,
+        /* iOS Safe Area */
         paddingBottom:`env(safe-area-inset-bottom, 0px)`,
+        /* Touch-Optimierung */
+        userSelect:"none",
+        WebkitUserSelect:"none",
+        WebkitTapHighlightColor:"transparent",
+        touchAction:"manipulation",
       }}>
-        <div style={{ display:"grid", gridTemplateColumns:`repeat(${NAV.length},1fr)`, padding:"8px 0 6px", maxWidth:"430px", margin:"0 auto" }}>
+        <div style={{ display:"grid", gridTemplateColumns:`repeat(${NAV.length},1fr)`, height:`${NAV_H}px`, maxWidth:"430px", margin:"0 auto" }}>
           {NAV.map(n => {
             const a = tab === n.id;
             return (
               <button key={n.id} onClick={() => { Sound.tap(); setTab(n.id); }}
-                style={{ display:"flex",flexDirection:"column",alignItems:"center",gap:"3px",background:"none",padding:"6px 0",color:a?t.accent:t.textLight,border:"none",outline:"none" }}>
-                <div style={{ padding:"4px 10px",borderRadius:"12px",background:a?t.accent+"1a":"transparent",transform:a?"scale(1.08)":"scale(1)",transition:"all 0.2s",color:a?t.accent:t.textLight }}>{n.icon}</div>
-                <span style={{ fontSize:"10px",fontWeight:a?"700":"500",lineHeight:1 }}>{n.l}</span>
+                style={{
+                  display:"flex",
+                  flexDirection:"column",
+                  alignItems:"center",
+                  justifyContent:"center",
+                  gap:"2px",
+                  /* 48px Hit-Target minimum */
+                  minHeight:"48px",
+                  minWidth:"48px",
+                  padding:0,
+                  margin:0,
+                  /* Kein Standard-Button-Style */
+                  background:"none",
+                  border:"none",
+                  outline:"none",
+                  cursor:"pointer",
+                  /* Touch */
+                  WebkitTapHighlightColor:"transparent",
+                  userSelect:"none",
+                  WebkitUserSelect:"none",
+                  touchAction:"manipulation",
+                  /* Farbe */
+                  color:a ? t.accent : t.textLight,
+                  /* Active-Übergang */
+                  transition:"color 0.15s ease, transform 0.15s ease",
+                  transform:a ? "scale(1)" : "scale(1)",
+                }}>
+                {/* Icon-Pill mit Active-State */}
+                <div style={{
+                  display:"flex",
+                  alignItems:"center",
+                  justifyContent:"center",
+                  width:a ? "48px" : "40px",
+                  height:"28px",
+                  borderRadius:"14px",
+                  background:a ? t.accent+"1a" : "transparent",
+                  transition:"all 0.2s cubic-bezier(0.4, 0, 0.2, 1)",
+                  color:a ? t.accent : t.textLight,
+                  transform:a ? "scale(1.05)" : "scale(1)",
+                }}>{n.icon}</div>
+                <span style={{
+                  fontSize:"10px",
+                  fontWeight:a ? "700" : "500",
+                  lineHeight:1,
+                  letterSpacing:a ? "0.2px" : "0px",
+                  transition:"all 0.15s ease",
+                }}>{n.l}</span>
               </button>
             );
           })}
         </div>
-      </div>
+      </nav>
     </div>
   );
 }

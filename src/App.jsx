@@ -471,6 +471,18 @@ const MissionCard = ({ mission: m, user, setUser }) => {
 // ─── Bestenliste Card (User-Profile PopUp) ────────────────────────
 const BestenlisteCard = ({ lb, user }) => {
   const [selectedUserId, setSelectedUserId] = useState(null);
+  const [addingId, setAddingId] = useState(null);
+  const [addedIds, setAddedIds] = useState(new Set());
+
+  const addFriend = async (e, targetId) => {
+    e.stopPropagation();
+    if (!user?.id || !targetId || targetId === user.id || addingId) return;
+    setAddingId(targetId);
+    const res = await db.sendFriendRequest(user.id, targetId);
+    if (!res.error) setAddedIds(prev => new Set([...prev, targetId]));
+    setAddingId(null);
+  };
+
   return (
     <>
       {selectedUserId && <UserProfileCard userId={selectedUserId} currentUser={user} C={C} font={font} onClose={() => setSelectedUserId(null)}/>}
@@ -486,7 +498,14 @@ const BestenlisteCard = ({ lb, user }) => {
             <div style={{ flex:1,fontSize:"14px",fontWeight:p.name===user.name?"700":"500",color:C.text }}>
               {p.name}{p.name===user.name && <span style={{ fontSize:"10px",color:C.orange,marginLeft:"4px" }}>(Du)</span>}
             </div>
-            <div style={{ fontSize:"13px",fontWeight:"700",color:C.green }}>{p.pts} XP</div>
+            <div style={{ fontSize:"13px",fontWeight:"700",color:C.green,marginRight:"8px" }}>{p.pts} XP</div>
+            {p.id && p.id !== user?.id && !addedIds.has(p.id) && (
+              <button onClick={e => addFriend(e, p.id)} disabled={addingId===p.id}
+                style={{ padding:"5px 10px",borderRadius:"10px",background:`${C.orange}15`,border:`1px solid ${C.orange}33`,color:C.orange,fontSize:"11px",fontWeight:"700",flexShrink:0 }}>
+                {addingId===p.id ? "..." : "+"}
+              </button>
+            )}
+            {addedIds.has(p.id) && <div style={{ fontSize:"11px",color:C.green,fontWeight:"600",flexShrink:0 }}>✓</div>}
           </div>
         ))}
       </Card>
@@ -677,26 +696,28 @@ const HomeTab = ({ user, setUser, setTab }) => {
 // ─── Wheel + Missions Tab ─────────────────────────────────────────
 // FIX: rotReady verhindert Dreh-Animation beim ersten Render
 const WheelTab = ({ user, setUser }) => {
-  const [spinning,  setSpinning]  = useState(false);
-  const [rot,       setRot]       = useState(0);
-  const [rotReady,  setRotReady]  = useState(false); // NEU: verhindert Dreh beim Mount
-  const [result,    setResult]    = useState(null);
-  const [spins,     setSpins]     = useState(0);
-  const [loading,   setLoading]   = useState(true);
-  const [missions,  setMissions]  = useState(MOCK_MISSIONS);
-  const [prizes,    setPrizes]    = useState(WHEEL_DEFAULT);
+  const [scratching, setScratching] = useState(false);
+  const [revealed,   setRevealed]   = useState(false);
+  const [result,     setResult]     = useState(null);
+  const [spins,      setSpins]      = useState(0);
+  const [loading,    setLoading]    = useState(true);
+  const [missions,   setMissions]   = useState(MOCK_MISSIONS);
+  const [prizes,     setPrizes]     = useState(WHEEL_DEFAULT);
+  const [scratchPct, setScratchPct] = useState(0);
+  const canvasRef = useRef(null);
   const MAX=2; const FREE=1;
 
   useEffect(() => {
-    // Rad auf 0 zurücksetzen beim Mount – KEINE Transition
-    setRot(0);
-    setRotReady(false);
-
     const init = async () => {
       if (user?.id) {
         const fresh = await db.getProfile(user.id);
         if (fresh) {
-          setUser(u => ({ ...u, ...fresh }));
+          // Nur Felder übernehmen die nicht undefined/null sind, pts nie auf 0 setzen wenn User schon welche hat
+          setUser(u => {
+            const merged = { ...u };
+            for (const [k, v] of Object.entries(fresh)) { if (v !== null && v !== undefined) merged[k] = v; }
+            return merged;
+          });
           const today = new Date().toISOString().split('T')[0];
           setSpins(fresh.last_spin_date===today ? (fresh.wheel_spun_today?2:1) : 0);
         }
@@ -704,11 +725,8 @@ const WheelTab = ({ user, setUser }) => {
       const p = await db.getWheelPrizes(); if(p.length) setPrizes(p);
       const m = await db.getMissions();    if(m.length) setMissions(m);
       setLoading(false);
-      // Erst NACH dem Rendern sichtbar machen – verhindert Dreh-Animation
-      setTimeout(() => setRotReady(true), 80);
     };
     init();
-
     if (!user?.id) return;
     const ch = supabase.channel('wheel-rt')
       .on('postgres_changes',{event:'*',schema:'public',table:'wheel_prizes'}, async () => { const p=await db.getWheelPrizes(); if(p.length) setPrizes(p); })
@@ -720,8 +738,32 @@ const WheelTab = ({ user, setUser }) => {
   const canSpin  = spins < MAX;
   const needsPay = spins >= FREE;
 
-  const spin = async () => {
-    if (spinning || !canSpin) return;
+  // Rubbellos initialisieren
+  const initScratch = () => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext("2d");
+    const w = canvas.width, h = canvas.height;
+    // Goldener Rubbelfeld-Overlay
+    const grad = ctx.createLinearGradient(0, 0, w, h);
+    grad.addColorStop(0, "#c9a84c"); grad.addColorStop(0.3, "#f0d78c");
+    grad.addColorStop(0.5, "#dfc060"); grad.addColorStop(0.7, "#f0d78c");
+    grad.addColorStop(1, "#b8943d");
+    ctx.fillStyle = grad;
+    ctx.fillRect(0, 0, w, h);
+    // Muster
+    ctx.fillStyle = "rgba(255,255,255,0.08)";
+    for (let i = 0; i < 8; i++) {
+      ctx.beginPath(); ctx.arc(Math.random()*w, Math.random()*h, 20+Math.random()*30, 0, Math.PI*2); ctx.fill();
+    }
+    // Text
+    ctx.fillStyle = "rgba(255,255,255,0.6)"; ctx.font = "bold 18px Inter, sans-serif"; ctx.textAlign = "center";
+    ctx.fillText("✦ HIER RUBBELN ✦", w/2, h/2 + 6);
+    setScratchPct(0);
+  };
+
+  const startScratchCard = async () => {
+    if (scratching || !canSpin) return;
     const today = new Date().toISOString().split('T')[0];
     if (user?.id) {
       const fresh = await db.getProfile(user.id);
@@ -731,78 +773,112 @@ const WheelTab = ({ user, setUser }) => {
       const fresh = user?.id ? await db.getProfile(user.id) : null;
       const cur = fresh ? (fresh.pts||0) : (user.pts||0);
       if (cur < 100) return;
-      setUser(u => ({ ...u, pts:cur-100 }));
-      if (user?.id) await db.updateProfile(user.id, { pts:cur-100 });
+      if (user?.id) await db.addPts(user.id, -100);
+      const updated = await db.getProfile(user.id);
+      if (updated) setUser(u => ({ ...u, pts: updated.pts || 0 }));
     }
-    setSpinning(true); setResult(null); Sound.spin();
+    // Zufälliger Preis
     const idx = Math.floor(Math.random() * prizes.length);
-    const seg = 360 / prizes.length;
-    setRot(r => r + 360*7 + (360 - idx*seg - seg/2));
-    setTimeout(async () => {
-      setSpinning(false); setSpins(s => s+1);
-      const prize = prizes[idx]; setResult(prize);
-      prize.value > 0 ? Sound.win() : Sound.lose();
-      const fresh = user?.id ? await db.getProfile(user.id) : null;
-      const cur   = fresh ? (fresh.pts||0) : (user.pts||0);
-      const today2 = new Date().toISOString().split('T')[0];
-      const upd = { wheel_spun_today:true, last_spin_date:today2 };
-      if (prize.value > 0) { upd.pts=cur+prize.value; setUser(u => ({ ...u, pts:upd.pts, wheel_spun_today:true })); }
-      else setUser(u => ({ ...u, wheel_spun_today:true }));
-      if (user?.id) await db.updateProfile(user.id, upd);
-    }, 5200);
+    setResult(prizes[idx]);
+    setRevealed(false);
+    setScratching(true);
+    setTimeout(initScratch, 50);
   };
 
-  const sz=280, cx=sz/2, cy=sz/2, r=sz/2-12;
+  const handleScratch = (clientX, clientY) => {
+    const canvas = canvasRef.current;
+    if (!canvas || !scratching || revealed) return;
+    const rect = canvas.getBoundingClientRect();
+    const x = (clientX - rect.left) * (canvas.width / rect.width);
+    const y = (clientY - rect.top) * (canvas.height / rect.height);
+    const ctx = canvas.getContext("2d");
+    ctx.globalCompositeOperation = "destination-out";
+    ctx.beginPath(); ctx.arc(x, y, 28, 0, Math.PI*2); ctx.fill();
+    ctx.globalCompositeOperation = "source-over";
+    // Prüfe wie viel freigerubbelt wurde
+    const data = ctx.getImageData(0, 0, canvas.width, canvas.height).data;
+    let clear = 0;
+    for (let i = 3; i < data.length; i += 16) { if (data[i] === 0) clear++; }
+    const pct = clear / (data.length / 16);
+    setScratchPct(pct);
+    if (pct > 0.45 && !revealed) reveal();
+  };
+
+  const reveal = async () => {
+    setRevealed(true); setScratching(false); setSpins(s => s+1);
+    if (!result) return;
+    result.value > 0 ? Sound.win() : Sound.lose();
+    const today2 = new Date().toISOString().split('T')[0];
+    const upd = { wheel_spun_today:true, last_spin_date:today2 };
+    if (result.value > 0 && user?.id) {
+      await db.addPts(user.id, result.value);
+    }
+    if (user?.id) await db.updateProfile(user.id, upd);
+    const fresh = await db.getProfile(user.id);
+    if (fresh) setUser(u => ({ ...u, ...fresh }));
+  };
+
+  const resetCard = () => { setResult(null); setRevealed(false); setScratching(false); setScratchPct(0); };
 
   return (
     <div style={{ background:C.beige, paddingBottom:"24px", minHeight:"100%" }}>
       <div style={{ padding:`calc(${ST} + 20px) 20px 14px` }}>
         <div style={{ fontSize:"12px",letterSpacing:"2px",color:C.textLight,fontWeight:"600",textTransform:"uppercase" }}>Täglich</div>
-        <div style={{ fontSize:"28px",fontFamily:font.display,color:C.text,fontWeight:"700" }}>Glücksrad & Missionen</div>
+        <div style={{ fontSize:"28px",fontFamily:font.display,color:C.text,fontWeight:"700" }}>Rubbellos & Missionen</div>
       </div>
       <div style={{ padding:"0 16px" }}>
-        {/* Glücksrad */}
+        {/* Rubbellos */}
         <Card style={{ marginBottom:"16px", padding:"20px", textAlign:"center" }}>
           <div style={{ fontSize:"11px",fontWeight:"700",letterSpacing:"2px",color:C.textLight,marginBottom:"4px" }}>TÄGLICH</div>
-          <div style={{ fontSize:"20px",fontFamily:font.display,color:C.text,fontWeight:"700",marginBottom:"18px" }}>Glücksrad</div>
-          <div style={{ display:"flex",flexDirection:"column",alignItems:"center" }}>
-            <div style={{ position:"relative" }}>
-              <div style={{ position:"absolute",top:"-3px",left:"50%",transform:"translateX(-50%)",zIndex:3,width:0,height:0,borderLeft:"9px solid transparent",borderRight:"9px solid transparent",borderTop:`16px solid ${C.orange}` }}/>
-              <div style={{ position:"absolute",inset:"-5px",borderRadius:"50%",border:`3px solid ${C.border}`,boxShadow:spinning?"0 0 28px rgba(226,74,40,0.25)":"none",transition:"box-shadow 0.5s",pointerEvents:"none" }}/>
-              {/* FIX: opacity:0 bis rotReady, transition nur beim Spinning */}
-              <svg width={sz} height={sz} viewBox={`0 0 ${sz} ${sz}`}
-                style={{
-                  transform:`rotate(${rot}deg)`,
-                  transition: spinning ? "transform 5.2s cubic-bezier(0.1,0.6,0.1,1)" : "none",
-                  display:"block",
-                  opacity: rotReady ? 1 : 0,
-                }}>
-                {prizes.map((p,i) => {
-                  const seg=360/prizes.length, s=(i*seg-90)*Math.PI/180, e=((i+1)*seg-90)*Math.PI/180, mid=(s+e)/2;
-                  return (
-                    <g key={i}>
-                      <path d={`M${cx},${cy} L${cx+r*Math.cos(s)},${cy+r*Math.sin(s)} A${r},${r} 0 0,1 ${cx+r*Math.cos(e)},${cy+r*Math.sin(e)} Z`} fill={p.color||"#f5f5f5"} stroke="#fff" strokeWidth="2"/>
-                      <text x={cx+(r*0.65)*Math.cos(mid)} y={cy+(r*0.65)*Math.sin(mid)} transform={`rotate(${i*seg+seg/2},${cx+(r*0.65)*Math.cos(mid)},${cy+(r*0.65)*Math.sin(mid)})`} textAnchor="middle" dominantBaseline="middle" fill={WHEEL_TC[i%WHEEL_TC.length]} fontSize="11" fontWeight="700" fontFamily={font.ui}>{p.label}</text>
-                    </g>
-                  );
-                })}
-                <circle cx={cx} cy={cy} r="32" fill="white" stroke={C.orange} strokeWidth="2.5" style={{ filter:"drop-shadow(0 2px 8px rgba(226,74,40,0.3))" }}/>
-                <text x={cx} y={cy+11} textAnchor="middle" dominantBaseline="middle" fill={C.orange} fontSize="30" fontWeight="900" fontFamily="Playfair Display,serif">c</text>
-              </svg>
-            </div>
-            <button onClick={spin} disabled={spinning||!canSpin||(needsPay&&(user.pts||0)<100)}
-              style={{ marginTop:"18px",padding:"14px 48px",borderRadius:"50px",fontSize:"15px",fontWeight:"700",background:!canSpin?C.greyBg:C.orange,color:!canSpin?C.textLight:C.white,transition:"all 0.2s" }}>
-              {!canSpin?"Fertig für heute":spinning?"Dreht...":needsPay?"Nochmal (100 XP)":"Drehen"}
-            </button>
-            <div style={{ fontSize:"11px",color:C.textLight,marginTop:"6px" }}>{spins}/{MAX} Spins heute</div>
-            {result && (
-              <Card style={{ marginTop:"12px",padding:"14px",animation:"scaleIn 0.4s",maxWidth:"200px" }}>
-                <div style={{ fontSize:"15px",fontWeight:"800",color:result.value>0?C.orange:C.text }}>
-                  {result.value>0?`+${result.value} XP!`:result.value===-1?"2× XP heute!":"Kein Glück"}
+          <div style={{ fontSize:"20px",fontFamily:font.display,color:C.text,fontWeight:"700",marginBottom:"4px" }}>Rubbellos</div>
+          <div style={{ fontSize:"12px",color:C.textLight,marginBottom:"16px" }}>Rubble das Feld frei und gewinne XP</div>
+
+          {!scratching && !revealed && (
+            <>
+              <div style={{ width:"280px",height:"140px",margin:"0 auto 16px",borderRadius:"20px",background:`linear-gradient(135deg, #1a0000, ${C.orange}22, #1a0000)`,border:`2px solid ${C.orange}33`,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",gap:"8px" }}>
+                <div style={{ fontSize:"36px" }}>🎟️</div>
+                <div style={{ fontSize:"14px",fontWeight:"700",color:C.orange }}>Cereza Lucky Card</div>
+                <div style={{ fontSize:"11px",color:C.textLight }}>{spins}/{MAX} heute genutzt</div>
+              </div>
+              <button onClick={startScratchCard} disabled={!canSpin||(needsPay&&(user.pts||0)<100)}
+                style={{ padding:"14px 48px",borderRadius:"50px",fontSize:"15px",fontWeight:"700",background:!canSpin?C.greyBg:C.orange,color:!canSpin?C.textLight:C.white,transition:"all 0.2s" }}>
+                {!canSpin?"Fertig für heute":needsPay?"Neues Los (100 XP)":"Los aufrubbeln"}
+              </button>
+            </>
+          )}
+
+          {scratching && !revealed && (
+            <div style={{ position:"relative",width:"280px",height:"140px",margin:"0 auto 16px",borderRadius:"20px",overflow:"hidden",border:`2px solid ${C.orange}33` }}>
+              {/* Preis darunter */}
+              <div style={{ position:"absolute",inset:0,background:`linear-gradient(135deg, #1a0000, ${C.orange}15)`,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center" }}>
+                <div style={{ fontSize:"32px",fontWeight:"900",color:C.orange,fontFamily:font.display }}>
+                  {result?.value>0?`+${result.value} XP`:result?.value===-1?"2× XP":"Nächstes Mal!"}
                 </div>
-              </Card>
-            )}
-          </div>
+                <div style={{ fontSize:"13px",color:C.textLight,marginTop:"4px" }}>{result?.value>0?"Gewonnen!":"Mehr Glück beim nächsten Mal"}</div>
+              </div>
+              {/* Rubbelfeld darüber */}
+              <canvas ref={canvasRef} width={560} height={280}
+                style={{ position:"absolute",inset:0,width:"100%",height:"100%",touchAction:"none",cursor:"grabbing" }}
+                onMouseMove={e => { if(e.buttons===1) handleScratch(e.clientX, e.clientY); }}
+                onTouchMove={e => { const t=e.touches[0]; handleScratch(t.clientX, t.clientY); }}
+              />
+            </div>
+          )}
+
+          {revealed && (
+            <div style={{ animation:"scaleIn 0.4s" }}>
+              <div style={{ width:"280px",height:"140px",margin:"0 auto 16px",borderRadius:"20px",background:`linear-gradient(135deg, #1a0000, ${C.orange}15)`,border:`2px solid ${result?.value>0?C.orange:C.border}`,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center" }}>
+                <div style={{ fontSize:"36px",marginBottom:"4px" }}>{result?.value>0?"🎉":"😅"}</div>
+                <div style={{ fontSize:"28px",fontWeight:"900",color:result?.value>0?C.orange:C.text,fontFamily:font.display }}>
+                  {result?.value>0?`+${result.value} XP!`:result?.value===-1?"2× XP heute!":"Kein Gewinn"}
+                </div>
+              </div>
+              <button onClick={resetCard}
+                style={{ padding:"12px 36px",borderRadius:"50px",fontSize:"14px",fontWeight:"600",background:C.greyBg,color:C.textSub,border:`1px solid ${C.border}` }}>
+                OK
+              </button>
+            </div>
+          )}
         </Card>
 
         {/* Missionen */}
@@ -1312,14 +1388,24 @@ const ProfileTab = ({ user, setUser, onLogout, theme }) => {
 
       if (navigator.canShare?.({ files:[file] })) {
         await navigator.share({ files:[file], title:"Mein Cereza Profil" });
-        // 50 XP Belohnung
+        // 50 XP Belohnung — 1x pro Woche, nach 1 Minute Verzögerung
         if (user?.id) {
-          await db.addPts(user.id, 50);
-          const fresh = await db.getProfile(user.id);
-          if (fresh) setUser(u => ({ ...u, pts: fresh.pts || 0 }));
+          const profile = await db.getProfile(user.id);
+          const lastShare = profile?.last_story_share ? new Date(profile.last_story_share) : null;
+          const weekAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+          if (!lastShare || lastShare < weekAgo) {
+            // 1 Minute warten, dann XP gutschreiben
+            setTimeout(async () => {
+              try {
+                await db.addPts(user.id, 50);
+                await db.updateProfile(user.id, { last_story_share: new Date().toISOString() });
+                const fresh = await db.getProfile(user.id);
+                if (fresh) setUser(u => ({ ...u, pts: fresh.pts || 0, last_story_share: fresh.last_story_share }));
+              } catch(e) { console.error('Story XP error:', e); }
+            }, 60000); // 60 Sekunden
+          }
         }
       } else {
-        // Fallback: Bild in neuem Tab öffnen
         const url = URL.createObjectURL(blob);
         window.open(url, "_blank");
       }
@@ -1477,7 +1563,11 @@ const ProfileTab = ({ user, setUser, onLogout, theme }) => {
 
         <div style={{ display:"flex",gap:"8px",justifyContent:"center",marginTop:"12px",flexWrap:"wrap" }}>
           <button onClick={shareStory} disabled={storyLoading} style={{ padding:"9px 18px",background:`linear-gradient(135deg, ${C.orange}, #8B0000)`,borderRadius:"20px",fontSize:"13px",fontWeight:"700",color:C.white,display:"flex",alignItems:"center",gap:"6px",opacity:storyLoading?0.6:1 }}>
-            {storyLoading ? "..." : "📸 Story posten +50 XP"}
+            {storyLoading ? "..." : (() => {
+              const last = user.last_story_share ? new Date(user.last_story_share) : null;
+              const weekAgo = new Date(Date.now() - 7*24*60*60*1000);
+              return (!last || last < weekAgo) ? "📸 Story posten +50 XP" : "📸 Story posten";
+            })()}
           </button>
           <button onClick={shareApp} style={{ padding:"9px 18px",background:C.card,border:`1px solid ${C.border}`,borderRadius:"20px",fontSize:"13px",fontWeight:"600",color:C.text,display:"flex",alignItems:"center",gap:"6px" }}>{I.share} Einladen</button>
         </div>
@@ -1877,6 +1967,7 @@ const AdminPanel = ({ onClose }) => {
   const [redemptions,setRedemptions]=useState([]);
   const [vibes,    setVibes]    = useState([]);
   const [visitors, setVisitors] = useState([]);
+  const [proposals, setProposals] = useState([]);
   const [pushTitle,setPushTitle]= useState("");
   const [pushBody, setPushBody] = useState("");
   const [toast,    setToast]    = useState(null);
@@ -1905,6 +1996,8 @@ const AdminPanel = ({ onClose }) => {
     setRedemptions(r); setVibes(v); setVisitors(vis);
     setDishes((d||[]).map(x => ({ ...x, votes:x.dish_votes?.filter(v=>v.vote).length||0 })));
     setGlowHours(gh||[]);
+    const { data:props } = await supabase.from('dish_proposals').select('*, profile:user_id(name)').eq('approved', false).order('created_at', { ascending:false });
+    setProposals(props||[]);
     setLoading(false);
   }, []);
 
@@ -1946,7 +2039,7 @@ const AdminPanel = ({ onClose }) => {
   const TABS = [
     {id:"stats",l:"Stats"},{id:"users",l:"User"},{id:"redemptions",l:"Kasse"},{id:"qrscan",l:"QR-Scan"},
     {id:"shop",l:"Shop"},{id:"missions",l:"Missionen"},{id:"dishes",l:"Gerichte"},
-    {id:"glow",l:"Glow"},{id:"prizes",l:"Rad"},{id:"facts",l:"Fakten"},
+    {id:"glow",l:"Glow"},{id:"prizes",l:"Rad"},{id:"facts",l:"Fakten"},{id:"proposals",l:"Vorschläge"},
     {id:"vibes",l:"Vibes"},{id:"visits",l:"Heute"},{id:"push",l:"Push"},{id:"qrgen",l:"QR-Gen"},
   ];
 
@@ -2287,6 +2380,34 @@ const AdminPanel = ({ onClose }) => {
         )}
 
         {!loading&&tab==="qrgen"&&<QRGenInline/>}
+
+        {!loading&&tab==="proposals"&&(
+          <div>
+            <div style={{ fontSize:"12px",color:"#999",marginBottom:"10px" }}>Gericht-Vorschläge von Level 5+ Usern ({proposals.length})</div>
+            {proposals.length===0&&<div style={{ textAlign:"center",padding:"30px",color:"#999" }}>Keine offenen Vorschläge</div>}
+            {proposals.map(p=>(
+              <div key={p.id} style={{ background:"#fff",borderRadius:"16px",padding:"14px",border:"1px solid #e8e8e8",marginBottom:"8px" }}>
+                <div style={{ fontSize:"16px",fontWeight:"700",color:"#111",marginBottom:"4px" }}>{p.name}</div>
+                {p.description&&<div style={{ fontSize:"13px",color:"#666",marginBottom:"8px" }}>{p.description}</div>}
+                <div style={{ fontSize:"12px",color:"#999",marginBottom:"12px" }}>von @{p.profile?.name||"user"} · {new Date(p.created_at).toLocaleDateString('de-DE')}</div>
+                <div style={{ display:"flex",gap:"8px" }}>
+                  <button onClick={async()=>{
+                    await supabase.from('dishes').insert({name:p.name,description:p.description||'',active:true});
+                    await supabase.from('dish_proposals').update({approved:true}).eq('id',p.id);
+                    if(p.user_id) await db.addPts(p.user_id, 100);
+                    ok2("Als Gericht hinzugefügt +100 XP für User");
+                    loadAll();
+                  }} style={{ flex:1,padding:"11px",background:"#2d472a",borderRadius:"12px",color:"#fff",fontSize:"14px",fontWeight:"700" }}>✓ Annehmen +100XP</button>
+                  <button onClick={async()=>{
+                    await supabase.from('dish_proposals').delete().eq('id',p.id);
+                    ok2("Abgelehnt");
+                    setProposals(prev=>prev.filter(x=>x.id!==p.id));
+                  }} style={{ flex:1,padding:"11px",background:"#f5f5f5",border:"1px solid #e8e8e8",borderRadius:"12px",color:"#999",fontSize:"14px",fontWeight:"700" }}>✕ Ablehnen</button>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
       </div>
     </div>
   );
@@ -2404,7 +2525,12 @@ export default function App() {
               db.updateProfile(p.id, { onboarded:true }).catch(()=>{});
             }
           }
-          else setUser({ id:session.user.id, name:session.user.user_metadata?.name||session.user.email?.split('@')[0], email:session.user.email, pts:0, level:1, streak:0, total_visits:0, treat_count:0, treat_goal:8, wheel_spun_today:false, is_abo_member:false, is_admin:false });
+          else {
+            // Fallback nur wenn wirklich kein Profil da ist – nochmal versuchen
+            const retry = await db.getProfile(session.user.id);
+            if (retry) setUser(retry);
+            else setUser({ id:session.user.id, name:session.user.user_metadata?.name||session.user.email?.split('@')[0], email:session.user.email, pts:0, level:1, streak:0, total_visits:0, treat_count:0, treat_goal:8, wheel_spun_today:false, is_abo_member:false, is_admin:false });
+          }
         } catch(e) { console.error('Profile load:', e); }
         setLoading(false); clearTimeout(fallback);
       }

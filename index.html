@@ -2,27 +2,32 @@
 <html lang="de">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
-    <meta name="theme-color" content="#C1272D" />
+    <link rel="icon" type="image/svg+xml" href="/vite.svg" />
+    <!-- viewport-fit=cover ist KRITISCH für iPhone ohne Abstand unten -->
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
-    <meta name="mobile-web-app-capable" content="yes" />
-    <meta name="format-detection" content="telephone=no" />
-    <link rel="manifest" href="/manifest.json" />
-    <link rel="apple-touch-icon" href="/icon-192.png" />
-    <title>Cereza Loyalty Club</title>
+    <meta name="theme-color" content="#C1272D" />
+    <title>Cereza Loyalty</title>
     <style>
+      * { box-sizing: border-box; margin: 0; padding: 0; }
       html, body {
-        margin: 0; padding: 0;
-        background: #C1272D;
+        height: 100%;
+        width: 100%;
         overflow: hidden;
         position: fixed;
-        width: 100%; height: 100%;
+        inset: 0;
         overscroll-behavior: none;
-        -webkit-text-size-adjust: 100%;
+        -webkit-overflow-scrolling: touch;
+        background: #C1272D;
       }
-      /* Prevent pull-to-refresh */
-      body { touch-action: pan-y; }
+      #root {
+        height: 100%;
+        width: 100%;
+        overflow: hidden;
+        position: fixed;
+        inset: 0;
+      }
     </style>
   </head>
   <body>

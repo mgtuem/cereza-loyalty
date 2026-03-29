@@ -875,11 +875,13 @@ const ScanTab = ({ user, setUser }) => {
   const startScan = async () => {
     setScanning(true); setErr("");
     try {
+      // Kamera-Permission zuerst explizit anfragen (nötig für iOS PWA)
+      try { const stream = await navigator.mediaDevices.getUserMedia({ video:{ facingMode:"environment" } }); stream.getTracks().forEach(t => t.stop()); } catch(e) { console.log('Camera pre-request:', e.message); }
       const { Html5Qrcode } = await import("html5-qrcode");
       const s = new Html5Qrcode("qr-reader"); scannerRef.current = s;
       await s.start(
         { facingMode:"environment" },
-        { fps:10, qrbox:{ width:220, height:220 } },
+        { fps:10, qrbox:{ width:220, height:220 }, aspectRatio:1 },
         async (text) => {
           await s.stop(); setScanning(false);
           const parsed = parseQRFormat(text);
@@ -1172,6 +1174,160 @@ const ProfileTab = ({ user, setUser, onLogout, theme }) => {
   const [pendingCount, setPendingCount]= useState(0);
   const [profilePopup, setProfilePopup]= useState(null);
   const [showQR,       setShowQR]      = useState(false);
+  const [storyLoading, setStoryLoading]= useState(false);
+
+  const myFriendsCount = () => friends.filter(f => f.status==="accepted").length;
+
+  const shareStory = async () => {
+    if (storyLoading) return;
+    setStoryLoading(true);
+    try {
+      const W = 1080, H = 1920;
+      const canvas = document.createElement("canvas");
+      canvas.width = W; canvas.height = H;
+      const ctx = canvas.getContext("2d");
+
+      // Hintergrund: Cereza Rot Gradient
+      const bg = ctx.createLinearGradient(0, 0, 0, H);
+      bg.addColorStop(0, "#C1272D");
+      bg.addColorStop(0.5, "#8B0000");
+      bg.addColorStop(1, "#1a0000");
+      ctx.fillStyle = bg;
+      ctx.fillRect(0, 0, W, H);
+
+      // Dekorative Kreise
+      ctx.globalAlpha = 0.06;
+      ctx.fillStyle = "#fff";
+      ctx.beginPath(); ctx.arc(200, 300, 300, 0, Math.PI*2); ctx.fill();
+      ctx.beginPath(); ctx.arc(880, 1500, 250, 0, Math.PI*2); ctx.fill();
+      ctx.globalAlpha = 1;
+
+      // Cereza Logo Text oben
+      ctx.fillStyle = "rgba(255,255,255,0.3)";
+      ctx.font = "600 28px Inter, sans-serif";
+      ctx.textAlign = "center";
+      ctx.letterSpacing = "8px";
+      ctx.fillText("CEREZA LOYALTY CLUB", W/2, 120);
+
+      // Avatar Kreis
+      const avatarY = 380, avatarR = 120;
+      ctx.save();
+      ctx.beginPath();
+      ctx.arc(W/2, avatarY, avatarR + 6, 0, Math.PI*2);
+      ctx.fillStyle = "rgba(255,255,255,0.2)";
+      ctx.fill();
+      ctx.beginPath();
+      ctx.arc(W/2, avatarY, avatarR, 0, Math.PI*2);
+      ctx.clip();
+      if (user.avatar_url) {
+        try {
+          const img = new Image();
+          img.crossOrigin = "anonymous";
+          await new Promise((res, rej) => { img.onload = res; img.onerror = rej; img.src = user.avatar_url; });
+          ctx.drawImage(img, W/2 - avatarR, avatarY - avatarR, avatarR*2, avatarR*2);
+        } catch(e) {
+          ctx.fillStyle = "#e24a28";
+          ctx.fillRect(W/2 - avatarR, avatarY - avatarR, avatarR*2, avatarR*2);
+          ctx.fillStyle = "#fff";
+          ctx.font = "bold 80px Inter, sans-serif";
+          ctx.textAlign = "center";
+          ctx.fillText((user.name||"U")[0].toUpperCase(), W/2, avatarY + 28);
+        }
+      } else {
+        ctx.fillStyle = "#e24a28";
+        ctx.fillRect(W/2 - avatarR, avatarY - avatarR, avatarR*2, avatarR*2);
+        ctx.fillStyle = "#fff";
+        ctx.font = "bold 80px Inter, sans-serif";
+        ctx.textAlign = "center";
+        ctx.fillText((user.name||"U")[0].toUpperCase(), W/2, avatarY + 28);
+      }
+      ctx.restore();
+
+      // Username
+      ctx.fillStyle = "#ffffff";
+      ctx.font = "900 64px Inter, sans-serif";
+      ctx.textAlign = "center";
+      ctx.fillText(`@${user.name||"user"}`, W/2, 580);
+
+      // Level Badge
+      ctx.fillStyle = "rgba(255,255,255,0.12)";
+      const badgeW = 320, badgeH = 56, badgeX = W/2-badgeW/2, badgeY = 610;
+      ctx.beginPath();
+      ctx.roundRect(badgeX, badgeY, badgeW, badgeH, 28);
+      ctx.fill();
+      ctx.fillStyle = "#fff";
+      ctx.font = "700 26px Inter, sans-serif";
+      ctx.fillText(`${era.name} · Level ${user.level||1}`, W/2, badgeY + 37);
+
+      // Stats Cards
+      const stats = [
+        { label: "XP", value: (user.pts||0).toLocaleString() },
+        { label: "Streak", value: `${user.streak||0} Tage` },
+        { label: "Besuche", value: `${user.total_visits||0}` },
+        { label: "Freunde", value: `${myFriendsCount()}` },
+      ];
+      const cardW = 220, cardH = 160, gap = 30, startX = (W - cardW*2 - gap) / 2, startY = 740;
+      stats.forEach((s, i) => {
+        const x = startX + (i % 2) * (cardW + gap);
+        const y = startY + Math.floor(i / 2) * (cardH + gap);
+        ctx.fillStyle = "rgba(255,255,255,0.08)";
+        ctx.beginPath();
+        ctx.roundRect(x, y, cardW, cardH, 24);
+        ctx.fill();
+        ctx.fillStyle = "#fff";
+        ctx.font = "900 48px Inter, sans-serif";
+        ctx.textAlign = "center";
+        ctx.fillText(s.value, x + cardW/2, y + 80);
+        ctx.fillStyle = "rgba(255,255,255,0.5)";
+        ctx.font = "600 22px Inter, sans-serif";
+        ctx.fillText(s.label, x + cardW/2, y + 120);
+      });
+
+      // XP Progress Bar
+      const barY = 1280, barW = 700, barH = 20;
+      const nextEra = ERAS.find(e => e.pts > (user.pts||0)) || ERAS[ERAS.length-1];
+      const prevEra = [...ERAS].reverse().find(e => e.pts <= (user.pts||0)) || ERAS[0];
+      const pct = nextEra.pts > prevEra.pts ? Math.min(1, ((user.pts||0) - prevEra.pts) / (nextEra.pts - prevEra.pts)) : 1;
+      ctx.fillStyle = "rgba(255,255,255,0.1)";
+      ctx.beginPath(); ctx.roundRect((W-barW)/2, barY, barW, barH, 10); ctx.fill();
+      ctx.fillStyle = "#e24a28";
+      ctx.beginPath(); ctx.roundRect((W-barW)/2, barY, barW * pct, barH, 10); ctx.fill();
+      ctx.fillStyle = "rgba(255,255,255,0.4)";
+      ctx.font = "600 20px Inter, sans-serif";
+      ctx.textAlign = "center";
+      ctx.fillText(`${user.pts||0} / ${nextEra.pts} XP`, W/2, barY + 52);
+
+      // Footer
+      ctx.fillStyle = "rgba(255,255,255,0.2)";
+      ctx.font = "600 24px Inter, sans-serif";
+      ctx.textAlign = "center";
+      ctx.fillText("cereza-loyalty.vercel.app", W/2, H - 100);
+      ctx.fillStyle = "rgba(255,255,255,0.12)";
+      ctx.font = "500 20px Inter, sans-serif";
+      ctx.fillText("Werde Teil der Cereza Fam", W/2, H - 60);
+
+      // Als Blob teilen
+      const blob = await new Promise(r => canvas.toBlob(r, "image/png"));
+      const file = new File([blob], "cereza-story.png", { type:"image/png" });
+
+      if (navigator.canShare?.({ files:[file] })) {
+        await navigator.share({ files:[file], title:"Mein Cereza Profil" });
+        // 50 XP Belohnung
+        if (user?.id) {
+          await db.addPts(user.id, 50);
+          const fresh = await db.getProfile(user.id);
+          if (fresh) setUser(u => ({ ...u, pts: fresh.pts || 0 }));
+        }
+      } else {
+        // Fallback: Bild in neuem Tab öffnen
+        const url = URL.createObjectURL(blob);
+        window.open(url, "_blank");
+      }
+    } catch(e) {
+      console.error("Story share error:", e);
+    }
+    setStoryLoading(false);
+  };
 
   const loadFriends = useCallback(async () => {
     if (!user?.id) return;
@@ -1319,9 +1475,11 @@ const ProfileTab = ({ user, setUser, onLogout, theme }) => {
           <span style={{ fontSize:"12px",fontWeight:"600",color:C.orange }}>Mein QR-Code</span>
         </div>
 
-        <div style={{ display:"flex",gap:"8px",justifyContent:"center",marginTop:"12px" }}>
-          <button onClick={shareApp} style={{ padding:"9px 18px",background:C.card,border:`1px solid ${C.border}`,borderRadius:"20px",fontSize:"13px",fontWeight:"600",color:C.text,display:"flex",alignItems:"center",gap:"6px" }}>{I.share} Teilen</button>
-          <button onClick={shareApp} style={{ padding:"9px 18px",background:C.orange,borderRadius:"20px",fontSize:"13px",fontWeight:"600",color:C.white }}>+ Einladen</button>
+        <div style={{ display:"flex",gap:"8px",justifyContent:"center",marginTop:"12px",flexWrap:"wrap" }}>
+          <button onClick={shareStory} disabled={storyLoading} style={{ padding:"9px 18px",background:`linear-gradient(135deg, ${C.orange}, #8B0000)`,borderRadius:"20px",fontSize:"13px",fontWeight:"700",color:C.white,display:"flex",alignItems:"center",gap:"6px",opacity:storyLoading?0.6:1 }}>
+            {storyLoading ? "..." : "📸 Story posten +50 XP"}
+          </button>
+          <button onClick={shareApp} style={{ padding:"9px 18px",background:C.card,border:`1px solid ${C.border}`,borderRadius:"20px",fontSize:"13px",fontWeight:"600",color:C.text,display:"flex",alignItems:"center",gap:"6px" }}>{I.share} Einladen</button>
         </div>
       </div>
 
@@ -2371,7 +2529,7 @@ export default function App() {
         backdropFilter:"blur(24px)",
         WebkitBackdropFilter:"blur(24px)",
         borderTop:`0.5px solid ${t.navBorder}`,
-        paddingBottom:`max(env(safe-area-inset-bottom, 0px), 0px)`,
+        paddingBottom:`env(safe-area-inset-bottom, 0px)`,
       }}>
         <div style={{ display:"grid", gridTemplateColumns:`repeat(${NAV.length},1fr)`, padding:"8px 0 6px", maxWidth:"430px", margin:"0 auto" }}>
           {NAV.map(n => {

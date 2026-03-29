@@ -158,6 +158,7 @@ function CinderVoteSection({ user, C, font }) {
   const [dragX,     setDragX]     = useState(0);
   const [dragStart, setDragStart] = useState(null);
   const [loading,   setLoading]   = useState(true);
+  const [voting,    setVoting]    = useState(false);
 
   useEffect(() => {
     setDir(null); setDragX(0); setCur(0);
@@ -179,16 +180,16 @@ function CinderVoteSection({ user, C, font }) {
   const done = cur >= unvoted.length;
 
   const doVote = async (liked) => {
-    if (!dish || dir) return;
+    if (!dish || dir || voting) return;
+    setVoting(true);
     setDir(liked ? "right" : "left");
     if (user?.id) {
-      await db.voteDish(user.id, dish.id, liked).catch(() => {});
-      if (liked) {
-        const fresh = await db.getProfile(user.id);
-        if (fresh) await db.updateProfile(user.id, { pts:(fresh.pts||0)+10 });
-      }
+      try {
+        await db.voteDish(user.id, dish.id, liked);
+        if (liked) await db.addPts(user.id, 10);
+      } catch (e) { console.error('voteDish error:', e.message); }
     }
-    setTimeout(() => { setDir(null); setDragX(0); setCur(i => i+1); }, 320);
+    setTimeout(() => { setDir(null); setDragX(0); setCur(i => i+1); setVoting(false); }, 320);
   };
 
   const cardTransform = dir==="left" ? "translateX(-110%) rotate(-18deg)"

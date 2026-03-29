@@ -22,16 +22,36 @@ try {
   console.warn('Firebase init failed:', e);
 }
 
+// Service Worker registrieren (nötig für Background Push)
+const registerSW = async () => {
+  if ('serviceWorker' in navigator) {
+    try {
+      const reg = await navigator.serviceWorker.register('/firebase-messaging-sw.js');
+      console.log('SW registered:', reg.scope);
+      return reg;
+    } catch (e) {
+      console.error('SW registration failed:', e);
+    }
+  }
+  return null;
+};
+
 // Request permission and get FCM token
 export const requestPushPermission = async (userId) => {
   try {
     if (!messaging) return null;
+    if (!('Notification' in window)) return null;
     const permission = await Notification.requestPermission();
     if (permission !== 'granted') return null;
 
-    const token = await getToken(messaging, { vapidKey: VAPID_KEY });
+    // SW registrieren bevor Token angefordert wird
+    const swReg = await registerSW();
+
+    const tokenOptions = { vapidKey: VAPID_KEY };
+    if (swReg) tokenOptions.serviceWorkerRegistration = swReg;
+
+    const token = await getToken(messaging, tokenOptions);
     if (token && userId) {
-      // Save token to Supabase profile
       await supabase.from('profiles').update({ fcm_token: token }).eq('id', userId);
     }
     return token;
@@ -49,34 +69,45 @@ export const onForegroundMessage = (callback) => {
   });
 };
 
-// Send notification via Supabase Edge Function or direct FCM
-// For now, we store notification requests in a table and process them
+// Send notification via Supabase Edge Function (server-side FCM)
 export const sendPushToUser = async (targetUserId, title, body) => {
-  // Get target user's FCM token
   const { data: profile } = await supabase.from('profiles').select('fcm_token').eq('id', targetUserId).single();
   if (!profile?.fcm_token) return false;
-
-  // Store in notifications table for processing
-  await supabase.from('push_queue').insert({
-    target_token: profile.fcm_token,
-    title,
-    body,
-    sent: false
-  });
-  return true;
+  try {
+    await supabase.functions.invoke('send-push', {
+      body: { tokens: [profile.fcm_token], title, body }
+    });
+    return true;
+  } catch (e) {
+    console.error('sendPushToUser error:', e);
+    return false;
+  }
 };
 
-// Send to all users (admin broadcast)
+// Send to all users (admin broadcast) via Edge Function
 export const sendPushToAll = async (title, body) => {
-  const { data: profiles } = await supabase.from('profiles').select('fcm_token').not('fcm_token', 'is', null).neq('fcm_token', '');
+  const { data: profiles } = await supabase.from('profiles')
+    .select('fcm_token')
+    .not('fcm_token', 'is', null)
+    .neq('fcm_token', '');
   if (!profiles?.length) return 0;
 
-  const inserts = profiles.map(p => ({
-    target_token: p.fcm_token,
-    title,
-    body,
-    sent: false
-  }));
-  await supabase.from('push_queue').insert(inserts);
-  return profiles.length;
+  const tokens = profiles.map(p => p.fcm_token).filter(Boolean);
+  if (!tokens.length) return 0;
+
+  try {
+    // In Batches von 500 senden (FCM Limit)
+    for (let i = 0; i < tokens.length; i += 500) {
+      const batch = tokens.slice(i, i + 500);
+      await supabase.functions.invoke('send-push', {
+        body: { tokens: batch, title, body }
+      });
+    }
+    // Notification-Log speichern
+    await supabase.from('admin_notifications').insert({ title, body, sent_to: tokens.length });
+    return tokens.length;
+  } catch (e) {
+    console.error('sendPushToAll error:', e);
+    return 0;
+  }
 };

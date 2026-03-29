@@ -1171,6 +1171,7 @@ const ProfileTab = ({ user, setUser, onLogout, theme }) => {
   const [vibes,        setVibes]       = useState([]);
   const [pendingCount, setPendingCount]= useState(0);
   const [profilePopup, setProfilePopup]= useState(null);
+  const [showQR,       setShowQR]      = useState(false);
 
   const loadFriends = useCallback(async () => {
     if (!user?.id) return;
@@ -1249,6 +1250,26 @@ const ProfileTab = ({ user, setUser, onLogout, theme }) => {
       {/* User Profile PopUp */}
       {profilePopup && <UserProfileCard userId={profilePopup} currentUser={user} C={C} font={font} onClose={() => setProfilePopup(null)}/>}
 
+      {/* QR-Code Popup */}
+      {showQR && (
+        <div onClick={() => setShowQR(false)} style={{ position:"fixed",inset:0,zIndex:9999,background:"rgba(0,0,0,0.85)",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",animation:"fadeIn 0.3s" }}>
+          <div onClick={e => e.stopPropagation()} style={{ background:C.card,borderRadius:"28px",padding:"32px 28px",textAlign:"center",maxWidth:"320px",width:"85%",boxShadow:"0 20px 60px rgba(0,0,0,0.3)" }}>
+            <div style={{ fontSize:"11px",letterSpacing:"3px",color:C.textLight,fontWeight:"600",textTransform:"uppercase",marginBottom:"6px" }}>Mein QR-Code</div>
+            <div style={{ fontSize:"20px",fontFamily:font.display,fontWeight:"700",color:C.text,marginBottom:"16px" }}>@{user.name||"user"}</div>
+            <div style={{ background:"#fff",borderRadius:"16px",padding:"16px",display:"inline-block",border:`1px solid ${C.border}` }}>
+              <img
+                src={`https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(`cereza:${user?.id}`)}&bgcolor=ffffff&color=111111&margin=5`}
+                style={{ width:"200px",height:"200px",display:"block",borderRadius:"8px" }}
+                alt="Mein QR-Code"
+              />
+            </div>
+            <div style={{ fontSize:"13px",fontWeight:"600",color:C.text,marginTop:"16px" }}>Zeige diesen Code dem Personal</div>
+            <div style={{ fontSize:"11px",color:C.textLight,marginTop:"4px" }}>Für Mission-Stempel scannen lassen</div>
+            <button onClick={() => setShowQR(false)} style={{ marginTop:"20px",padding:"13px 40px",background:C.orange,borderRadius:"50px",color:C.white,fontSize:"15px",fontWeight:"700" }}>Schließen</button>
+          </div>
+        </div>
+      )}
+
       {/* Redemption Overlay */}
       {rd && (
         <div style={{ position:"fixed",inset:0,zIndex:999,background:"rgba(0,0,0,0.92)",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",animation:"scaleIn 0.3s" }}>
@@ -1293,11 +1314,7 @@ const ProfileTab = ({ user, setUser, onLogout, theme }) => {
         <div style={{ fontSize:"12px",color:C.textLight,marginTop:"2px" }}>{era.name} · Level {user.level||1}</div>
 
         {/* QR-Code Button */}
-        <div onClick={() => {
-          const code = `cereza:${user.id}`;
-          if (navigator.share) navigator.share({ title:"Mein Cereza QR", text:code });
-          else navigator.clipboard?.writeText(code).then(() => alert("Code kopiert: "+code));
-        }} style={{ display:"inline-flex",alignItems:"center",gap:"6px",marginTop:"8px",padding:"6px 14px",background:`${C.orange}18`,border:`1px solid ${C.orange}33`,borderRadius:"20px",cursor:"pointer" }}>
+        <div onClick={() => setShowQR(true)} style={{ display:"inline-flex",alignItems:"center",gap:"6px",marginTop:"8px",padding:"6px 14px",background:`${C.orange}18`,border:`1px solid ${C.orange}33`,borderRadius:"20px",cursor:"pointer" }}>
           <span style={{ fontSize:"14px" }}>▣</span>
           <span style={{ fontSize:"12px",fontWeight:"600",color:C.orange }}>Mein QR-Code</span>
         </div>
@@ -2354,9 +2371,9 @@ export default function App() {
         backdropFilter:"blur(24px)",
         WebkitBackdropFilter:"blur(24px)",
         borderTop:`0.5px solid ${t.navBorder}`,
-        paddingBottom:`env(safe-area-inset-bottom, 0px)`,
+        paddingBottom:`max(env(safe-area-inset-bottom, 0px), 0px)`,
       }}>
-        <div style={{ display:"grid", gridTemplateColumns:`repeat(${NAV.length},1fr)`, padding:"8px 0 4px", maxWidth:"430px", margin:"0 auto" }}>
+        <div style={{ display:"grid", gridTemplateColumns:`repeat(${NAV.length},1fr)`, padding:"8px 0 6px", maxWidth:"430px", margin:"0 auto" }}>
           {NAV.map(n => {
             const a = tab === n.id;
             return (

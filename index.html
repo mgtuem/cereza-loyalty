@@ -27,6 +27,13 @@
         overflow: hidden;
         position: fixed;
         inset: 0;
+        /* iPhone: Hintergrund auch unter der Nav Bar */
+        background: #C1272D;
+      }
+      /* iOS PWA: kein Abstand unter der Nav */
+      @supports (padding-bottom: env(safe-area-inset-bottom)) {
+        html { height: -webkit-fill-available; }
+        body { min-height: -webkit-fill-available; }
       }
     </style>
   </head>

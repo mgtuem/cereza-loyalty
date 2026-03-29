@@ -1842,6 +1842,7 @@ const AdminPanel = ({ onClose }) => {
 
           <AdminToggle label="Wöchentlicher Reset (Fortschritt startet jede Woche neu)" value={editMission.reset_weekly||false} onChange={v=>setEditMission(p=>({...p,reset_weekly:v}))}/>
           {editMission.id && <AdminToggle label="Aktiv" value={editMission.active!==false} onChange={v=>setEditMission(p=>({...p,active:v}))}/>}
+          {editMission.id && <button onClick={async()=>{if(!confirm("Mission wirklich löschen? Alle Stempel gehen verloren."))return;await supabase.from('mission_stamps').delete().eq('mission_id',editMission.id);await supabase.from('mission_starts').delete().eq('mission_id',editMission.id);await supabase.from('missions').delete().eq('id',editMission.id);ok2("Gelöscht");setEditMission(null);loadAll();}} style={{width:"100%",padding:"12px",background:"transparent",border:"1px solid #e24a28",borderRadius:"12px",color:"#e24a28",fontSize:"14px",marginTop:"10px"}}>Mission löschen</button>}
 
           {/* Vorschau */}
           <div style={{marginTop:"14px",padding:"12px",background:"#f9f9f9",borderRadius:"10px",fontSize:"12px",color:"#666",lineHeight:1.6}}>
@@ -1865,6 +1866,7 @@ const AdminPanel = ({ onClose }) => {
           <AdminInput label="Beschreibung" value={editDish.description} onChange={v=>setEditDish(p=>({...p,description:v}))}/>
           {editDish.id && <AdminToggle label="Aktiv" value={editDish.active!==false} onChange={v=>setEditDish(p=>({...p,active:v}))}/>}
           {editDish.id && <button onClick={async()=>{if(!confirm("Votes zurücksetzen?"))return;await supabase.from('dish_votes').delete().eq('dish_id',editDish.id);ok2("Votes zurückgesetzt");setEditDish(null);loadAll();}} style={{width:"100%",padding:"11px",background:"transparent",border:"1px solid #e8e8e8",borderRadius:"12px",color:"#999",fontSize:"14px",marginTop:"8px"}}>Votes zurücksetzen</button>}
+          {editDish.id && <button onClick={async()=>{if(!confirm("Gericht und alle Votes wirklich löschen?"))return;await supabase.from('dish_votes').delete().eq('dish_id',editDish.id);await supabase.from('dishes').delete().eq('id',editDish.id);ok2("Gelöscht");setEditDish(null);loadAll();}} style={{width:"100%",padding:"12px",background:"transparent",border:"1px solid #e24a28",borderRadius:"12px",color:"#e24a28",fontSize:"14px",marginTop:"6px"}}>Gericht löschen</button>}
         </AdminModal>
       )}
       {editShop && (
@@ -1879,6 +1881,7 @@ const AdminPanel = ({ onClose }) => {
           <AdminInput label="XP Kosten" value={editShop.cost} onChange={v=>setEditShop(p=>({...p,cost:v}))} type="number"/>
           <AdminInput label="Min. Level" value={editShop.min_level} onChange={v=>setEditShop(p=>({...p,min_level:v}))} type="number"/>
           {editShop.id && <AdminToggle label="Aktiv" value={editShop.active!==false} onChange={v=>setEditShop(p=>({...p,active:v}))}/>}
+          {editShop.id && <button onClick={async()=>{if(!confirm("Item wirklich löschen?"))return;await supabase.from('shop_items').delete().eq('id',editShop.id);ok2("Gelöscht");setEditShop(null);db.getShopItems().then(setShopItems);}} style={{width:"100%",padding:"12px",background:"transparent",border:"1px solid #e24a28",borderRadius:"12px",color:"#e24a28",fontSize:"14px",marginTop:"10px"}}>Item löschen</button>}
         </AdminModal>
       )}
       {editPrize && (
@@ -1891,6 +1894,7 @@ const AdminPanel = ({ onClose }) => {
           <AdminInput label="Wert (XP, 0=nichts, -1=2x)" value={editPrize.value} onChange={v=>setEditPrize(p=>({...p,value:v}))} type="number"/>
           <AdminInput label="Farbe (Hex)" value={editPrize.color} onChange={v=>setEditPrize(p=>({...p,color:v}))}/>
           {editPrize.id && <AdminToggle label="Aktiv" value={editPrize.active!==false} onChange={v=>setEditPrize(p=>({...p,active:v}))}/>}
+          {editPrize.id && <button onClick={async()=>{if(!confirm("Preis wirklich löschen?"))return;await supabase.from('wheel_prizes').delete().eq('id',editPrize.id);ok2("Gelöscht");setEditPrize(null);db.getWheelPrizes().then(setPrizes);}} style={{width:"100%",padding:"12px",background:"transparent",border:"1px solid #e24a28",borderRadius:"12px",color:"#e24a28",fontSize:"14px",marginTop:"10px"}}>Preis löschen</button>}
         </AdminModal>
       )}
       {editGlow && (
@@ -1909,6 +1913,7 @@ const AdminPanel = ({ onClose }) => {
           <AdminInput label="Ende (HH:MM)" value={editGlow.end_time} onChange={v=>setEditGlow(p=>({...p,end_time:v}))}/>
           <AdminInput label="Multiplikator" value={editGlow.multiplier} onChange={v=>setEditGlow(p=>({...p,multiplier:v}))} type="number"/>
           {editGlow.id && <AdminToggle label="Aktiv" value={editGlow.active!==false} onChange={v=>setEditGlow(p=>({...p,active:v}))}/>}
+          {editGlow.id && <button onClick={async()=>{if(!confirm("Glow Hour wirklich löschen?"))return;await supabase.from('glow_hours').delete().eq('id',editGlow.id);ok2("Gelöscht");setEditGlow(null);supabase.from('glow_hours').select('*').order('id').then(r=>setGlowHours(r.data||[]));}} style={{width:"100%",padding:"12px",background:"transparent",border:"1px solid #e24a28",borderRadius:"12px",color:"#e24a28",fontSize:"14px",marginTop:"10px"}}>Glow Hour löschen</button>}
         </AdminModal>
       )}
 

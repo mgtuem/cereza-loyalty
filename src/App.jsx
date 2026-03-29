@@ -50,7 +50,7 @@ const useTheme = () => {
   const setMode = m => { setModeRaw(m); localStorage.setItem("cz-mode", m); };
   const setGlow = g => { setGlowRaw(g); localStorage.setItem("cz-glow", g); };
   useEffect(() => {
-    const check = async () => { try { setIsGlow(await db.isGlowHourNow()); } catch {} };
+    const check = async () => { try { setIsGlow(await db.isGlowHourNow()); } catch(e) { console.error('glow check error:', e?.message); } };
     check(); const iv = setInterval(check, 60000); return () => clearInterval(iv);
   }, []);
   const key = isGlow ? glow : mode;
@@ -241,7 +241,7 @@ const AuthScreen = ({ onLogin }) => {
           }
           // Phone manuell updaten falls Trigger es nicht gesetzt hat
           if (p) {
-            if (!p.phone && phone) await db.updateProfile(data.user.id, { phone }).catch(() => {});
+            if (!p.phone && phone) await db.updateProfile(data.user.id, { phone }).catch(e => console.error('phone update error:', e.message));
             p = await db.getProfile(data.user.id) || p;
           }
           onLogin(p || { id:data.user.id, name, email, phone, pts:0, level:1, streak:0, total_visits:0, treat_count:0, treat_goal:8, wheel_spun_today:false, is_abo_member:false, is_admin:false });
@@ -538,7 +538,7 @@ const HomeTab = ({ user, setUser, setTab }) => {
     if (user?.id) {
       db.getStartedMissions(user.id).then(setStarted);
       const today = new Date().toISOString().split('T')[0];
-      db.getVisitIntention(user.id, today).then(d => { if(d) setVisitLocal(d.status); }).catch(() => {});
+      db.getVisitIntention(user.id, today).then(d => { if(d) setVisitLocal(d.status); }).catch(e => console.error('async error:', e?.message));
     }
     const ch = supabase.channel('home-rt')
       .on('postgres_changes',{event:'*',schema:'public',table:'missions'},     () => db.getMissions().then(d => { if(d.length) setMissions(d); }))
@@ -818,9 +818,9 @@ const WheelTab = ({ user, setUser }) => {
 // Token wird im Admin Panel → QR-Gen generiert
 // cereza:USER_ID QR-Codes (User-QR) werden ABGELEHNT
 
-const QR_SECRET = "czlyl2024";
-
-const validateBelegQR = (text) => {
+// QR-Validierung läuft serverseitig über db.validateBelegQR()
+// Client prüft nur Format, Secret bleibt auf dem Server
+const parseQRFormat = (text) => {
   text = (text||"").trim();
   if (!text.startsWith("cereza:")) return null;
   const parts = text.split(":");
@@ -828,10 +828,8 @@ const validateBelegQR = (text) => {
   if (parts.length === 3) {
     const pts = parseInt(parts[1]);
     const token = parts[2];
-    if (isNaN(pts) || pts <= 0 || pts > 999999) return null;
-    const expected = btoa(`${pts}:${QR_SECRET}`).replace(/=/g,"").substring(0,8);
-    if (token === expected) return pts;
-    return null;
+    if (isNaN(pts) || pts <= 0 || pts > 999999 || !token) return null;
+    return { pts, token };
   }
   // UUID-Format = User-QR → ablehnen
   const uuidRx = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -850,22 +848,26 @@ const ScanTab = ({ user, setUser }) => {
 
   const award = async p => {
     setPts(p); Sound.scan();
+    if (!user?.id) { setDone(true); return; }
     const today     = new Date().toISOString().split('T')[0];
     const yesterday = new Date(Date.now()-86400000).toISOString().split('T')[0];
-    const fresh = user?.id ? await db.getProfile(user.id) : null;
-    const np  = (fresh?.pts||user.pts||0) + p;
-    const nv  = (fresh?.total_visits||user.total_visits||0) + 1;
-    const lv  = fresh?.last_visit || null;
-    const ns  = lv===yesterday ? (fresh?.streak||0)+1 : lv===today ? (fresh?.streak||0) : 1;
-    const tg  = fresh?.treat_goal || 8;
-    const tc  = (fresh?.treat_count||0) + 1;
-    const nt  = tc >= tg ? 0 : tc;
-    const won = tc >= tg;
-    setStreak(ns); setTreatDone(won);
-    setUser(u => ({ ...u, pts:np, total_visits:nv, treat_count:nt, streak:ns }));
-    if (user?.id) {
-      await db.updateProfile(user.id, { pts:np, total_visits:nv, treat_count:nt, streak:ns, last_visit:today });
-      await supabase.from("scan_log").insert({ user_id:user.id, pts_earned:p, was_glow_hour:false });
+    // Scan loggen und Punkte serverseitig vergeben
+    await supabase.from("scan_log").insert({ user_id:user.id, pts_earned:p, was_glow_hour:false });
+    await db.addPts(user.id, p);
+    // Frische Daten holen für Visit-Tracking
+    const fresh = await db.getProfile(user.id);
+    if (fresh) {
+      const lv = fresh.last_visit || null;
+      const ns = lv===yesterday ? (fresh.streak||0)+1 : lv===today ? (fresh.streak||0) : 1;
+      const tg = fresh.treat_goal || 8;
+      const tc = (fresh.treat_count||0) + 1;
+      const nt = tc >= tg ? 0 : tc;
+      const won = tc >= tg;
+      setStreak(ns); setTreatDone(won);
+      await db.updateProfile(user.id, { total_visits:(fresh.total_visits||0)+1, treat_count:nt, streak:ns, last_visit:today });
+      // Nochmal frisch holen für korrekte UI
+      const latest = await db.getProfile(user.id);
+      if (latest) setUser(u => ({ ...u, ...latest }));
     }
     setDone(true);
   };
@@ -880,9 +882,15 @@ const ScanTab = ({ user, setUser }) => {
         { fps:10, qrbox:{ width:220, height:220 } },
         async (text) => {
           await s.stop(); setScanning(false);
-          const p = validateBelegQR(text);
-          if (p !== null) {
-            await award(p);
+          const parsed = parseQRFormat(text);
+          if (parsed !== null) {
+            // Server-seitige Validierung des Tokens
+            const valid = await db.validateBelegQR(parsed.pts, parsed.token);
+            if (valid) {
+              await award(parsed.pts);
+            } else {
+              setErr("Ungültiger QR-Code. Bitte einen gültigen Cereza-Beleg scannen.");
+            }
           } else if (text.includes("cereza:")) {
             setErr("Das ist dein persönlicher QR-Code. Scanne den QR-Code auf deinem Kassenbeleg.");
           } else {
@@ -992,7 +1000,7 @@ const VoteTab = ({ user, setUser }) => {
         const voted = await db.getUserVotes(user.id);
         setUnvoted(list.filter(d => !voted.has(d.id)));
         const today = new Date().toISOString().split('T')[0];
-        db.getVisitIntention(user.id, today).then(d => { if(d) setVisitLocal(d.status); }).catch(() => {});
+        db.getVisitIntention(user.id, today).then(d => { if(d) setVisitLocal(d.status); }).catch(e => console.error('async error:', e?.message));
       } else {
         setUnvoted(list);
       }
@@ -1021,11 +1029,14 @@ const VoteTab = ({ user, setUser }) => {
     Sound.vote();
     setDir(liked ? "right" : "left");
     if (user?.id) {
-      await db.voteDish(user.id, dish.id, liked).catch(() => {});
-      if (liked) {
-        const fresh = await db.getProfile(user.id);
-        if (fresh) { await db.updateProfile(user.id, { pts:(fresh.pts||0)+10 }); setUser(u => ({ ...u, pts:(u.pts||0)+10 })); }
-      }
+      try {
+        await db.voteDish(user.id, dish.id, liked);
+        if (liked) {
+          await db.addPts(user.id, 10);
+          const fresh = await db.getProfile(user.id);
+          if (fresh) setUser(u => ({ ...u, pts: fresh.pts || 0 }));
+        }
+      } catch (e) { console.error('Vote error:', e.message); }
     }
     setTimeout(() => { setDir(null); setDragX(0); setCur(i => i+1); }, 320);
   };
@@ -1214,13 +1225,12 @@ const ProfileTab = ({ user, setUser, onLogout, theme }) => {
 
   const sendGiftPts = async () => {
     if (!giftTarget || giftAmt < 10 || giftAmt > 500) return;
-    const fresh = user?.id ? await db.getProfile(user.id) : null;
-    const cur = fresh?.pts || (user.pts||0);
-    if (cur < giftAmt) return;
+    if (giftTarget.id === user?.id) { alert("Du kannst dir nicht selbst schenken."); return; }
     const res = await db.sendGift(user.id, giftTarget.id, "pts", giftAmt, null, giftMsg);
-    if (res?.error) { alert(res.error); return; }
-    await db.updateProfile(user.id, { pts:cur-giftAmt });
-    setUser(u => ({ ...u, pts:cur-giftAmt }));
+    if (res?.error) { alert(res.error?.message || res.error); return; }
+    // Frische Daten vom Server holen statt lokal zu rechnen
+    const fresh = await db.getProfile(user.id);
+    if (fresh) setUser(u => ({ ...u, pts: fresh.pts || 0 }));
     Sound.gift(); setGiftTarget(null); setGiftAmt(50); setGiftMsg("");
     db.getMyGifts(user.id).then(setGifts);
   };
@@ -2202,7 +2212,7 @@ export default function App() {
         try {
           let p = null;
           for (let i=0; i<3; i++) {
-            try { p = await Promise.race([db.getProfile(session.user.id), new Promise((_,rej) => setTimeout(() => rej(), 1500))]); } catch(e) {}
+            try { p = await Promise.race([db.getProfile(session.user.id), new Promise((_,rej) => setTimeout(() => rej(new Error('timeout')), 1500))]); } catch(e) { console.error('session profile load:', e?.message); }
             if (p) break;
             if (i<2) await new Promise(r => setTimeout(r, 400));
           }
@@ -2257,7 +2267,7 @@ export default function App() {
   // ── Push notifications ─────────────────────────────────────────
   useEffect(() => {
     if (!user?.id) return;
-    requestPushPermission(user.id).catch(() => {});
+    requestPushPermission(user.id).catch(e => console.error('async error:', e?.message));
     const unsub = onForegroundMessage(payload => {
       const { title, body } = payload.notification || {};
       if (title) { setToast({ title, body }); setTimeout(() => setToast(null), 4000); Sound.tap(); }

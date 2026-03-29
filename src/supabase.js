@@ -30,13 +30,27 @@ export const db = {
     return data
   },
   updateProfile: async (uid, updates) => {
-    const { data } = await supabase.from('profiles').update(updates).eq('id', uid).select().single()
+    const { data, error } = await supabase.from('profiles').update(updates).eq('id', uid).select().single()
+    if (error) console.error('updateProfile error:', error.message)
     return data
   },
   addPts: async (uid, pts) => {
+    // Atomar: RPC wenn vorhanden, sonst fetch+update mit Concurrency-Check
     const profile = await db.getProfile(uid)
     if (!profile) return null
-    return db.updateProfile(uid, { pts: (profile.pts || 0) + pts })
+    const oldPts = profile.pts || 0
+    const { data, error } = await supabase.from('profiles')
+      .update({ pts: oldPts + pts })
+      .eq('id', uid)
+      .eq('pts', oldPts) // Optimistic locking: nur wenn pts sich nicht geändert hat
+      .select().single()
+    if (error) {
+      // Retry einmal bei Concurrency-Konflikt
+      const fresh = await db.getProfile(uid)
+      if (!fresh) return null
+      return db.updateProfile(uid, { pts: (fresh.pts || 0) + pts })
+    }
+    return data
   },
 
   // ─── Leaderboard ──────────────────────────────────────────────
@@ -141,11 +155,22 @@ export const db = {
     return data || []
   },
   redeemItem: async (uid, itemId, cost) => {
-    const { error } = await supabase.from('redemptions').insert({ user_id: uid, item_id: itemId })
-    if (error) return { error }
+    // Erst Punkte prüfen und atomar abziehen (optimistic locking)
     const profile = await db.getProfile(uid)
     if (!profile) return { error: 'Profil nicht gefunden' }
-    await db.updateProfile(uid, { pts: (profile.pts || 0) - cost })
+    if ((profile.pts || 0) < cost) return { error: 'Nicht genügend XP' }
+    const { error: ptsErr } = await supabase.from('profiles')
+      .update({ pts: (profile.pts || 0) - cost })
+      .eq('id', uid)
+      .eq('pts', profile.pts) // Optimistic lock
+    if (ptsErr) return { error: 'Punkte konnten nicht abgezogen werden, bitte erneut versuchen' }
+    // Dann Einlösung erstellen
+    const { error } = await supabase.from('redemptions').insert({ user_id: uid, item_id: itemId })
+    if (error) {
+      // Rollback: Punkte zurückgeben
+      await supabase.from('profiles').update({ pts: profile.pts }).eq('id', uid)
+      return { error: error.message }
+    }
     return { ok: true }
   },
   getPendingRedemptions: async () => {
@@ -174,6 +199,16 @@ export const db = {
   },
 
   // ─── Scan ─────────────────────────────────────────────────────
+  validateBelegQR: async (pts, token) => {
+    try {
+      const { data, error } = await supabase.rpc('validate_beleg_qr', { p_pts: pts, p_token: token })
+      if (error) { console.error('QR validation error:', error.message); return false }
+      return data === true
+    } catch (e) {
+      console.error('QR validation error:', e.message)
+      return false
+    }
+  },
   logScan: async (uid, pts, isGlow) => {
     await supabase.from('scan_log').insert({ user_id: uid, pts_earned: pts, was_glow_hour: isGlow })
     return db.addPts(uid, pts)
@@ -225,9 +260,15 @@ export const db = {
 
   // ─── Avatar Upload ────────────────────────────────────────────
   uploadAvatar: async (uid, file) => {
-    const ext = file.name.split('.').pop()
+    // Validierung: Dateityp und Größe
+    const ALLOWED_TYPES = ['image/jpeg', 'image/png', 'image/webp', 'image/heic']
+    if (!ALLOWED_TYPES.includes(file.type) && !file.name.match(/\.(jpg|jpeg|png|webp|heic)$/i)) {
+      return { error: 'Nur Bilder erlaubt (JPG, PNG, WebP)' }
+    }
+    if (file.size > 5 * 1024 * 1024) return { error: 'Bild zu groß (max 5MB)' }
+    const ext = (file.name.split('.').pop() || 'jpg').toLowerCase()
     const path = `${uid}.${ext}`
-    const { error } = await supabase.storage.from('avatars').upload(path, file, { upsert: true, contentType: file.type })
+    const { error } = await supabase.storage.from('avatars').upload(path, file, { upsert: true, contentType: file.type || 'image/jpeg' })
     if (error) { console.error('Avatar upload error:', error); return { error: error.message } }
     const { data } = supabase.storage.from('avatars').getPublicUrl(path)
     const url = data.publicUrl + '?t=' + Date.now()
@@ -312,14 +353,28 @@ export const db = {
     await supabase.from('friendships').update({ status }).eq('id', id)
   },
   searchUsers: async (query) => {
-    const { data } = await supabase.from('profiles').select('id, name, email, level, pts, avatar_url').ilike('name', `%${query}%`).limit(10)
+    const { data } = await supabase.from('profiles').select('id, name, level, pts, avatar_url').ilike('name', `%${query}%`).limit(10)
     return data || []
   },
 
   // ─── Gifts ────────────────────────────────────────────────────
   sendGift: async (senderId, receiverId, type, amount, itemId, message) => {
+    // Self-Gift verhindern
+    if (senderId === receiverId) return { data: null, error: { message: 'Du kannst dir nicht selbst schenken' } }
+    if (!amount || amount < 10 || amount > 500) return { data: null, error: { message: 'Ungültiger Betrag (10-500)' } }
+    // Punkte des Senders prüfen und atomar abziehen
+    const profile = await db.getProfile(senderId)
+    if (!profile || (profile.pts || 0) < amount) return { data: null, error: { message: 'Nicht genügend XP' } }
+    // Erst Punkte abziehen, dann Gift erstellen
+    const { error: updateErr } = await supabase.from('profiles').update({ pts: (profile.pts || 0) - amount }).eq('id', senderId).eq('pts', profile.pts)
+    if (updateErr) return { data: null, error: { message: 'Punkte konnten nicht abgezogen werden' } }
     const { data, error } = await supabase.from('gifts').insert({ sender_id: senderId, receiver_id: receiverId, type, amount: amount || 0, item_id: itemId || null, message: message || '' })
-    return { data, error }
+    if (error) {
+      // Rollback: Punkte zurückgeben
+      await supabase.from('profiles').update({ pts: (profile.pts || 0) }).eq('id', senderId)
+      return { data: null, error }
+    }
+    return { data, error: null }
   },
   getMyGifts: async (uid) => {
     const { data } = await supabase.from('gifts')
@@ -329,14 +384,19 @@ export const db = {
     return data || []
   },
   claimGift: async (giftId, receiverId) => {
-    const { data: gift } = await supabase.from('gifts').select('*').eq('id', giftId).single()
-    if (!gift || gift.receiver_id !== receiverId || gift.status !== 'pending') return null
-    await supabase.from('gifts').update({ status: 'claimed' }).eq('id', giftId)
-    if (gift.type === 'pts') {
-      const profile = await db.getProfile(receiverId)
-      if (profile) await db.updateProfile(receiverId, { pts: (profile.pts || 0) + gift.amount })
+    // Atomarer Claim: nur wenn Status noch 'pending' ist (verhindert Doppel-Claim)
+    const { data: updated, error: claimErr } = await supabase.from('gifts')
+      .update({ status: 'claimed' })
+      .eq('id', giftId)
+      .eq('receiver_id', receiverId)
+      .eq('status', 'pending')
+      .select()
+      .single()
+    if (claimErr || !updated) return null
+    if (updated.type === 'pts' && updated.amount > 0) {
+      await db.addPts(receiverId, updated.amount)
     }
-    return gift
+    return updated
   },
 
   // ─── Admin ────────────────────────────────────────────────────

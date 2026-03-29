@@ -247,6 +247,26 @@ function CinderVoteSection({ user, C, font }) {
   const [dragStart, setDragStart] = useState(null);
   const [loading,   setLoading]   = useState(true);
   const [voting,    setVoting]    = useState(false);
+  const [showPropose, setShowPropose] = useState(false);
+  const [propName,    setPropName]    = useState("");
+  const [propDesc,    setPropDesc]    = useState("");
+  const [proposing,   setProposing]   = useState(false);
+  const MIN_LEVEL_PROPOSE = 5;
+
+  const canPropose = (user?.level || 1) >= MIN_LEVEL_PROPOSE;
+
+  const submitProposal = async () => {
+    if (!propName.trim() || proposing || !user?.id) return;
+    setProposing(true);
+    const { error } = await supabase.from("dish_proposals").insert({
+      user_id: user.id, name: propName.trim(), description: propDesc.trim()
+    });
+    if (!error) {
+      setPropName(""); setPropDesc(""); setShowPropose(false);
+      alert("Vorschlag eingereicht! Admin prüft ihn.");
+    }
+    setProposing(false);
+  };
 
   useEffect(() => {
     setDir(null); setDragX(0); setCur(0);
@@ -330,7 +350,43 @@ function CinderVoteSection({ user, C, font }) {
         <div style={{ textAlign:"center",padding:"32px 16px" }}>
           <div style={{ fontSize:"40px",marginBottom:"12px" }}>🎉</div>
           <div style={{ fontSize:"18px",fontWeight:"700",color:C.text }}>Alle Gerichte bewertet!</div>
-          <div style={{ fontSize:"13px",color:C.textLight,marginTop:"6px" }}>Schau dir die Ergebnisse an →</div>
+          <div style={{ fontSize:"13px",color:C.textLight,marginTop:"6px" }}>Schau dir die Ergebnisse an</div>
+        </div>
+      )}
+
+      {/* Gericht vorschlagen — ab Level 5 */}
+      {canPropose && (
+        <div style={{ marginTop:"16px" }}>
+          {!showPropose ? (
+            <button onClick={() => setShowPropose(true)}
+              style={{ width:"100%",padding:"13px",background:`${C.orange}12`,border:`1px solid ${C.orange}33`,borderRadius:"14px",color:C.orange,fontSize:"14px",fontWeight:"700" }}>
+              💡 Gericht vorschlagen
+            </button>
+          ) : (
+            <div style={{ background:C.card,borderRadius:"18px",padding:"16px",border:`1px solid ${C.border}` }}>
+              <div style={{ fontSize:"14px",fontWeight:"700",color:C.text,marginBottom:"12px" }}>Gericht vorschlagen</div>
+              <input value={propName} onChange={e => setPropName(e.target.value)} placeholder="Name des Gerichts"
+                style={{ width:"100%",padding:"12px 14px",border:`1px solid ${C.border}`,borderRadius:"12px",fontSize:"15px",outline:"none",boxSizing:"border-box",marginBottom:"8px",background:C.card,color:C.text }}/>
+              <input value={propDesc} onChange={e => setPropDesc(e.target.value)} placeholder="Beschreibung (optional)"
+                style={{ width:"100%",padding:"12px 14px",border:`1px solid ${C.border}`,borderRadius:"12px",fontSize:"15px",outline:"none",boxSizing:"border-box",marginBottom:"12px",background:C.card,color:C.text }}/>
+              <div style={{ display:"flex",gap:"8px" }}>
+                <button onClick={submitProposal} disabled={proposing||!propName.trim()}
+                  style={{ flex:1,padding:"12px",background:propName.trim()?C.orange:C.greyBg,borderRadius:"12px",color:propName.trim()?C.white:C.textLight,fontSize:"14px",fontWeight:"700" }}>
+                  {proposing ? "..." : "Einreichen"}
+                </button>
+                <button onClick={() => setShowPropose(false)}
+                  style={{ padding:"12px 16px",background:C.greyBg,borderRadius:"12px",color:C.textLight,fontSize:"14px" }}>
+                  ✕
+                </button>
+              </div>
+              <div style={{ fontSize:"11px",color:C.textLight,marginTop:"8px" }}>Admin prüft deinen Vorschlag</div>
+            </div>
+          )}
+        </div>
+      )}
+      {!canPropose && (
+        <div style={{ marginTop:"12px",textAlign:"center",fontSize:"12px",color:C.textLight }}>
+          Ab Level {MIN_LEVEL_PROPOSE} kannst du Gerichte vorschlagen
         </div>
       )}
     </div>

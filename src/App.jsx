@@ -525,6 +525,8 @@ const HomeTab = ({ user, setUser, setTab }) => {
   const [visit,    setVisitLocal]    = useState(null);
   const [started,  setStarted]       = useState(new Set());
   const [vibe,     setVibe]          = useState(null);
+  const [glowInfo, setGlowInfo]     = useState(null); // { active, label, countdown }
+  const [glowTick, setGlowTick]     = useState(0);
 
   const computeVibe = (yes, no) => {
     const total = yes + no;
@@ -572,6 +574,55 @@ const HomeTab = ({ user, setUser, setTab }) => {
     const iv = setInterval(() => setFi(i => (i+1) % facts.length), 5000);
     return () => clearInterval(iv);
   }, [facts]);
+
+  // Glow Hour Countdown
+  useEffect(() => {
+    const DAYS = ['So','Mo','Di','Mi','Do','Fr','Sa'];
+    const calcGlow = async () => {
+      const { data: hours } = await supabase.from('glow_hours').select('*').eq('active', true);
+      if (!hours?.length) { setGlowInfo(null); return; }
+      const now = new Date();
+      const nowDay = now.getDay();
+      const nowMins = now.getHours() * 60 + now.getMinutes();
+
+      // Prüfe ob gerade eine Glow Hour aktiv ist
+      for (const g of hours) {
+        if (g.day_of_week === nowDay) {
+          const [sh, sm] = g.start_time.split(':').map(Number);
+          const [eh, em] = g.end_time.split(':').map(Number);
+          const start = sh * 60 + sm, end = eh * 60 + em;
+          if (nowMins >= start && nowMins < end) {
+            const left = end - nowMins;
+            setGlowInfo({ active: true, label: `${g.multiplier}× XP aktiv`, countdown: `Noch ${left} Min`, multiplier: g.multiplier });
+            return;
+          }
+        }
+      }
+
+      // Nächste Glow Hour finden
+      let bestDiff = Infinity, bestGlow = null;
+      for (const g of hours) {
+        const [sh, sm] = g.start_time.split(':').map(Number);
+        const startMins = sh * 60 + sm;
+        let dayDiff = g.day_of_week - nowDay;
+        if (dayDiff < 0) dayDiff += 7;
+        if (dayDiff === 0 && startMins <= nowMins) dayDiff = 7;
+        const totalMins = dayDiff * 24 * 60 + (startMins - nowMins);
+        if (totalMins < bestDiff) { bestDiff = totalMins; bestGlow = g; }
+      }
+      if (bestGlow) {
+        const h = Math.floor(bestDiff / 60);
+        const m = bestDiff % 60;
+        const label = h >= 24
+          ? `${DAYS[bestGlow.day_of_week]} ${bestGlow.start_time}`
+          : h > 0 ? `in ${h}h ${m}m` : `in ${m} Min`;
+        setGlowInfo({ active: false, label: `Nächste: ${label}`, countdown: `${bestGlow.multiplier}× XP`, multiplier: bestGlow.multiplier });
+      }
+    };
+    calcGlow();
+    const iv = setInterval(() => { calcGlow(); setGlowTick(t => t + 1); }, 30000);
+    return () => clearInterval(iv);
+  }, []);
 
   const setVisit = async status => {
     setVisitLocal(status);
@@ -640,6 +691,33 @@ const HomeTab = ({ user, setUser, setTab }) => {
             {I.qr} Punkte scannen
           </button>
         </Card>
+
+        {/* Glow Hour Countdown */}
+        {glowInfo && (
+          <Card style={{ marginBottom:"12px", background: glowInfo.active ? `linear-gradient(135deg, ${C.orange}, #8B0000)` : C.card, border: glowInfo.active ? "none" : `1px solid ${C.border}` }}>
+            <div style={{ display:"flex",alignItems:"center",justifyContent:"space-between" }}>
+              <div style={{ display:"flex",alignItems:"center",gap:"10px" }}>
+                <div style={{ fontSize:"24px" }}>{glowInfo.active ? "🔥" : "✨"}</div>
+                <div>
+                  <div style={{ fontSize:"13px",fontWeight:"700",color:glowInfo.active?"#fff":C.text }}>
+                    {glowInfo.active ? "GLOW HOUR AKTIV" : "GLOW HOUR"}
+                  </div>
+                  <div style={{ fontSize:"12px",color:glowInfo.active?"rgba(255,255,255,0.7)":C.textLight,marginTop:"2px" }}>
+                    {glowInfo.label}
+                  </div>
+                </div>
+              </div>
+              <div style={{ textAlign:"right" }}>
+                <div style={{ fontSize:"18px",fontWeight:"800",color:glowInfo.active?"#fff":C.orange,fontFamily:font.display }}>
+                  {glowInfo.countdown}
+                </div>
+                {glowInfo.active && (
+                  <div style={{ width:"8px",height:"8px",borderRadius:"50%",background:"#fff",display:"inline-block",animation:"fadeIn 1s infinite alternate",marginTop:"4px" }}/>
+                )}
+              </div>
+            </div>
+          </Card>
+        )}
 
         {/* Heute kommen? */}
         <Card style={{ marginBottom:"12px" }}>

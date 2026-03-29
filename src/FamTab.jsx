@@ -6,6 +6,90 @@
 import { useState, useEffect, useRef } from "react";
 import supabase, { db } from "./supabase";
 
+// Story-Share Helper: Erzeugt ein Cereza-gebrandetes Story-Bild
+const shareAsStory = async (type, content, userName) => {
+  const W = 1080, H = 1920;
+  const canvas = document.createElement("canvas");
+  canvas.width = W; canvas.height = H;
+  const ctx = canvas.getContext("2d");
+
+  // Hintergrund
+  const bg = ctx.createLinearGradient(0, 0, 0, H);
+  bg.addColorStop(0, "#C1272D"); bg.addColorStop(0.6, "#8B0000"); bg.addColorStop(1, "#1a0000");
+  ctx.fillStyle = bg; ctx.fillRect(0, 0, W, H);
+
+  // Deko
+  ctx.globalAlpha = 0.05; ctx.fillStyle = "#fff";
+  ctx.beginPath(); ctx.arc(200, 400, 300, 0, Math.PI*2); ctx.fill();
+  ctx.beginPath(); ctx.arc(880, 1400, 250, 0, Math.PI*2); ctx.fill();
+  ctx.globalAlpha = 1;
+
+  // Header
+  ctx.fillStyle = "rgba(255,255,255,0.3)"; ctx.font = "600 26px Inter, sans-serif"; ctx.textAlign = "center";
+  ctx.fillText("CEREZA LOYALTY CLUB", W/2, 100);
+
+  if (type === "vibe") {
+    // Vibe-Foto laden und zentriert anzeigen
+    try {
+      const img = new Image(); img.crossOrigin = "anonymous";
+      await new Promise((res, rej) => { img.onload = res; img.onerror = rej; img.src = content.url; });
+      const maxH = 1200, maxW = 900;
+      const scale = Math.min(maxW / img.width, maxH / img.height);
+      const iw = img.width * scale, ih = img.height * scale;
+      // Rahmen
+      ctx.fillStyle = "rgba(255,255,255,0.1)";
+      ctx.beginPath(); ctx.roundRect((W-iw)/2-12, 280-12, iw+24, ih+24, 28); ctx.fill();
+      ctx.save(); ctx.beginPath(); ctx.roundRect((W-iw)/2, 280, iw, ih, 20); ctx.clip();
+      ctx.drawImage(img, (W-iw)/2, 280, iw, ih);
+      ctx.restore();
+    } catch(e) {}
+    ctx.fillStyle = "#fff"; ctx.font = "700 36px Inter, sans-serif"; ctx.textAlign = "center";
+    ctx.fillText(`📷 Vibe von @${userName}`, W/2, H - 200);
+  } else {
+    // Gedanke als Text
+    ctx.fillStyle = "rgba(255,255,255,0.08)";
+    ctx.beginPath(); ctx.roundRect(80, 500, W-160, 700, 32); ctx.fill();
+
+    ctx.fillStyle = "rgba(255,255,255,0.3)"; ctx.font = "400 120px serif"; ctx.textAlign = "left";
+    ctx.fillText(""", 120, 620);
+    ctx.textAlign = "right"; ctx.fillText(""", W-120, 1120);
+
+    // Text umbrechen
+    ctx.fillStyle = "#fff"; ctx.font = "700 42px Inter, sans-serif"; ctx.textAlign = "center";
+    const words = content.text.split(" "); let lines = []; let line = "";
+    for (const w of words) {
+      if (ctx.measureText(line + w).width > 760) { lines.push(line.trim()); line = w + " "; }
+      else line += w + " ";
+    }
+    if (line.trim()) lines.push(line.trim());
+    const lineH = 58, startY = 850 - (lines.length * lineH) / 2;
+    lines.forEach((l, i) => ctx.fillText(l, W/2, startY + i * lineH));
+
+    ctx.fillStyle = "rgba(255,255,255,0.5)"; ctx.font = "600 28px Inter, sans-serif";
+    ctx.fillText(`💭 @${userName}`, W/2, 1280);
+    if (content.upvotes > 0) {
+      ctx.fillText(`♥ ${content.upvotes} Likes`, W/2, 1330);
+    }
+  }
+
+  // Footer
+  ctx.fillStyle = "rgba(255,255,255,0.2)"; ctx.font = "600 24px Inter, sans-serif"; ctx.textAlign = "center";
+  ctx.fillText("cereza-loyalty.vercel.app", W/2, H - 100);
+  ctx.fillStyle = "rgba(255,255,255,0.12)"; ctx.font = "500 20px Inter, sans-serif";
+  ctx.fillText("Werde Teil der Cereza Fam", W/2, H - 60);
+
+  const blob = await new Promise(r => canvas.toBlob(r, "image/png"));
+  const file = new File([blob], "cereza-story.png", { type:"image/png" });
+  if (navigator.canShare?.({ files:[file] })) {
+    await navigator.share({ files:[file], title:"Cereza Story" });
+    return true;
+  } else {
+    const url = URL.createObjectURL(blob);
+    window.open(url, "_blank");
+    return false;
+  }
+};
+
 const URL_REGEX = /https?:\/\/[^\s]+|www\.[^\s]+|\b\w+\.(com|de|net|org|io|at|ch)\b/gi;
 const hasLink = (text) => URL_REGEX.test(text);
 
@@ -135,11 +219,15 @@ function FotosSection({ user, C, font }) {
         {vibes.map(v => (
           <div key={v.id} style={{ breakInside:"avoid",marginBottom:"8px",borderRadius:"16px",overflow:"hidden",position:"relative" }}>
             <img src={v.url} style={{ width:"100%",display:"block",filter:"sepia(0.2) contrast(1.06) saturate(0.95)" }} loading="lazy"/>
-            <div style={{ position:"absolute",bottom:"8px",left:"8px",background:"rgba(0,0,0,0.55)",backdropFilter:"blur(8px)",borderRadius:"20px",padding:"3px 9px",display:"flex",alignItems:"center",gap:"5px" }}>
-              <div style={{ width:"16px",height:"16px",borderRadius:"50%",background:C.orange,display:"flex",alignItems:"center",justifyContent:"center",fontSize:"8px",color:"#fff",fontWeight:"700" }}>
-                {(v.profile?.name||"?")[0].toUpperCase()}
+            <div style={{ position:"absolute",bottom:"8px",left:"8px",right:"8px",display:"flex",justifyContent:"space-between",alignItems:"center" }}>
+              <div style={{ background:"rgba(0,0,0,0.55)",backdropFilter:"blur(8px)",borderRadius:"20px",padding:"3px 9px",display:"flex",alignItems:"center",gap:"5px" }}>
+                <div style={{ width:"16px",height:"16px",borderRadius:"50%",background:C.orange,display:"flex",alignItems:"center",justifyContent:"center",fontSize:"8px",color:"#fff",fontWeight:"700" }}>
+                  {(v.profile?.name||"?")[0].toUpperCase()}
+                </div>
+                <div style={{ fontSize:"10px",color:"#fff",fontWeight:"600" }}>@{v.profile?.name||"anon"}</div>
               </div>
-              <div style={{ fontSize:"10px",color:"#fff",fontWeight:"600" }}>@{v.profile?.name||"anon"}</div>
+              <button onClick={async(e) => { e.stopPropagation(); await shareAsStory("vibe", v, user?.name||"user"); }}
+                style={{ background:"rgba(0,0,0,0.55)",backdropFilter:"blur(8px)",borderRadius:"50%",width:"28px",height:"28px",display:"flex",alignItems:"center",justifyContent:"center",border:"none",color:"#fff",fontSize:"12px",cursor:"pointer" }}>↗</button>
             </div>
           </div>
         ))}
@@ -356,7 +444,11 @@ function ThoughtsSection({ user, C, font }) {
     setPosting(true);
     const { error } = await supabase.from("thoughts").insert({ user_id:user.id, text:text.trim(), upvotes:0 });
     if (error) setErr("Fehler: " + error.message);
-    else { setText(""); load(); }
+    else {
+      setText(""); load();
+      // +10 XP fürs Posten
+      await db.addPts(user.id, 10);
+    }
     setPosting(false);
   };
 
@@ -423,9 +515,15 @@ function ThoughtsSection({ user, C, font }) {
               {isOwn&&<button onClick={() => del(t.id)} style={{ background:"none",border:"none",color:C.textLight,fontSize:"16px",cursor:"pointer",padding:"4px" }}>✕</button>}
             </div>
             <div style={{ fontSize:"15px",color:C.text,lineHeight:1.55,marginBottom:"12px",wordBreak:"break-word" }}>{t.text}</div>
-            <button onClick={() => upvote(t.id)} style={{ display:"flex",alignItems:"center",gap:"6px",padding:"8px 16px",borderRadius:"20px",border:"none",background:voted?C.orange:C.greyBg,color:voted?C.white:C.textSub,fontSize:"13px",fontWeight:"700",cursor:"pointer",transition:"all 0.2s" }}>
-              <span>{voted?"♥":"♡"}</span><span>{t.upvotes||0}</span>
-            </button>
+            <div style={{ display:"flex",gap:"8px",alignItems:"center" }}>
+              <button onClick={() => upvote(t.id)} style={{ display:"flex",alignItems:"center",gap:"6px",padding:"8px 16px",borderRadius:"20px",border:"none",background:voted?C.orange:C.greyBg,color:voted?C.white:C.textSub,fontSize:"13px",fontWeight:"700",cursor:"pointer",transition:"all 0.2s" }}>
+                <span>{voted?"♥":"♡"}</span><span>{t.upvotes||0}</span>
+              </button>
+              <button onClick={async() => { await shareAsStory("thought", t, t.profile?.name||"user"); }}
+                style={{ display:"flex",alignItems:"center",gap:"5px",padding:"8px 14px",borderRadius:"20px",border:"none",background:C.greyBg,color:C.textSub,fontSize:"12px",fontWeight:"600",cursor:"pointer" }}>
+                ↗ Story
+              </button>
+            </div>
           </div>
         );
       })}

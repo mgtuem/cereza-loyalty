@@ -2248,7 +2248,7 @@ const AdminPanel = ({ onClose }) => {
                 <img src={v.url} style={{ width:"100%",borderRadius:"10px",marginBottom:"8px",filter:"sepia(0.3) contrast(1.1)" }}/>
                 <div style={{ fontSize:"12px",color:"#999",marginBottom:"10px" }}>@{v.profile?.name} · {new Date(v.created_at).toLocaleDateString('de-DE')}</div>
                 <div style={{ display:"flex",gap:"8px" }}>
-                  <button onClick={async()=>{await db.approveVibe(v.id,true);ok2("Freigegeben ✓");db.getPendingVibes().then(setVibes);}} style={{ flex:1,padding:"11px",background:"#2d472a",borderRadius:"12px",color:"#fff",fontSize:"14px",fontWeight:"700" }}>✓ Freigeben</button>
+                  <button onClick={async()=>{await db.approveVibe(v.id,true);if(v.user_id) await db.addPts(v.user_id, 50);ok2("Freigegeben ✓ (+50 XP für User)");db.getPendingVibes().then(setVibes);}} style={{ flex:1,padding:"11px",background:"#2d472a",borderRadius:"12px",color:"#fff",fontSize:"14px",fontWeight:"700" }}>✓ Freigeben +50XP</button>
                   <button onClick={async()=>{await supabase.from('vibe_photos').delete().eq('id',v.id);ok2("Abgelehnt");db.getPendingVibes().then(setVibes);}} style={{ flex:1,padding:"11px",background:"#f5f5f5",border:"1px solid #e8e8e8",borderRadius:"12px",color:"#999",fontSize:"14px",fontWeight:"700" }}>✕ Ablehnen</button>
                 </div>
               </div>

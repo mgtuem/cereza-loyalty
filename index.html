@@ -4,13 +4,13 @@
     <meta charset="UTF-8" />
     <link rel="icon" type="image/svg+xml" href="/vite.svg" />
     <!-- viewport-fit=cover ist KRITISCH für iPhone ohne Abstand unten -->
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
     <meta name="theme-color" content="#C1272D" />
     <title>Cereza Loyalty</title>
     <style>
-      * { box-sizing: border-box; margin: 0; padding: 0; }
+      * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
       html, body {
         height: 100%;
         width: 100%;
@@ -19,7 +19,10 @@
         inset: 0;
         overscroll-behavior: none;
         -webkit-overflow-scrolling: touch;
-        background: #C1272D;
+        background: #ffffff;
+        /* Zoom verhindern */
+        touch-action: pan-x pan-y;
+        -ms-touch-action: pan-x pan-y;
       }
       #root {
         height: 100%;
@@ -27,10 +30,8 @@
         overflow: hidden;
         position: fixed;
         inset: 0;
-        /* iPhone: Hintergrund auch unter der Nav Bar */
-        background: #C1272D;
+        background: #ffffff;
       }
-      /* iOS PWA: kein Abstand unter der Nav */
       @supports (padding-bottom: env(safe-area-inset-bottom)) {
         html { height: -webkit-fill-available; }
         body { min-height: -webkit-fill-available; }

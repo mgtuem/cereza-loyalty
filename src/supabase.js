@@ -9,8 +9,11 @@ export default supabase
 
 export const db = {
   // ─── Auth ─────────────────────────────────────────────────────
-  signUp: async (email, password, name) => {
-    const { data, error } = await supabase.auth.signUp({ email, password, options: { data: { name } } })
+  signUp: async (email, password, name, phone) => {
+    const { data, error } = await supabase.auth.signUp({
+      email, password,
+      options: { data: { name, phone: phone||'' } }
+    })
     return { data, error }
   },
   signIn: async (email, password) => {

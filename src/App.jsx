@@ -110,7 +110,8 @@ const FUN_FACTS_DEF = [
 const getCSS = t => `
   @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&family=Playfair+Display:wght@400;700;900&display=swap');
   *,*::before,*::after{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
-  html,body,#root{height:100%;width:100%;overflow:hidden;position:fixed;inset:0;background:${t.bg};overscroll-behavior:none;user-select:none;-webkit-user-select:none;-webkit-font-smoothing:antialiased;font-family:'Inter',-apple-system,sans-serif;transition:background 0.35s}
+  html,body{height:100%;width:100%;overflow:hidden;position:fixed;inset:0;overscroll-behavior:none;-webkit-font-smoothing:antialiased}
+  #root{height:100%;width:100%;overflow:hidden;position:fixed;inset:0;background:${t.bg};overscroll-behavior:none}
   input,textarea,select{user-select:text;-webkit-user-select:text;font-family:inherit;font-size:16px}
   ::-webkit-scrollbar{display:none}
   button{-webkit-appearance:none;appearance:none;font-family:inherit;cursor:pointer;border:none;outline:none}
@@ -437,13 +438,29 @@ const MissionCard = ({ mission: m, user, setUser }) => {
             </div>
           )}
           {msg && <div style={{ padding:"10px 14px",background:`${C.orange}18`,borderRadius:"10px",fontSize:"13px",fontWeight:"600",color:C.orange,marginBottom:"12px",textAlign:"center" }}>{msg}</div>}
-          {!done && !started && <button onClick={startMission} style={{ width:"100%",padding:"12px",background:C.orange,border:"none",borderRadius:"12px",color:C.white,fontSize:"14px",fontWeight:"700" }}>Mission starten →</button>}
+
+          {!done && !started && (
+            <button onClick={startMission} style={{ width:"100%",padding:"13px",background:C.orange,border:"none",borderRadius:"12px",color:C.white,fontSize:"14px",fontWeight:"700" }}>
+              Mission starten →
+            </button>
+          )}
+
+          {/* QR-Code anzeigen damit Admin scannen kann */}
           {!done && started && (
-            <div style={{ padding:"12px 14px",background:C.greyBg,borderRadius:"12px",textAlign:"center" }}>
-              <div style={{ fontSize:"13px",color:C.textSub,fontWeight:"600" }}>▣ Zeige deinen QR-Code dem Personal</div>
-              <div style={{ fontSize:"11px",color:C.textLight,marginTop:"4px" }}>Der Mitarbeiter scannt deinen Code und stempelt die Mission</div>
+            <div style={{ textAlign:"center" }}>
+              <div style={{ fontSize:"12px",fontWeight:"700",color:C.textSub,marginBottom:"10px",letterSpacing:"0.5px" }}>MEINEN QR-CODE SCANNEN LASSEN</div>
+              <div style={{ background:C.white,borderRadius:"16px",padding:"16px",display:"inline-block",boxShadow:"0 4px 20px rgba(0,0,0,0.08)",border:`1px solid ${C.border}` }}>
+                <img
+                  src={`https://api.qrserver.com/v1/create-qr-code/?size=180x180&data=${encodeURIComponent(`cereza:${user?.id}`)}&bgcolor=ffffff&color=111111&margin=5`}
+                  style={{ width:"180px",height:"180px",display:"block",borderRadius:"8px" }}
+                  alt="Mein QR-Code"
+                />
+              </div>
+              <div style={{ fontSize:"13px",fontWeight:"600",color:C.text,marginTop:"12px" }}>Zeige diesen Code dem Personal</div>
+              <div style={{ fontSize:"11px",color:C.textLight,marginTop:"4px" }}>Der Mitarbeiter scannt ihn und stempelt deine Mission</div>
             </div>
           )}
+
           {done && <div style={{ textAlign:"center",fontSize:"14px",fontWeight:"700",color:C.green,padding:"8px" }}>Mission abgeschlossen! 🎉</div>}
         </div>
       )}
@@ -797,32 +814,28 @@ const WheelTab = ({ user, setUser }) => {
 };
 
 // ─── Scan Tab ─────────────────────────────────────────────────────
-// QR-Format: "cereza:PTS:TOKEN"
-// TOKEN = erste 8 Zeichen von btoa(PTS + SECRET)
-// Admin generiert QR-Codes im Admin Panel mit beliebigen PTS-Werten
-// SECRET verhindert dass User eigene QR-Codes erstellen
+// Scannt QR-Codes von Belegen. Format: cereza:PTS:TOKEN
+// Token wird im Admin Panel → QR-Gen generiert
+// cereza:USER_ID QR-Codes (User-QR) werden ABGELEHNT
 
-const QR_SECRET = "czlyl2024"; // Muss auch im Admin Panel gleich sein
+const QR_SECRET = "czlyl2024";
 
-const validateQR = (text) => {
-  text = text.trim();
+const validateBelegQR = (text) => {
+  text = (text||"").trim();
   if (!text.startsWith("cereza:")) return null;
   const parts = text.split(":");
-  // Format: cereza:PTS:TOKEN
+  // Format cereza:PTS:TOKEN – Beleg-QR
   if (parts.length === 3) {
     const pts = parseInt(parts[1]);
     const token = parts[2];
     if (isNaN(pts) || pts <= 0 || pts > 999999) return null;
-    // Token validieren: btoa(pts:secret) erste 8 Zeichen
     const expected = btoa(`${pts}:${QR_SECRET}`).replace(/=/g,"").substring(0,8);
     if (token === expected) return pts;
     return null;
   }
-  // Legacy Format ohne Token (nur für Entwicklung)
-  if (parts.length === 2) {
-    const pts = parseInt(parts[1]);
-    if (!isNaN(pts) && pts > 0 && pts <= 999999) return pts;
-  }
+  // UUID-Format = User-QR → ablehnen
+  const uuidRx = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+  if (parts.length === 2 && uuidRx.test(parts[1])) return null;
   return null;
 };
 
@@ -831,43 +844,30 @@ const ScanTab = ({ user, setUser }) => {
   const [done,     setDone]     = useState(false);
   const [pts,      setPts]      = useState(0);
   const [err,      setErr]      = useState("");
+  const [streak,   setStreak]   = useState(0);
+  const [treatDone,setTreatDone]= useState(false);
   const scannerRef = useRef(null);
 
   const award = async p => {
     setPts(p); Sound.scan();
-    const today = new Date().toISOString().split('T')[0];
-    const fresh = user?.id ? await db.getProfile(user.id) : null;
-    const np    = (fresh?.pts||user.pts||0) + p;
-    const nv    = (fresh?.total_visits||user.total_visits||0) + 1;
-
-    // Streak-Logik
-    const lastVisit = fresh?.last_visit || null;
+    const today     = new Date().toISOString().split('T')[0];
     const yesterday = new Date(Date.now()-86400000).toISOString().split('T')[0];
-    const curStreak = fresh?.streak || 0;
-    const newStreak = lastVisit===yesterday ? curStreak+1 : lastVisit===today ? curStreak : 1;
-
-    // Treat-Tracker: bei Ziel erreicht → zurücksetzen
-    const treatGoal  = fresh?.treat_goal || 8;
-    const treatCount = (fresh?.treat_count||user.treat_count||0) + 1;
-    const newTreat   = treatCount >= treatGoal ? 0 : treatCount;
-    const treatMsg   = treatCount >= treatGoal; // true = Gratis-Treat!
-
-    setUser(u => ({ ...u, pts:np, total_visits:nv, treat_count:newTreat, streak:newStreak }));
+    const fresh = user?.id ? await db.getProfile(user.id) : null;
+    const np  = (fresh?.pts||user.pts||0) + p;
+    const nv  = (fresh?.total_visits||user.total_visits||0) + 1;
+    const lv  = fresh?.last_visit || null;
+    const ns  = lv===yesterday ? (fresh?.streak||0)+1 : lv===today ? (fresh?.streak||0) : 1;
+    const tg  = fresh?.treat_goal || 8;
+    const tc  = (fresh?.treat_count||0) + 1;
+    const nt  = tc >= tg ? 0 : tc;
+    const won = tc >= tg;
+    setStreak(ns); setTreatDone(won);
+    setUser(u => ({ ...u, pts:np, total_visits:nv, treat_count:nt, streak:ns }));
     if (user?.id) {
-      await db.updateProfile(user.id, { pts:np, total_visits:nv, treat_count:newTreat, streak:newStreak, last_visit:today });
+      await db.updateProfile(user.id, { pts:np, total_visits:nv, treat_count:nt, streak:ns, last_visit:today });
       await supabase.from("scan_log").insert({ user_id:user.id, pts_earned:p, was_glow_hour:false });
     }
     setDone(true);
-    if (treatMsg) setTimeout(() => alert("🎉 Glückwunsch! Du hast dir einen Gratis-Treat verdient!"), 1000);
-  };
-
-  const validateQR = (text) => {
-    // Format: cereza:PTS z.B. "cereza:100"
-    if (!text.startsWith(VALID_QR_PREFIX)) return null;
-    const val = parseInt(text.replace(VALID_QR_PREFIX, ""));
-    if (VALID_PTS.includes(val)) return val;
-    // Auch cereza:USER_ID Format erkennen (das ist der User-QR, nicht der Beleg-QR)
-    return null;
   };
 
   const startScan = async () => {
@@ -875,53 +875,91 @@ const ScanTab = ({ user, setUser }) => {
     try {
       const { Html5Qrcode } = await import("html5-qrcode");
       const s = new Html5Qrcode("qr-reader"); scannerRef.current = s;
-      await s.start({ facingMode:"environment" }, { fps:10, qrbox:{ width:200, height:200 } },
+      await s.start(
+        { facingMode:"environment" },
+        { fps:10, qrbox:{ width:220, height:220 } },
         async (text) => {
           await s.stop(); setScanning(false);
-          const p = validateQR(text);
-          if (p) {
+          const p = validateBelegQR(text);
+          if (p !== null) {
             await award(p);
+          } else if (text.includes("cereza:")) {
+            setErr("Das ist dein persönlicher QR-Code. Scanne den QR-Code auf deinem Kassenbeleg.");
           } else {
-            setErr("Ungültiger QR-Code. Bitte scanne den Cereza-Code auf deinem Beleg.");
+            setErr("Ungültiger QR-Code. Bitte den Cereza-Code vom Beleg scannen.");
           }
-        }, () => {});
-    } catch(e) { setScanning(false); setErr("Kamera nicht verfügbar."); }
+        },
+        () => {}
+      );
+    } catch(e) {
+      setScanning(false);
+      setErr("Kamera konnte nicht gestartet werden.");
+    }
   };
+
+  const reset = () => { setDone(false); setPts(0); setErr(""); setStreak(0); setTreatDone(false); };
 
   useEffect(() => () => { if(scannerRef.current) try { scannerRef.current.stop(); } catch(e) {} }, []);
 
   return (
-    <div style={{ background:C.beige,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",padding:`calc(${ST} + 40px) 24px calc(${SB} + 40px)`,minHeight:"100%" }}>
+    <div style={{ background:C.beige, minHeight:"100%", display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center", padding:`calc(${ST} + 40px) 24px calc(${SB} + 40px)` }}>
       {!done ? (
         <>
-          <div style={{ fontSize:"11px",letterSpacing:"3px",color:C.textLight,fontWeight:"600",marginBottom:"6px" }}>QR CODE</div>
-          <div style={{ fontSize:"28px",fontFamily:font.display,color:C.text,fontWeight:"700",marginBottom:"28px" }}>Punkte sammeln</div>
-          <div id="qr-reader" style={{ width:"240px",height:"240px",borderRadius:"20px",overflow:"hidden",background:"#111",border:`2px solid ${scanning?C.orange:err?C.orange:C.border}`,transition:"border 0.3s" }}/>
+          <div style={{ fontSize:"11px",letterSpacing:"3px",color:C.textLight,fontWeight:"600",marginBottom:"6px",textTransform:"uppercase" }}>Beleg scannen</div>
+          <div style={{ fontSize:"28px",fontFamily:font.display,color:C.text,fontWeight:"700",marginBottom:"8px" }}>Punkte sammeln</div>
+          <div style={{ fontSize:"13px",color:C.textLight,marginBottom:"24px",textAlign:"center" }}>Scanne den QR-Code auf deinem Kassenbeleg</div>
+
+          <div id="qr-reader" style={{ width:"250px",height:"250px",borderRadius:"20px",overflow:"hidden",background:"#111",border:`2.5px solid ${scanning?C.orange:err?C.orange+"88":C.border}`,transition:"border-color 0.3s",flexShrink:0 }}/>
+
           {err && (
-            <div style={{ marginTop:"14px",padding:"12px 18px",background:`${C.orange}15`,borderRadius:"12px",textAlign:"center",maxWidth:"260px" }}>
-              <div style={{ fontSize:"13px",color:C.orange,fontWeight:"600" }}>{err}</div>
-              <button onClick={() => setErr("")} style={{ marginTop:"8px",fontSize:"12px",color:C.textLight,background:"none",border:"none",textDecoration:"underline" }}>Nochmal versuchen</button>
+            <div style={{ marginTop:"16px",padding:"12px 18px",background:`${C.orange}12`,borderRadius:"14px",textAlign:"center",maxWidth:"280px" }}>
+              <div style={{ fontSize:"13px",color:C.orange,fontWeight:"600",lineHeight:1.5 }}>{err}</div>
+              <button onClick={() => { setErr(""); }} style={{ marginTop:"10px",fontSize:"13px",color:C.orange,background:"none",border:`1px solid ${C.orange}`,borderRadius:"20px",padding:"6px 18px",cursor:"pointer",fontWeight:"600" }}>
+                Nochmal versuchen
+              </button>
             </div>
           )}
-          {!err && (!scanning
-            ? <button onClick={startScan} style={{ marginTop:"22px",padding:"15px 44px",background:C.orange,borderRadius:"50px",color:C.white,fontSize:"15px",fontWeight:"700",display:"flex",alignItems:"center",gap:"10px" }}>{I.cam} Kamera starten</button>
-            : <button onClick={async () => { if(scannerRef.current) try{await scannerRef.current.stop()}catch(e){} setScanning(false); }} style={{ marginTop:"22px",padding:"14px 36px",background:C.greyBg,border:`1px solid ${C.border}`,borderRadius:"50px",color:C.textSub,fontSize:"14px",fontWeight:"600" }}>Abbrechen</button>
+
+          {!err && (
+            scanning
+              ? <button onClick={async () => { if(scannerRef.current) try{await scannerRef.current.stop()}catch(e){} setScanning(false); }}
+                  style={{ marginTop:"22px",padding:"14px 36px",background:C.greyBg,border:`1px solid ${C.border}`,borderRadius:"50px",color:C.textSub,fontSize:"14px",fontWeight:"600" }}>
+                  Abbrechen
+                </button>
+              : <button onClick={startScan}
+                  style={{ marginTop:"22px",padding:"15px 44px",background:C.orange,borderRadius:"50px",color:C.white,fontSize:"15px",fontWeight:"700",display:"flex",alignItems:"center",gap:"10px",border:"none" }}>
+                  {I.cam} Kamera starten
+                </button>
           )}
-          <div style={{ color:C.textLight,fontSize:"12px",marginTop:"14px",textAlign:"center",lineHeight:1.5 }}>Scanne den QR-Code auf deinem Beleg{"\n"}Format: cereza:XP</div>
         </>
       ) : (
-        <div style={{ textAlign:"center",animation:"scaleIn 0.4s" }}>
-          <div style={{ color:C.orange,marginBottom:"8px" }}>{I.check}</div>
-          <div style={{ fontSize:"44px",fontWeight:"900",color:C.orange,fontFamily:font.display }}>+{pts} XP</div>
-          <div style={{ color:C.textLight,fontSize:"14px",marginTop:"8px" }}>Punkte gutgeschrieben!</div>
-          {/* Streak anzeigen */}
-          {(user.streak||0) > 1 && (
-            <div style={{ marginTop:"12px",padding:"10px 20px",background:`${C.orange}18`,borderRadius:"12px",display:"inline-flex",alignItems:"center",gap:"6px" }}>
-              <span style={{ fontSize:"18px" }}>🔥</span>
-              <span style={{ fontSize:"14px",fontWeight:"700",color:C.orange }}>{user.streak} Tage Streak!</span>
+        <div style={{ textAlign:"center", animation:"scaleIn 0.4s", width:"100%", maxWidth:"300px" }}>
+          <div style={{ fontSize:"56px",marginBottom:"8px" }}>🎉</div>
+          <div style={{ fontSize:"48px",fontWeight:"900",color:C.orange,fontFamily:font.display,lineHeight:1 }}>+{pts}</div>
+          <div style={{ fontSize:"20px",fontWeight:"700",color:C.orange,marginBottom:"4px" }}>XP</div>
+          <div style={{ color:C.textLight,fontSize:"14px",marginTop:"4px" }}>Punkte gutgeschrieben!</div>
+
+          {streak > 1 && (
+            <div style={{ marginTop:"14px",padding:"12px 20px",background:`${C.orange}15`,borderRadius:"14px",display:"inline-flex",alignItems:"center",gap:"8px" }}>
+              <span style={{ fontSize:"22px" }}>🔥</span>
+              <div>
+                <div style={{ fontSize:"15px",fontWeight:"800",color:C.orange }}>{streak} Tage Streak!</div>
+                <div style={{ fontSize:"11px",color:C.textLight }}>Weiter so!</div>
+              </div>
             </div>
           )}
-          <button onClick={() => { setDone(false); setPts(0); setErr(""); }} style={{ marginTop:"20px",padding:"13px 36px",background:C.greyBg,border:`1px solid ${C.border}`,borderRadius:"50px",color:C.text,fontSize:"14px",display:"block",margin:"20px auto 0" }}>Nochmal scannen</button>
+
+          {treatDone && (
+            <div style={{ marginTop:"12px",padding:"14px 20px",background:`${C.green}15`,borderRadius:"14px",border:`1px solid ${C.green}33` }}>
+              <div style={{ fontSize:"22px",marginBottom:"4px" }}>🎁</div>
+              <div style={{ fontSize:"15px",fontWeight:"700",color:C.green }}>Gratis-Treat verdient!</div>
+              <div style={{ fontSize:"12px",color:C.textLight,marginTop:"2px" }}>Zeige es an der Kasse</div>
+            </div>
+          )}
+
+          <button onClick={reset} style={{ marginTop:"24px",padding:"14px 40px",background:C.greyBg,border:`1px solid ${C.border}`,borderRadius:"50px",color:C.text,fontSize:"14px",fontWeight:"600" }}>
+            Nochmal scannen
+          </button>
         </div>
       )}
     </div>
@@ -2270,7 +2308,7 @@ export default function App() {
   ];
 
   return (
-    <div style={{ position:"fixed",inset:0,maxWidth:"430px",margin:"0 auto",fontFamily:font.ui,background:t.bg,display:"flex",flexDirection:"column",overflow:"hidden",transition:"background 0.35s" }}>
+    <div style={{ position:"fixed",inset:0,maxWidth:"430px",margin:"0 auto",fontFamily:font.ui,background:t.bg,display:"flex",flexDirection:"column",overflow:"hidden" }}>
       <style>{CSS}</style>
       {showLevelUp && <LevelUpOverlay level={showLevelUp} onClose={() => setShowLevelUp(null)}/>}
       {toast && (
@@ -2283,9 +2321,9 @@ export default function App() {
         </div>
       )}
 
-      {/* Content */}
-      <div style={{ flex:1,overflow:"hidden" }}>
-        <div style={{ height:"100%",overflowY:"auto",overflowX:"hidden",WebkitOverflowScrolling:"touch",overscrollBehavior:"contain" }}>
+      {/* Content – kein overscroll */}
+      <div style={{ flex:1,overflow:"hidden",minHeight:0 }}>
+        <div style={{ height:"100%",overflowY:"auto",overflowX:"hidden",WebkitOverflowScrolling:"touch",overscrollBehavior:"none" }}>
           {tab==="home"     && <HomeTab    user={user} setUser={setUser} setTab={setTab}/>}
           {tab==="missions" && <WheelTab   user={user} setUser={setUser}/>}
           {tab==="scan"     && <ScanTab    user={user} setUser={setUser}/>}
@@ -2294,16 +2332,23 @@ export default function App() {
         </div>
       </div>
 
-      {/* Tab Bar – garantiert am unteren Displayrand */}
-      <div style={{ flexShrink:0,background:t.navBg,backdropFilter:"blur(24px)",WebkitBackdropFilter:"blur(24px)",borderTop:`0.5px solid ${t.navBorder}`,paddingBottom:`max(${SB}, 0px)`,transition:"all 0.3s" }}>
-        <div style={{ display:"grid",gridTemplateColumns:`repeat(${NAV.length},1fr)`,padding:"8px 0 4px",maxWidth:"430px",margin:"0 auto" }}>
+      {/* Tab Bar – immer am untersten Displayrand */}
+      <div style={{
+        flexShrink:0,
+        background:t.navBg,
+        backdropFilter:"blur(24px)",
+        WebkitBackdropFilter:"blur(24px)",
+        borderTop:`0.5px solid ${t.navBorder}`,
+        paddingBottom:`env(safe-area-inset-bottom, 0px)`,
+      }}>
+        <div style={{ display:"grid", gridTemplateColumns:`repeat(${NAV.length},1fr)`, padding:"8px 0 4px", maxWidth:"430px", margin:"0 auto" }}>
           {NAV.map(n => {
             const a = tab === n.id;
             return (
               <button key={n.id} onClick={() => { Sound.tap(); setTab(n.id); }}
-                style={{ display:"flex",flexDirection:"column",alignItems:"center",gap:"3px",background:"none",padding:"6px 0",color:a?t.accent:t.textLight,transition:"all 0.2s",border:"none",outline:"none" }}>
+                style={{ display:"flex",flexDirection:"column",alignItems:"center",gap:"3px",background:"none",padding:"6px 0",color:a?t.accent:t.textLight,border:"none",outline:"none" }}>
                 <div style={{ padding:"4px 10px",borderRadius:"12px",background:a?t.accent+"1a":"transparent",transform:a?"scale(1.08)":"scale(1)",transition:"all 0.2s",color:a?t.accent:t.textLight }}>{n.icon}</div>
-                <span style={{ fontSize:"10px",fontWeight:a?"700":"500",letterSpacing:"0.1px",lineHeight:1 }}>{n.l}</span>
+                <span style={{ fontSize:"10px",fontWeight:a?"700":"500",lineHeight:1 }}>{n.l}</span>
               </button>
             );
           })}

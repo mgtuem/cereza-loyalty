@@ -228,13 +228,21 @@ const AuthScreen = ({ onLogin }) => {
         }
         onLogin(p || { id:data.user.id, name:data.user.user_metadata?.name||email.split('@')[0], email, pts:0, level:1, streak:0, total_visits:0, treat_count:0, treat_goal:8, wheel_spun_today:false, is_abo_member:false, is_admin:false });
       } else {
-        const { data, error } = await db.signUp(email, pw, name);
+        const { data, error } = await db.signUp(email, pw, name, phone);
         if (error) { setErr(error.message); setLoading(false); return; }
         if (data.user) {
-          await new Promise(r => setTimeout(r, 2000));
-          await db.updateProfile(data.user.id, { name, phone }).catch(() => {});
+          // Warten bis Trigger das Profil erstellt hat
           let p = null;
-          for (let i=0; i<4; i++) { p = await db.getProfile(data.user.id); if(p) break; await new Promise(r=>setTimeout(r,700)); }
+          for (let i=0; i<8; i++) {
+            await new Promise(r => setTimeout(r, 800));
+            p = await db.getProfile(data.user.id);
+            if (p) break;
+          }
+          // Phone manuell updaten falls Trigger es nicht gesetzt hat
+          if (p) {
+            if (!p.phone && phone) await db.updateProfile(data.user.id, { phone }).catch(() => {});
+            p = await db.getProfile(data.user.id) || p;
+          }
           onLogin(p || { id:data.user.id, name, email, phone, pts:0, level:1, streak:0, total_visits:0, treat_count:0, treat_goal:8, wheel_spun_today:false, is_abo_member:false, is_admin:false });
         }
       }
@@ -1167,7 +1175,7 @@ const ProfileTab = ({ user, setUser, onLogout, theme }) => {
   };
 
   const sendGiftPts = async () => {
-    if (!giftTarget || giftAmt < 10 || giftAmt > 200) return;
+    if (!giftTarget || giftAmt < 10 || giftAmt > 500) return;
     const fresh = user?.id ? await db.getProfile(user.id) : null;
     const cur = fresh?.pts || (user.pts||0);
     if (cur < giftAmt) return;
@@ -1211,7 +1219,7 @@ const ProfileTab = ({ user, setUser, onLogout, theme }) => {
             <div style={{ fontSize:"17px",fontWeight:"700",color:C.text,marginBottom:"16px" }}>XP schenken an @{giftTarget.name}</div>
             <input type="number" value={giftAmt} onChange={e => setGiftAmt(Number(e.target.value))} min="10" max="200" style={{ width:"100%",padding:"13px 16px",border:`1px solid ${C.border}`,borderRadius:"13px",fontSize:"16px",outline:"none",boxSizing:"border-box",marginBottom:"10px",background:C.card,color:C.text }}/>
             <input value={giftMsg} onChange={e => setGiftMsg(e.target.value)} placeholder="Nachricht (optional)" style={{ width:"100%",padding:"13px 16px",border:`1px solid ${C.border}`,borderRadius:"13px",fontSize:"16px",outline:"none",boxSizing:"border-box",marginBottom:"12px",background:C.card,color:C.text }}/>
-            <div style={{ fontSize:"12px",color:C.textLight,marginBottom:"14px" }}>Max. 200 XP/Monat verschenkbar</div>
+            <div style={{ fontSize:"12px",color:C.textLight,marginBottom:"14px" }}>Max. 500 XP verschenkbar</div>
             <button onClick={sendGiftPts} style={{ width:"100%",padding:"14px",background:C.orange,borderRadius:"14px",color:C.white,fontSize:"15px",fontWeight:"700",marginBottom:"8px" }}>Senden</button>
             <button onClick={() => setGiftTarget(null)} style={{ width:"100%",padding:"13px",background:"transparent",border:`1px solid ${C.border}`,borderRadius:"14px",color:C.textLight,fontSize:"14px" }}>Abbrechen</button>
           </div>
@@ -1695,9 +1703,9 @@ const AdminPanel = ({ onClose }) => {
       time_window_start:    editMission.time_window_start||null,
       time_window_end:      editMission.time_window_end||null,
       grace_minutes:        parseInt(editMission.grace_minutes)||35,
-      day_of_week:          editMission.day_of_week!=null?parseInt(editMission.day_of_week):null,
+      day_of_week:          (editMission.day_of_week!=null&&editMission.day_of_week!=='')?parseInt(editMission.day_of_week):null,
       deadline_date:        editMission.deadline_date||null,
-      deadline_day_of_week: editMission.deadline_day_of_week!=null?parseInt(editMission.deadline_day_of_week):null,
+      deadline_day_of_week: (editMission.deadline_day_of_week!=null&&editMission.deadline_day_of_week!=='')?parseInt(editMission.deadline_day_of_week):null,
       reset_weekly:         editMission.reset_weekly||false,
     };
     try {
@@ -2257,7 +2265,6 @@ export default function App() {
     {id:"home",     icon:I.home,   l:"Home"},
     {id:"missions", icon:I.target, l:"Missions"},
     {id:"scan",     icon:I.qr,     l:"Scan"},
-    {id:"cinder",   icon:I.heart,  l:"Cinder"},
     {id:"fam",      icon:I.fam,    l:"Fam"},
     {id:"profile",  icon:I.user,   l:"Profil"},
   ];
@@ -2282,21 +2289,20 @@ export default function App() {
           {tab==="home"     && <HomeTab    user={user} setUser={setUser} setTab={setTab}/>}
           {tab==="missions" && <WheelTab   user={user} setUser={setUser}/>}
           {tab==="scan"     && <ScanTab    user={user} setUser={setUser}/>}
-          {tab==="cinder"   && <VoteTab    user={user} setUser={setUser}/>}
           {tab==="fam"      && <FamTab     user={user} C={C} font={font}/>}
           {tab==="profile"  && <ProfileTab user={user} setUser={setUser} onLogout={async () => { await db.signOut(); setUser(null); }} theme={theme}/>}
         </div>
       </div>
 
-      {/* Tab Bar */}
-      <div style={{ flexShrink:0,background:t.navBg,backdropFilter:"blur(24px)",WebkitBackdropFilter:"blur(24px)",borderTop:`0.5px solid ${t.navBorder}`,paddingBottom:SB,transition:"all 0.3s" }}>
-        <div style={{ display:"grid",gridTemplateColumns:"repeat(6,1fr)",padding:"8px 0 2px",maxWidth:"430px",margin:"0 auto" }}>
+      {/* Tab Bar – garantiert am unteren Displayrand */}
+      <div style={{ flexShrink:0,background:t.navBg,backdropFilter:"blur(24px)",WebkitBackdropFilter:"blur(24px)",borderTop:`0.5px solid ${t.navBorder}`,paddingBottom:`max(${SB}, 0px)`,transition:"all 0.3s" }}>
+        <div style={{ display:"grid",gridTemplateColumns:`repeat(${NAV.length},1fr)`,padding:"8px 0 4px",maxWidth:"430px",margin:"0 auto" }}>
           {NAV.map(n => {
             const a = tab === n.id;
             return (
               <button key={n.id} onClick={() => { Sound.tap(); setTab(n.id); }}
-                style={{ display:"flex",flexDirection:"column",alignItems:"center",gap:"3px",background:"none",padding:"6px 0",color:a?t.accent:t.textLight,transition:"all 0.2s" }}>
-                <div style={{ padding:"4px 8px",borderRadius:"12px",background:a?t.accent+"1a":"transparent",transform:a?"scale(1.08)":"scale(1)",transition:"all 0.2s",color:a?t.accent:t.textLight }}>{n.icon}</div>
+                style={{ display:"flex",flexDirection:"column",alignItems:"center",gap:"3px",background:"none",padding:"6px 0",color:a?t.accent:t.textLight,transition:"all 0.2s",border:"none",outline:"none" }}>
+                <div style={{ padding:"4px 10px",borderRadius:"12px",background:a?t.accent+"1a":"transparent",transform:a?"scale(1.08)":"scale(1)",transition:"all 0.2s",color:a?t.accent:t.textLight }}>{n.icon}</div>
                 <span style={{ fontSize:"10px",fontWeight:a?"700":"500",letterSpacing:"0.1px",lineHeight:1 }}>{n.l}</span>
               </button>
             );

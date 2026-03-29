@@ -51,8 +51,8 @@ const shareAsStory = async (type, content, userName) => {
     ctx.beginPath(); ctx.roundRect(80, 500, W-160, 700, 32); ctx.fill();
 
     ctx.fillStyle = "rgba(255,255,255,0.3)"; ctx.font = "400 120px serif"; ctx.textAlign = "left";
-    ctx.fillText(""", 120, 620);
-    ctx.textAlign = "right"; ctx.fillText(""", W-120, 1120);
+    ctx.fillText("\u201C", 120, 620);
+    ctx.textAlign = "right"; ctx.fillText("\u201D", W-120, 1120);
 
     // Text umbrechen
     ctx.fillStyle = "#fff"; ctx.font = "700 42px Inter, sans-serif"; ctx.textAlign = "center";

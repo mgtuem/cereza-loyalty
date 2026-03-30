@@ -336,7 +336,7 @@ function CinderVoteSection({ user, C, font }) {
               <div style={{ padding:"16px" }}>
                 <div style={{ fontSize:"18px",fontFamily:font.display,fontWeight:"700",color:C.text }}>{dish?.name}</div>
                 <div style={{ fontSize:"13px",color:C.textLight,marginTop:"4px",lineHeight:1.5 }}>{dish?.description}</div>
-                <div style={{ fontSize:"12px",color:C.orange,fontWeight:"600",marginTop:"8px" }}>+10 XP für deinen Vote</div>
+                <div style={{ fontSize:"12px",color:C.orange,fontWeight:"600",marginTop:"8px" }}>+10 CP für deinen Vote</div>
               </div>
             </div>
           </div>
@@ -502,7 +502,7 @@ function ThoughtsSection({ user, C, font }) {
     if (error) setErr("Fehler: " + error.message);
     else {
       setText(""); load();
-      // +10 XP fürs Posten
+      // +10 CP fürs Posten
       await db.addPts(user.id, 10);
     }
     setPosting(false);

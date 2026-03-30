@@ -109,10 +109,10 @@ const MOCK_LB = [
   {rank:3,name:"Marco",pts:1450},{rank:4,name:"Elena",pts:1100},{rank:5,name:"Tom",pts:900},
 ];
 const WHEEL_DEFAULT = [
-  {id:1,label:"50 XP", value:50, color:"#fde8e8"},{id:2,label:"Nichts",value:0, color:"#f5f5f5"},
-  {id:3,label:"100 XP",value:100,color:"#e8f5e9"},{id:4,label:"25 XP", value:25, color:"#fef3e2"},
-  {id:5,label:"2× XP", value:-1, color:"#e8eaf6"},{id:6,label:"Nichts",value:0, color:"#f5f5f5"},
-  {id:7,label:"200 XP",value:200,color:"#fce4ec"},{id:8,label:"75 XP", value:75, color:"#e0f7fa"},
+  {id:1,label:"50 CP", value:50, color:"#fde8e8"},{id:2,label:"Nichts",value:0, color:"#f5f5f5"},
+  {id:3,label:"100 CP",value:100,color:"#e8f5e9"},{id:4,label:"25 CP", value:25, color:"#fef3e2"},
+  {id:5,label:"2× CP", value:-1, color:"#e8eaf6"},{id:6,label:"Nichts",value:0, color:"#f5f5f5"},
+  {id:7,label:"200 CP",value:200,color:"#fce4ec"},{id:8,label:"75 CP", value:75, color:"#e0f7fa"},
 ];
 const WHEEL_TC = ["#c0392b","#999","#27ae60","#d35400","#3949ab","#999","#c2185b","#00838f"];
 const FUN_FACTS_DEF = [
@@ -314,47 +314,127 @@ const AuthScreen = ({ onLogin }) => {
 const OnboardingScreen = ({ user, onDone }) => {
   const [step, setStep] = useState(0);
   const [instaTag, setInstaTag] = useState("");
+  const [bonusGiven, setBonusGiven] = useState(false);
+  const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent);
   const steps = [
-    { emoji:"\u{1F355}", title:"Willkommen bei Cereza!", sub:"Das Loyalty Club der besten Pizza in Frankfurt.", btn:"Los geht\u2019s" },
-    { emoji:"\u{1F4F8}", title:"Dein Instagram", sub:"Hinterlege deinen Instagram-Tag \u2014 er wird als dein Name in der App angezeigt.", btn:"Weiter", hasInput:true },
-    { emoji:"\u2B50", title:"Punkte sammeln", sub:"Scanne den QR-Code auf deinem Beleg nach jedem Besuch und sammle XP.", btn:"Weiter" },
-    { emoji:"\u{1F3B0}", title:"Rubbellos", sub:"Rubble t\u00e4glich dein Los frei und gewinne Bonus-XP und \u00dcberraschungen.", btn:"Weiter" },
-    { emoji:"\u{1F355}", title:"Gerichte w\u00e4hlen", sub:"Swipe in Cinder f\u00fcr Gerichte die auf die Karte kommen sollen.", btn:"Weiter" },
-    { emoji:"\u{1F381}", title:"Belohnungen einl\u00f6sen", sub:"Ab 300 XP kannst du Gratis-Getr\u00e4nke, Pizzen und mehr einl\u00f6sen.", btn:"Jetzt starten!" },
+    { id:"welcome", title:"Willkommen bei Cereza!", sub:"Der Loyalty Club der besten Pizza in Frankfurt.", btn:"Los geht's", graphic:"logo" },
+    { id:"insta", title:"Dein Instagram", sub:"Hinterlege deinen Instagram-Tag \u2014 er wird als dein Name angezeigt.", btn:"Weiter", hasInput:true, graphic:"insta" },
+    { id:"scan", title:"Credits sammeln", sub:"Scanne den QR-Code auf deinem Beleg und sammle Credits (CP) f\u00fcr Rewards.", btn:"Weiter", graphic:"scan" },
+    { id:"wheel", title:"Gl\u00fccksrad drehen", sub:"Drehe t\u00e4glich das Gl\u00fccksrad und gewinne Bonus-Credits und Preise!", btn:"Weiter", graphic:"wheel" },
+    { id:"levels", title:"5 Level aufsteigen", sub:"Sammle Credits und steige auf \u2014 jedes Level schaltet neue Belohnungen frei.", btn:"Weiter", graphic:"levels" },
+    { id:"homescreen", title:"Zum Homescreen", sub: isIOS
+        ? "Tippe auf das Teilen-Symbol unten und dann \u201eZum Home-Bildschirm\u201c."
+        : "Tippe auf das Men\u00fc (drei Punkte) und dann \u201eZum Startbildschirm hinzuf\u00fcgen\u201c.",
+      btn:"Weiter", graphic:"homescreen" },
+    { id:"bonus", title:"+100 CP Willkommensbonus!", sub:"Als Dankesch\u00f6n f\u00fcrs Beitreten erh\u00e4ltst du 100 Credits geschenkt!", btn:"Credits einsammeln!", graphic:"bonus" },
   ];
   const s = steps[step];
   const next = async () => {
-    // Save Instagram tag if on that step
-    if (step === 1 && instaTag.trim() && user?.id) {
+    if (s.id === "insta" && instaTag.trim() && user?.id) {
       const tag = instaTag.trim().replace(/^@/,"");
       await db.updateProfile(user.id, { instagram: tag, name: tag });
     }
+    if (s.id === "bonus" && !bonusGiven && user?.id) {
+      setBonusGiven(true);
+      await db.addPts(user.id, 100);
+    }
     if (step < steps.length-1) setStep(s => s+1); else onDone();
   };
-  return (
-    <div style={{ position:"fixed",inset:0,background:"linear-gradient(160deg, #b02605 0%, #8b1e04 60%, #5a1003 100%)",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",padding:"40px 32px",zIndex:99999 }}>
-      <style>{defaultCSS}</style>
-      <div style={{ display:"flex",gap:"6px",marginBottom:"48px" }}>
-        {steps.map((_,i) => (
-          <div key={i} style={{ width:i===step?24:8,height:"8px",borderRadius:"4px",background:i===step?"#fff":"rgba(255,255,255,0.25)",transition:"all 0.3s" }}/>
+
+  // Graphics for each step
+  const renderGraphic = () => {
+    const gfx = s.graphic;
+    if (gfx === "logo") return <div style={{ fontSize:"64px",fontFamily:font.display,color:"#fff",letterSpacing:"-1px",animation:"scaleIn 0.5s" }}>cereza</div>;
+    if (gfx === "insta") return <div style={{ fontSize:"72px",animation:"scaleIn 0.4s" }}>{"\u{1F4F8}"}</div>;
+    if (gfx === "scan") return <div style={{ fontSize:"72px",animation:"scaleIn 0.4s" }}>{"\u{1F4F1}"}</div>;
+    if (gfx === "wheel") return (
+      <div style={{ width:"120px",height:"120px",borderRadius:"50%",background:"conic-gradient(#b02605 0deg, #fef9eb 45deg, #4a6546 90deg, #fef9eb 135deg, #b02605 180deg, #fef9eb 225deg, #4a6546 270deg, #fef9eb 315deg, #b02605 360deg)",display:"flex",alignItems:"center",justifyContent:"center",animation:"scaleIn 0.4s",boxShadow:"0 0 40px rgba(176,38,5,0.3)" }}>
+        <div style={{ width:"36px",height:"36px",borderRadius:"50%",background:"#fff",display:"flex",alignItems:"center",justifyContent:"center",fontSize:"16px",fontWeight:"900",color:"#b02605" }}>C</div>
+      </div>
+    );
+    if (gfx === "levels") return (
+      <div style={{ display:"flex",gap:"6px",alignItems:"flex-end",animation:"fadeUp 0.4s" }}>
+        {ERAS.map((e,i) => (
+          <div key={i} style={{ display:"flex",flexDirection:"column",alignItems:"center",gap:"4px" }}>
+            <div style={{ width:"36px",height:`${20+i*16}px`,borderRadius:"8px",background:i===0?"rgba(255,255,255,0.2)":i<3?"rgba(255,255,255,0.35)":`rgba(255,255,255,0.6)` }}/>
+            <div style={{ fontSize:"8px",color:"rgba(255,255,255,0.5)",fontWeight:"700" }}>{e.name}</div>
+          </div>
         ))}
       </div>
-      <div style={{ fontSize:"72px",marginBottom:"24px",animation:"scaleIn 0.4s" }}>{s.emoji}</div>
-      <div style={{ fontSize:"28px",fontFamily:font.display,color:"#fff",textAlign:"center",marginBottom:"12px",animation:"fadeUp 0.4s" }}>{s.title}</div>
-      <div style={{ fontSize:"16px",color:"rgba(255,255,255,0.65)",textAlign:"center",lineHeight:1.6,marginBottom: s.hasInput ? "24px" : "48px",maxWidth:"300px",animation:"fadeUp 0.4s" }}>{s.sub}</div>
-      {s.hasInput && (
-        <div style={{ marginBottom:"32px",width:"100%",maxWidth:"280px",animation:"fadeUp 0.4s" }}>
-          <input value={instaTag} onChange={e => setInstaTag(e.target.value)} placeholder="@dein_instagram"
-            style={{ width:"100%",padding:"15px 20px",borderRadius:"50px",border:"2px solid rgba(255,255,255,0.2)",background:"rgba(255,255,255,0.1)",color:"#fff",fontSize:"16px",fontWeight:"600",textAlign:"center",outline:"none",backdropFilter:"blur(8px)",boxSizing:"border-box" }}/>
-          <div style={{ fontSize:"12px",color:"rgba(255,255,255,0.35)",marginTop:"8px",textAlign:"center" }}>Optional \u2014 du kannst es sp\u00e4ter im Profil \u00e4ndern</div>
+    );
+    if (gfx === "homescreen") return (
+      <div style={{ width:"180px",background:"rgba(255,255,255,0.08)",borderRadius:"20px",padding:"16px",animation:"fadeUp 0.4s",backdropFilter:"blur(8px)" }}>
+        {isIOS ? (
+          <div style={{ textAlign:"center" }}>
+            <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2" strokeLinecap="round"><path d="M4 12v8a2 2 0 002 2h12a2 2 0 002-2v-8"/><polyline points="16 6 12 2 8 6"/><line x1="12" y1="2" x2="12" y2="15"/></svg>
+            <div style={{ fontSize:"12px",color:"rgba(255,255,255,0.7)",marginTop:"8px",lineHeight:1.4 }}>Teilen-Symbol antippen</div>
+            <div style={{ margin:"8px 0",fontSize:"20px",color:"rgba(255,255,255,0.3)" }}>{"\u2193"}</div>
+            <div style={{ padding:"8px 12px",background:"rgba(255,255,255,0.12)",borderRadius:"10px",fontSize:"12px",color:"#fff",fontWeight:"600" }}>+ Zum Home-Bildschirm</div>
+          </div>
+        ) : (
+          <div style={{ textAlign:"center" }}>
+            <div style={{ fontSize:"24px",color:"#fff" }}>{"\u22EE"}</div>
+            <div style={{ fontSize:"12px",color:"rgba(255,255,255,0.7)",marginTop:"8px",lineHeight:1.4 }}>Men\u00fc antippen</div>
+            <div style={{ margin:"8px 0",fontSize:"20px",color:"rgba(255,255,255,0.3)" }}>{"\u2193"}</div>
+            <div style={{ padding:"8px 12px",background:"rgba(255,255,255,0.12)",borderRadius:"10px",fontSize:"12px",color:"#fff",fontWeight:"600" }}>Zum Startbildschirm</div>
+          </div>
+        )}
+      </div>
+    );
+    if (gfx === "bonus") return (
+      <div style={{ animation:"scaleIn 0.5s",textAlign:"center" }}>
+        <div style={{ fontSize:"64px",fontFamily:font.display,color:"#fff",lineHeight:1 }}>+100</div>
+        <div style={{ fontSize:"24px",fontWeight:"800",color:"rgba(255,255,255,0.6)",letterSpacing:"2px" }}>CP</div>
+      </div>
+    );
+    return <div style={{ fontSize:"72px",animation:"scaleIn 0.4s" }}>{"\u{1F355}"}</div>;
+  };
+
+  return (
+    <div style={{ position:"fixed",inset:0,background:"linear-gradient(160deg, #b02605 0%, #8b1e04 60%, #5a1003 100%)",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",padding:"40px 24px",zIndex:99999,overflow:"auto" }}>
+      <style>{defaultCSS}</style>
+      {/* Progress */}
+      <div style={{ display:"flex",gap:"5px",marginBottom:"40px" }}>
+        {steps.map((_,i) => (
+          <div key={i} style={{ width:i===step?20:7,height:"6px",borderRadius:"3px",background:i===step?"#fff":i<step?"rgba(255,255,255,0.5)":"rgba(255,255,255,0.15)",transition:"all 0.3s" }}/>
+        ))}
+      </div>
+      {/* Graphic */}
+      <div style={{ marginBottom:"28px",minHeight:"120px",display:"flex",alignItems:"center",justifyContent:"center" }}>
+        {renderGraphic()}
+      </div>
+      {/* Text */}
+      <div style={{ fontSize:"26px",fontFamily:font.display,color:"#fff",textAlign:"center",marginBottom:"10px",animation:"fadeUp 0.4s",lineHeight:1.2 }}>{s.title}</div>
+      <div style={{ fontSize:"15px",color:"rgba(255,255,255,0.6)",textAlign:"center",lineHeight:1.6,marginBottom:s.hasInput?"20px":"36px",maxWidth:"300px",animation:"fadeUp 0.4s" }}>{s.sub}</div>
+      {/* Level detail for levels step */}
+      {s.id === "levels" && (
+        <div style={{ width:"100%",maxWidth:"300px",marginBottom:"28px",animation:"fadeUp 0.5s" }}>
+          {ERAS.map((e,i) => (
+            <div key={i} style={{ display:"flex",alignItems:"center",gap:"12px",padding:"8px 0",borderBottom:i<ERAS.length-1?"1px solid rgba(255,255,255,0.08)":"none" }}>
+              <div style={{ width:"28px",height:"28px",borderRadius:"50%",background:`rgba(255,255,255,${0.1+i*0.1})`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:"12px",fontWeight:"800",color:"#fff" }}>{e.level}</div>
+              <div style={{ flex:1 }}>
+                <div style={{ fontSize:"14px",fontWeight:"700",color:"#fff" }}>{e.name}</div>
+              </div>
+              <div style={{ fontSize:"11px",color:"rgba(255,255,255,0.4)",fontWeight:"600" }}>{e.pts} CP</div>
+            </div>
+          ))}
         </div>
       )}
+      {/* Instagram input */}
+      {s.hasInput && (
+        <div style={{ marginBottom:"28px",width:"100%",maxWidth:"280px",animation:"fadeUp 0.4s" }}>
+          <input value={instaTag} onChange={e => setInstaTag(e.target.value)} placeholder="@dein_instagram"
+            style={{ width:"100%",padding:"14px 20px",borderRadius:"50px",border:"2px solid rgba(255,255,255,0.15)",background:"rgba(255,255,255,0.08)",color:"#fff",fontSize:"16px",fontWeight:"600",textAlign:"center",outline:"none",backdropFilter:"blur(8px)",boxSizing:"border-box" }}/>
+          <div style={{ fontSize:"11px",color:"rgba(255,255,255,0.3)",marginTop:"6px",textAlign:"center" }}>Optional</div>
+        </div>
+      )}
+      {/* CTA */}
       <button onClick={next}
-        style={{ padding:"17px 52px",background:"rgba(254,249,235,0.95)",borderRadius:"50px",color:"#b02605",fontSize:"17px",fontWeight:"800",animation:"fadeUp 0.4s" }}>
+        style={{ padding:"16px 48px",background:"rgba(254,249,235,0.95)",borderRadius:"50px",color:"#b02605",fontSize:"16px",fontWeight:"800",animation:"fadeUp 0.4s",boxShadow:"0 4px 20px rgba(0,0,0,0.15)" }}>
         {s.btn}
       </button>
-      {step > 0 && (
-        <button onClick={onDone} style={{ marginTop:"18px",color:"rgba(255,255,255,0.35)",fontSize:"14px",background:"none",border:"none" }}>
+      {step > 0 && step < steps.length-1 && (
+        <button onClick={onDone} style={{ marginTop:"16px",color:"rgba(255,255,255,0.3)",fontSize:"13px",background:"none",border:"none" }}>
           \u00dcberspringen
         </button>
       )}
@@ -451,7 +531,7 @@ const MissionCard = ({ mission: m, user, setUser }) => {
           )}
         </div>
         <div style={{ display:"flex",flexDirection:"column",alignItems:"flex-end",gap:"4px",flexShrink:0 }}>
-          <div style={{ fontSize:"13px",fontWeight:"700",color:done?C.green:C.orange }}>{done?"✓":`+${m.pts_reward} XP`}</div>
+          <div style={{ fontSize:"13px",fontWeight:"700",color:done?C.green:C.orange }}>{done?"✓":`+${m.pts_reward} CP`}</div>
           {goal > 1 && <div style={{ fontSize:"10px",color:C.textLight }}>{progress}/{goal}</div>}
           <div style={{ fontSize:"16px",color:C.textLight,transform:open?"rotate(180deg)":"rotate(0deg)",transition:"transform 0.25s" }}>⌄</div>
         </div>
@@ -687,7 +767,7 @@ const HomeTab = ({ user, setUser, setTab }) => {
             <div>
               <div style={{ fontSize:"11px",fontWeight:"700",letterSpacing:"1.5px",color:C.textLight,marginBottom:"4px" }}>DEIN STATUS</div>
               <div style={{ fontSize:"30px",fontFamily:font.display,color:C.orange,fontWeight:"700",lineHeight:1 }}>{era.name}</div>
-              <div style={{ fontSize:"12px",color:C.textLight,marginTop:"6px" }}>{next ? `Noch ${next.pts-(user.pts||0)} XP zu ${next.name}` : "Max Level erreicht"}</div>
+              <div style={{ fontSize:"12px",color:C.textLight,marginTop:"6px" }}>{next ? `Noch ${next.pts-(user.pts||0)} CP zu ${next.name}` : "Max Level erreicht"}</div>
             </div>
             <div style={{ position:"relative",width:"54px",height:"54px" }}>
               <svg width="54" height="54" viewBox="0 0 54 54">
@@ -698,7 +778,7 @@ const HomeTab = ({ user, setUser, setTab }) => {
             </div>
           </div>
           <div style={{ display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:"8px",marginTop:"14px" }}>
-            {[{v:user.pts||0,l:"XP"},{v:user.total_visits||0,l:"Besuche"},{v:user.streak||0,l:"Streak"}].map((s,i) => (
+            {[{v:user.pts||0,l:"CP"},{v:user.total_visits||0,l:"Besuche"},{v:user.streak||0,l:"Streak"}].map((s,i) => (
               <div key={i} style={{ textAlign:"center",padding:"10px 8px",background:C.greyBg,borderRadius:"12px" }}>
                 <div style={{ fontSize:"20px",fontWeight:"800",color:C.text }}>{s.v}</div>
                 <div style={{ fontSize:"10px",color:C.textLight,marginTop:"2px",fontWeight:"500" }}>{s.l}</div>
@@ -748,7 +828,7 @@ const HomeTab = ({ user, setUser, setTab }) => {
             ctx.fillStyle = "rgba(254,249,235,0.6)"; ctx.font = "500 28px 'Plus Jakarta Sans', sans-serif";
             ctx.fillText(era.name + " \u00b7 Level " + (user.level||1), 540, 830);
             // Stats
-            const stats = [{v:user.pts||0,l:"XP"},{v:user.total_visits||0,l:"Besuche"},{v:user.streak||0,l:"Streak"}];
+            const stats = [{v:user.pts||0,l:"CP"},{v:user.total_visits||0,l:"Besuche"},{v:user.streak||0,l:"Streak"}];
             stats.forEach((s,i) => {
               const sx = 260 + i*280;
               ctx.fillStyle = "#fef9eb"; ctx.font = "800 52px Gallica, serif";
@@ -767,7 +847,7 @@ const HomeTab = ({ user, setUser, setTab }) => {
                 if (navigator.canShare?.({files:[file]})) {
                   await navigator.share({files:[file], title:"Mein Cereza Status"});
                 } else {
-                  navigator.share?.({title:"Cereza Loyalty", text:`Ich bin ${era.name} bei Cereza! ${user.pts||0} XP`, url:"https://cereza-loyalty.vercel.app"});
+                  navigator.share?.({title:"Cereza Loyalty", text:`Ich bin ${era.name} bei Cereza! ${user.pts||0} CP`, url:"https://cereza-loyalty.vercel.app"});
                 }
               } catch { /* cancelled */ }
             }, "image/png");
@@ -787,7 +867,7 @@ const HomeTab = ({ user, setUser, setTab }) => {
             <div style={{ display:"flex",alignItems:"center",justifyContent:"space-between" }}>
               <div>
                 <div style={{ fontSize:"10px",fontWeight:"700",letterSpacing:"2px",color:glowInfo?.active?"rgba(255,255,255,0.7)":C.textLight }}>{glowInfo?.active ? "GLOW HOUR AKTIV" : "NÄCHSTE GLOW HOUR"}</div>
-                <div style={{ fontSize:"13px",fontWeight:"600",color:glowInfo?.active?"#fff":C.textSub,marginTop:"4px" }}>{glowInfo?.active ? "Doppelte XP jetzt!" : "Doppelte XP bald"}</div>
+                <div style={{ fontSize:"13px",fontWeight:"600",color:glowInfo?.active?"#fff":C.textSub,marginTop:"4px" }}>{glowInfo?.active ? "Doppelte CP jetzt!" : "Doppelte CP bald"}</div>
               </div>
               <div style={{ textAlign:"right" }}>
                 <div style={{ fontSize:"28px",fontWeight:"800",fontFamily:"monospace",color:glowInfo?.active?"#fff":C.orange }}>{glowCountdown}</div>
@@ -967,13 +1047,13 @@ const WheelTab = ({ user, setUser }) => {
             </div>
             <button onClick={spin} disabled={spinning||!canSpin||(needsPay&&(user.pts||0)<100)}
               style={{ marginTop:"18px",padding:"14px 48px",borderRadius:"50px",fontSize:"15px",fontWeight:"700",background:!canSpin?C.greyBg:C.orange,color:!canSpin?C.textLight:C.white,transition:"all 0.2s" }}>
-              {!canSpin?"Fertig für heute":spinning?"Dreht...":needsPay?"Nochmal (100 XP)":"Drehen"}
+              {!canSpin?"Fertig für heute":spinning?"Dreht...":needsPay?"Nochmal (100 CP)":"Drehen"}
             </button>
             <div style={{ fontSize:"11px",color:C.textLight,marginTop:"6px" }}>{spins}/{MAX} Spins heute</div>
             {result && (
               <Card style={{ marginTop:"12px",padding:"14px",animation:"scaleIn 0.4s",maxWidth:"200px" }}>
                 <div style={{ fontSize:"15px",fontWeight:"800",color:result.value>0?C.orange:C.text }}>
-                  {result.value>0?`+${result.value} XP!`:result.value===-1?"2× XP heute!":"Kein Glück"}
+                  {result.value>0?`+${result.value} XP!`:result.value===-1?"2× CP heute!":"Kein Glück"}
                 </div>
               </Card>
             )}
@@ -1292,7 +1372,7 @@ const VoteTab = ({ user, setUser }) => {
                 <div style={{ padding:"18px" }}>
                   <div style={{ fontSize:"20px",fontFamily:font.display,fontWeight:"700",color:C.text }}>{dish?.name}</div>
                   <div style={{ fontSize:"13px",color:C.textLight,marginTop:"4px",lineHeight:1.5 }}>{dish?.description}</div>
-                  <div style={{ fontSize:"12px",color:C.orange,fontWeight:"600",marginTop:"8px" }}>+10 XP für deinen Vote</div>
+                  <div style={{ fontSize:"12px",color:C.orange,fontWeight:"600",marginTop:"8px" }}>+10 CP für deinen Vote</div>
                 </div>
               </Card>
             </div>
@@ -1450,7 +1530,7 @@ const ProfileTab = ({ user, setUser, onLogout, theme }) => {
 
   const shareApp = () => {
     const link = `https://cereza-loyalty.vercel.app?ref=${user.name||"friend"}`;
-    if (navigator.share) navigator.share({ title:"Cereza Loyalty", text:"Wir bekommen beide XP!", url:link });
+    if (navigator.share) navigator.share({ title:"Cereza Loyalty", text:"Wir bekommen beide CP!", url:link });
     else { navigator.clipboard?.writeText(link); setShowShare(true); setTimeout(() => setShowShare(false), 2000); }
   };
 
@@ -1480,7 +1560,7 @@ const ProfileTab = ({ user, setUser, onLogout, theme }) => {
             <div style={{ fontSize:"17px",fontWeight:"700",color:C.text,marginBottom:"16px" }}>XP schenken an @{giftTarget.name}</div>
             <input type="number" value={giftAmt} onChange={e => setGiftAmt(Number(e.target.value))} min="10" max="200" style={{ width:"100%",padding:"13px 16px",border:`1px solid ${C.border}`,borderRadius:"13px",fontSize:"16px",outline:"none",boxSizing:"border-box",marginBottom:"10px",background:C.card,color:C.text }}/>
             <input value={giftMsg} onChange={e => setGiftMsg(e.target.value)} placeholder="Nachricht (optional)" style={{ width:"100%",padding:"13px 16px",border:`1px solid ${C.border}`,borderRadius:"13px",fontSize:"16px",outline:"none",boxSizing:"border-box",marginBottom:"12px",background:C.card,color:C.text }}/>
-            <div style={{ fontSize:"12px",color:C.textLight,marginBottom:"14px" }}>Max. 500 XP verschenkbar</div>
+            <div style={{ fontSize:"12px",color:C.textLight,marginBottom:"14px" }}>Max. 500 CP verschenkbar</div>
             <button onClick={sendGiftPts} style={{ width:"100%",padding:"14px",background:C.orange,borderRadius:"14px",color:C.white,fontSize:"15px",fontWeight:"700",marginBottom:"8px" }}>Senden</button>
             <button onClick={() => setGiftTarget(null)} style={{ width:"100%",padding:"13px",background:"transparent",border:`1px solid ${C.border}`,borderRadius:"14px",color:C.textLight,fontSize:"14px" }}>Abbrechen</button>
           </div>
@@ -1513,7 +1593,7 @@ const ProfileTab = ({ user, setUser, onLogout, theme }) => {
       <div style={{ padding:"16px" }}>
         {/* Stats */}
         <div style={{ display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:"8px",marginBottom:"14px" }}>
-          {[{v:user.pts||0,l:"XP"},{v:user.total_visits||0,l:"Besuche"},{v:user.streak||0,l:"Streak"}].map((s,i) => (
+          {[{v:user.pts||0,l:"CP"},{v:user.total_visits||0,l:"Besuche"},{v:user.streak||0,l:"Streak"}].map((s,i) => (
             <Card key={i} style={{ padding:"12px",textAlign:"center" }}>
               <div style={{ fontSize:"20px",fontWeight:"800",color:C.text }}>{s.v}</div>
               <div style={{ fontSize:"10px",color:C.textLight,marginTop:"2px" }}>{s.l}</div>
@@ -1544,7 +1624,7 @@ const ProfileTab = ({ user, setUser, onLogout, theme }) => {
                   <div style={{ fontSize:"26px",marginBottom:"6px" }}>{item.icon}</div>
                   <div style={{ fontSize:"13px",fontWeight:"700",color:C.text }}>{item.name}</div>
                   <div style={{ marginTop:"8px",padding:"3px 10px",borderRadius:"10px",fontSize:"10px",fontWeight:"700",background:ok?C.orange:C.greyBg,color:ok?C.white:C.textLight,display:"inline-block" }}>
-                    {locked ? `Level ${item.min_level}` : `${item.cost} XP`}
+                    {locked ? `Level ${item.min_level}` : `${item.cost} CP`}
                   </div>
                 </Card>
               );
@@ -1625,7 +1705,7 @@ const ProfileTab = ({ user, setUser, onLogout, theme }) => {
                 <div style={{ display:"flex",justifyContent:"space-between",alignItems:"center" }}>
                   <div>
                     <div style={{ fontSize:"14px",fontWeight:"700",color:C.text }}>{g.sender_id===user.id?`→ @${g.receiver?.name}`:`← @${g.sender?.name}`}</div>
-                    <div style={{ fontSize:"12px",color:C.textLight,marginTop:"2px" }}>{g.type==="pts"?`${g.amount} XP`:g.type}{g.message?` · "${g.message}"`:"" }</div>
+                    <div style={{ fontSize:"12px",color:C.textLight,marginTop:"2px" }}>{g.type==="pts"?`${g.amount} CP`:g.type}{g.message?` · "${g.message}"`:"" }</div>
                   </div>
                   {g.receiver_id===user.id && g.status==="pending" && (
                     <button onClick={async () => { await db.claimGift(g.id,user.id); const f=await db.getProfile(user.id); if(f) setUser(u=>({...u,...f})); db.getMyGifts(user.id).then(setGifts); }} style={{ padding:"9px 16px",background:C.orange,borderRadius:"10px",color:C.white,fontSize:"13px",fontWeight:"700" }}>Annehmen</button>
@@ -1651,7 +1731,7 @@ const ProfileTab = ({ user, setUser, onLogout, theme }) => {
                   if(!error){
                     const{data:u}=supabase.storage.from('avatars').getPublicUrl(path);
                     await supabase.from('vibe_photos').insert({user_id:user.id,url:u.publicUrl+'?t='+Date.now(),approved:false});
-                    alert("Hochgeladen! Wartet auf Admin-Freigabe (+50 XP bei Genehmigung)");
+                    alert("Hochgeladen! Wartet auf Admin-Freigabe (+50 CP bei Genehmigung)");
                   } else { alert("Upload fehlgeschlagen: "+error.message); }
                 }}/>
               </label>
@@ -1665,7 +1745,7 @@ const ProfileTab = ({ user, setUser, onLogout, theme }) => {
                   if(!error){
                     const{data:u}=supabase.storage.from('avatars').getPublicUrl(path);
                     await supabase.from('vibe_photos').insert({user_id:user.id,url:u.publicUrl+'?t='+Date.now(),approved:false});
-                    alert("Hochgeladen! Wartet auf Admin-Freigabe (+50 XP bei Genehmigung)");
+                    alert("Hochgeladen! Wartet auf Admin-Freigabe (+50 CP bei Genehmigung)");
                   } else { alert("Upload fehlgeschlagen: "+error.message); }
                 }}/>
               </label>
@@ -1681,7 +1761,7 @@ const ProfileTab = ({ user, setUser, onLogout, theme }) => {
                         const res = await fetch(v.url);
                         const blob = await res.blob();
                         const file = new File([blob], 'cereza-vibe.jpg', { type: 'image/jpeg' });
-                        await navigator.share({ files: [file], title: 'Cereza Vibe', text: `Mein Vibe bei Cereza! @${user.name} | ${user.pts||0} XP` });
+                        await navigator.share({ files: [file], title: 'Cereza Vibe', text: `Mein Vibe bei Cereza! @${user.name} | ${user.pts||0} CP` });
                       } catch { navigator.share({ title: 'Cereza Vibe', text: `Schau mal bei Cereza vorbei!`, url: window.location.origin }).catch(() => {}); }
                     }
                   }} style={{ position:"absolute",bottom:"6px",right:"6px",width:"32px",height:"32px",borderRadius:"50%",background:"rgba(0,0,0,0.5)",backdropFilter:"blur(4px)",border:"none",color:"#fff",fontSize:"14px",cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center" }}>
@@ -1896,7 +1976,7 @@ const AdminPanel = ({ onClose }) => {
         p_notes:      null,
       });
       if (error || !data?.ok) setQrResult({ ok:false, msg:data?.error||error?.message||"Fehler" });
-      else { setQrResult({ ok:true, msg:data.completed?`✅ Mission abgeschlossen! +${qrSelected.pts_reward} XP`:`✅ Stempel ${data.progress}/${data.goal}` }); setQrScanned(null); }
+      else { setQrResult({ ok:true, msg:data.completed?`✅ Mission abgeschlossen! +${qrSelected.pts_reward} CP`:`✅ Stempel ${data.progress}/${data.goal}` }); setQrScanned(null); }
       setQrStamping(false);
     };
 
@@ -2045,7 +2125,7 @@ const AdminPanel = ({ onClose }) => {
       {editUser && (
         <AdminModal title="User bearbeiten" onSave={async()=>{await db.updateProfile(editUser.id,{name:editUser.name,pts:parseInt(editUser.pts)||0,level:parseInt(editUser.level)||1,is_admin:editUser.is_admin,is_abo_member:editUser.is_abo_member,streak:parseInt(editUser.streak)||0,total_visits:parseInt(editUser.total_visits)||0});ok2("Gespeichert ✓");setEditUser(null);db.getAllProfiles().then(setUsers);}} onClose={()=>setEditUser(null)}>
           <AdminInput label="Name" value={editUser.name} onChange={v=>setEditUser(p=>({...p,name:v}))}/>
-          <AdminInput label="XP" value={editUser.pts} onChange={v=>setEditUser(p=>({...p,pts:v}))} type="number"/>
+          <AdminInput label="CP" value={editUser.pts} onChange={v=>setEditUser(p=>({...p,pts:v}))} type="number"/>
           <AdminInput label="Level (1-5)" value={editUser.level} onChange={v=>setEditUser(p=>({...p,level:v}))} type="number"/>
           <AdminInput label="Streak" value={editUser.streak} onChange={v=>setEditUser(p=>({...p,streak:v}))} type="number"/>
           <AdminInput label="Besuche" value={editUser.total_visits} onChange={v=>setEditUser(p=>({...p,total_visits:v}))} type="number"/>
@@ -2130,7 +2210,7 @@ const AdminPanel = ({ onClose }) => {
           <AdminInput label="Name" value={editShop.name} onChange={v=>setEditShop(p=>({...p,name:v}))}/>
           <AdminInput label="Beschreibung" value={editShop.description} onChange={v=>setEditShop(p=>({...p,description:v}))}/>
           <AdminInput label="Icon" value={editShop.icon} onChange={v=>setEditShop(p=>({...p,icon:v}))}/>
-          <AdminInput label="XP Kosten" value={editShop.cost} onChange={v=>setEditShop(p=>({...p,cost:v}))} type="number"/>
+          <AdminInput label="CP Kosten" value={editShop.cost} onChange={v=>setEditShop(p=>({...p,cost:v}))} type="number"/>
           <AdminInput label="Min. Level" value={editShop.min_level} onChange={v=>setEditShop(p=>({...p,min_level:v}))} type="number"/>
           {editShop.id && <AdminToggle label="Aktiv" value={editShop.active!==false} onChange={v=>setEditShop(p=>({...p,active:v}))}/>}
         </AdminModal>
@@ -2142,7 +2222,7 @@ const AdminPanel = ({ onClose }) => {
           ok2("Gespeichert ✓");setEditPrize(null);db.getWheelPrizes().then(setPrizes);
         }} onClose={()=>setEditPrize(null)}>
           <AdminInput label="Label" value={editPrize.label} onChange={v=>setEditPrize(p=>({...p,label:v}))}/>
-          <AdminInput label="Wert (XP, 0=nichts, -1=2x)" value={editPrize.value} onChange={v=>setEditPrize(p=>({...p,value:v}))} type="number"/>
+          <AdminInput label="Wert (CP, 0=nichts, -1=2x)" value={editPrize.value} onChange={v=>setEditPrize(p=>({...p,value:v}))} type="number"/>
           <AdminInput label="Farbe (Hex)" value={editPrize.color} onChange={v=>setEditPrize(p=>({...p,color:v}))}/>
           {editPrize.id && <AdminToggle label="Aktiv" value={editPrize.active!==false} onChange={v=>setEditPrize(p=>({...p,active:v}))}/>}
         </AdminModal>
@@ -2240,7 +2320,7 @@ const AdminPanel = ({ onClose }) => {
             {shopItems.map(item=>(
               <div key={item.id} style={{ background:"#fff",borderRadius:"16px",padding:"13px",border:"1px solid #e8e8e8",marginBottom:"6px",display:"flex",alignItems:"center",gap:"12px" }}>
                 <div style={{ fontSize:"26px" }}>{item.icon}</div>
-                <div style={{ flex:1 }}><div style={{ fontSize:"15px",fontWeight:"700",color:"#111" }}>{item.name}</div><div style={{ fontSize:"12px",color:"#999" }}>{item.cost} XP · Level {item.min_level}+</div></div>
+                <div style={{ flex:1 }}><div style={{ fontSize:"15px",fontWeight:"700",color:"#111" }}>{item.name}</div><div style={{ fontSize:"12px",color:"#999" }}>{item.cost} CP · Level {item.min_level}+</div></div>
                 <button onClick={()=>setEditShop({...item})} style={{ background:"#f5f5f5",border:"1px solid #e8e8e8",borderRadius:"10px",padding:"8px 12px",color:"#555" }}>{I.edit}</button>
               </div>
             ))}
@@ -2253,7 +2333,7 @@ const AdminPanel = ({ onClose }) => {
             {missions.map(m=>(
               <div key={m.id} style={{ background:"#fff",borderRadius:"16px",padding:"13px",border:"1px solid #e8e8e8",marginBottom:"6px",display:"flex",alignItems:"center",gap:"12px" }}>
                 <div style={{ fontSize:"22px" }}>{m.icon}</div>
-                <div style={{ flex:1 }}><div style={{ fontSize:"15px",fontWeight:"700",color:"#111" }}>{m.title}</div><div style={{ fontSize:"12px",color:"#999" }}>{m.description} · +{m.pts_reward} XP · Ziel: {m.goal}×</div></div>
+                <div style={{ flex:1 }}><div style={{ fontSize:"15px",fontWeight:"700",color:"#111" }}>{m.title}</div><div style={{ fontSize:"12px",color:"#999" }}>{m.description} · +{m.pts_reward} CP · Ziel: {m.goal}×</div></div>
                 <button onClick={()=>setEditMission({...m})} style={{ background:"#f5f5f5",border:"1px solid #e8e8e8",borderRadius:"10px",padding:"8px 12px",color:"#555" }}>{I.edit}</button>
               </div>
             ))}
@@ -2278,7 +2358,7 @@ const AdminPanel = ({ onClose }) => {
             <button onClick={()=>setEditGlow({day_of_week:1,start_time:"12:00",end_time:"14:00",multiplier:2,active:true})} style={{ width:"100%",padding:"13px",background:"#e24a28",borderRadius:"14px",color:"#fff",fontSize:"15px",fontWeight:"700",marginBottom:"10px" }}>+ Neue Glow Hour</button>
             {glowHours.map(g=>(
               <div key={g.id} style={{ background:"#fff",borderRadius:"16px",padding:"13px",border:"1px solid #e8e8e8",marginBottom:"6px",display:"flex",alignItems:"center",gap:"12px" }}>
-                <div style={{ flex:1 }}><div style={{ fontSize:"15px",fontWeight:"700",color:"#111" }}>{DAYS[g.day_of_week]}</div><div style={{ fontSize:"12px",color:"#999" }}>{g.start_time} – {g.end_time} · {g.multiplier}× XP · {g.active?"Aktiv":"Inaktiv"}</div></div>
+                <div style={{ flex:1 }}><div style={{ fontSize:"15px",fontWeight:"700",color:"#111" }}>{DAYS[g.day_of_week]}</div><div style={{ fontSize:"12px",color:"#999" }}>{g.start_time} – {g.end_time} · {g.multiplier}× CP · {g.active?"Aktiv":"Inaktiv"}</div></div>
                 <button onClick={()=>setEditGlow({...g})} style={{ background:"#f5f5f5",border:"1px solid #e8e8e8",borderRadius:"10px",padding:"8px 12px",color:"#555" }}>{I.edit}</button>
               </div>
             ))}
@@ -2291,7 +2371,7 @@ const AdminPanel = ({ onClose }) => {
             {prizes.map(p=>(
               <div key={p.id} style={{ background:"#fff",borderRadius:"16px",padding:"13px",border:"1px solid #e8e8e8",marginBottom:"6px",display:"flex",alignItems:"center",gap:"12px" }}>
                 <div style={{ width:"26px",height:"26px",borderRadius:"8px",background:p.color,flexShrink:0 }}/>
-                <div style={{ flex:1 }}><div style={{ fontSize:"15px",fontWeight:"700",color:"#111" }}>{p.label}</div><div style={{ fontSize:"12px",color:"#999" }}>{p.value>0?`+${p.value} XP`:p.value===-1?"2× XP":"Kein Gewinn"}</div></div>
+                <div style={{ flex:1 }}><div style={{ fontSize:"15px",fontWeight:"700",color:"#111" }}>{p.label}</div><div style={{ fontSize:"12px",color:"#999" }}>{p.value>0?`+${p.value} CP`:p.value===-1?"2× CP":"Kein Gewinn"}</div></div>
                 <button onClick={()=>setEditPrize({...p})} style={{ background:"#f5f5f5",border:"1px solid #e8e8e8",borderRadius:"10px",padding:"8px 12px",color:"#555" }}>{I.edit}</button>
               </div>
             ))}
@@ -2322,7 +2402,7 @@ const AdminPanel = ({ onClose }) => {
                 <img src={v.url} style={{ width:"100%",borderRadius:"10px",marginBottom:"8px",filter:"sepia(0.3) contrast(1.1)" }}/>
                 <div style={{ fontSize:"12px",color:"#999",marginBottom:"10px" }}>@{v.profile?.name} · {new Date(v.created_at).toLocaleDateString('de-DE')}</div>
                 <div style={{ display:"flex",gap:"8px" }}>
-                  <button onClick={async()=>{await db.approveVibe(v.id,true);if(v.user_id){await db.addPts(v.user_id,50);}ok2("Freigegeben + 50 XP ✓");db.getPendingVibes().then(setVibes);}} style={{ flex:1,padding:"11px",background:"#2d472a",borderRadius:"12px",color:"#fff",fontSize:"14px",fontWeight:"700" }}>✓ Freigeben (+50 XP)</button>
+                  <button onClick={async()=>{await db.approveVibe(v.id,true);if(v.user_id){await db.addPts(v.user_id,50);}ok2("Freigegeben + 50 XP ✓");db.getPendingVibes().then(setVibes);}} style={{ flex:1,padding:"11px",background:"#2d472a",borderRadius:"12px",color:"#fff",fontSize:"14px",fontWeight:"700" }}>✓ Freigeben (+50 CP)</button>
                   <button onClick={async()=>{await supabase.from('vibe_photos').delete().eq('id',v.id);ok2("Abgelehnt");db.getPendingVibes().then(setVibes);}} style={{ flex:1,padding:"11px",background:"#f5f5f5",border:"1px solid #e8e8e8",borderRadius:"12px",color:"#999",fontSize:"14px",fontWeight:"700" }}>✕ Ablehnen</button>
                 </div>
               </div>
@@ -2373,7 +2453,7 @@ const AdminPanel = ({ onClose }) => {
               }} style={{ width:"100%",padding:"14px",background:C.orange,borderRadius:"50px",color:"#fff",fontSize:"15px",fontWeight:"700" }}>E-Mail senden</button>
             </div>
             <div style={{ fontSize:"11px",fontWeight:"700",letterSpacing:"1px",color:C.textLight,marginBottom:"10px" }}>SCHNELL-VORLAGEN</div>
-            {[{t:"Glow Hour startet!",b:"Doppelte XP jetzt! Komm vorbei und sammle doppelt."},{t:"Neue Missionen",b:"Neue Challenges warten auf dich. Schau sie dir an!"},{t:"Neues Gericht",b:"Swipe jetzt in Cinder und bewerte das neue Gericht!"}].map((q,i)=>(
+            {[{t:"Glow Hour startet!",b:"Doppelte CP jetzt! Komm vorbei und sammle doppelt."},{t:"Neue Missionen",b:"Neue Challenges warten auf dich. Schau sie dir an!"},{t:"Neues Gericht",b:"Swipe jetzt in Cinder und bewerte das neue Gericht!"}].map((q,i)=>(
               <button key={i} onClick={async()=>{
                 try{
                   const{data:{session}}=await supabase.auth.getSession();

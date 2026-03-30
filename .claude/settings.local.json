@@ -1,7 +1,10 @@
 {
   "permissions": {
     "allow": [
-      "Bash(npx vite:*)"
+      "Bash(npx vite:*)",
+      "Bash(ls -la \"C:\\\\Users\\\\Ghaza\\\\Desktop\\\\cereza-loyalty\\\\.claude\\\\worktrees\\\\eager-kilby\\\\public\\\\icon\"*)",
+      "Bash(ls -la \"C:\\\\Users\\\\Ghaza\\\\Desktop\\\\cereza-loyalty\\\\.claude\\\\worktrees\\\\eager-kilby\\\\public\\\\Icon\"*)",
+      "Bash(ls -la \"C:\\\\Users\\\\Ghaza\\\\Desktop\\\\cereza-loyalty\\\\.claude\\\\worktrees\\\\eager-kilby\\\\public/\"*.png)"
     ]
   }
 }

@@ -4,42 +4,47 @@ import FamTab from "./FamTab";
 import { UserProfileCard, MissionQRScanner } from "./UserComponents";
 import { requestPushPermission, onForegroundMessage, sendPushToAll } from "./push";
 
-// ─── Themes ──────────────────────────────────────────────────────
+// ─── Themes · "The Modern Trattoria Editorial" ──────────────────
 const T = {
   light: {
-    bg:"#C1272D", surface:"#f0e8d8", card:"#ffffff",
-    accent:"#e24a28", green:"#2d472a",
-    text:"#111111", textSub:"#555555", textLight:"#999999",
-    white:"#ffffff", border:"#ebebeb", grey:"#f5f5f5",
-    navBg:"rgba(255,255,255,0.94)", navBorder:"rgba(0,0,0,0.07)", name:"Standard",
+    bg:"#b02605", surface:"#fef9eb", card:"#fffdf5",
+    accent:"#b02605", green:"#4a6546",
+    text:"#1d1c13", textSub:"#4a4639", textLight:"#8a8475",
+    white:"#fffdf5", border:"rgba(74,70,57,0.08)", grey:"#f5f0e0",
+    navBg:"rgba(254,249,235,0.88)", navBorder:"rgba(74,70,57,0.06)", name:"Trattoria",
+    surfaceLow:"#faf4e2", surfaceHigh:"#f0e8d0",
   },
   beige: {
-    bg:"#e8dcc8", surface:"#f5efe0", card:"#fffdf7",
-    accent:"#b85c38", green:"#3d5a2a",
+    bg:"#8b6914", surface:"#fef9eb", card:"#fffdf5",
+    accent:"#8b6914", green:"#4a6546",
     text:"#2a1f0e", textSub:"#6b5a3e", textLight:"#a09070",
-    white:"#fffdf7", border:"#ddd0b8", grey:"#f0e8d0",
-    navBg:"rgba(255,253,247,0.96)", navBorder:"rgba(168,140,100,0.12)", name:"Beige",
+    white:"#fffdf5", border:"rgba(107,90,62,0.08)", grey:"#f5efe0",
+    navBg:"rgba(254,249,235,0.90)", navBorder:"rgba(107,90,62,0.06)", name:"Oro",
+    surfaceLow:"#f5efe0", surfaceHigh:"#ebe2cc",
   },
   red: {
-    bg:"#8B0000", surface:"#f9f0f0", card:"#ffffff",
-    accent:"#e24a28", green:"#2d6a2d",
-    text:"#1a0000", textSub:"#5a2020", textLight:"#a06060",
-    white:"#ffffff", border:"#f0d0d0", grey:"#fdf4f4",
-    navBg:"rgba(255,255,255,0.96)", navBorder:"rgba(200,100,100,0.1)", name:"Rot",
+    bg:"#7a1a0a", surface:"#fef5f0", card:"#fffaf7",
+    accent:"#9b2315", green:"#4a6546",
+    text:"#2a0e08", textSub:"#6b3a2e", textLight:"#a07060",
+    white:"#fffaf7", border:"rgba(107,58,46,0.08)", grey:"#f9efe8",
+    navBg:"rgba(254,245,240,0.90)", navBorder:"rgba(107,58,46,0.06)", name:"Vino",
+    surfaceLow:"#f9efe8", surfaceHigh:"#f0e2d8",
   },
   rosa: {
-    bg:"#fce7f3", surface:"#fdf2f8", card:"#ffffff",
-    accent:"#db2777", green:"#16a34a",
+    bg:"#a83279", surface:"#fef5fa", card:"#fffafc",
+    accent:"#a83279", green:"#4a6546",
     text:"#1f0a14", textSub:"#6b2145", textLight:"#be87a8",
-    white:"#ffffff", border:"#fbcfe8", grey:"#fdf2f8",
-    navBg:"rgba(255,247,252,0.96)", navBorder:"rgba(219,39,119,0.08)", name:"Rosa",
+    white:"#fffafc", border:"rgba(168,50,121,0.06)", grey:"#fdf2f8",
+    navBg:"rgba(254,245,250,0.90)", navBorder:"rgba(168,50,121,0.06)", name:"Rosa",
+    surfaceLow:"#fdf2f8", surfaceHigh:"#f5e0ed",
   },
   gruen: {
-    bg:"#dcfce7", surface:"#f0fdf4", card:"#ffffff",
-    accent:"#16a34a", green:"#15803d",
-    text:"#052e16", textSub:"#14532d", textLight:"#6aaf84",
-    white:"#ffffff", border:"#bbf7d0", grey:"#f0fdf4",
-    navBg:"rgba(240,253,244,0.96)", navBorder:"rgba(22,163,74,0.1)", name:"Grün",
+    bg:"#2d5a28", surface:"#f5faf0", card:"#fafdf7",
+    accent:"#4a6546", green:"#2d5a28",
+    text:"#0a1f08", textSub:"#2d4528", textLight:"#6a9a64",
+    white:"#fafdf7", border:"rgba(45,90,40,0.06)", grey:"#eff5ea",
+    navBg:"rgba(245,250,240,0.90)", navBorder:"rgba(45,90,40,0.06)", name:"Basilico",
+    surfaceLow:"#eff5ea", surfaceHigh:"#e0ebd8",
   },
 };
 
@@ -63,8 +68,10 @@ const applyTheme = t => {
   C.bg=t.bg; C.beige=t.surface; C.card=t.card; C.orange=t.accent; C.green=t.green;
   C.text=t.text; C.textSub=t.textSub; C.textLight=t.textLight;
   C.white=t.white; C.border=t.border; C.greyBg=t.grey;
+  C.surfaceLow=t.surfaceLow||t.grey; C.surfaceHigh=t.surfaceHigh||t.grey;
 };
-const font = { ui:"'Inter',-apple-system,'SF Pro Text',sans-serif", display:"'Playfair Display',Georgia,serif" };
+// Typography: Editorial serif + functional sans
+const font = { ui:"'Plus Jakarta Sans','Inter',-apple-system,sans-serif", display:"'Playfair Display',Georgia,serif" };
 
 // ─── Static data ─────────────────────────────────────────────────
 const ERAS = [
@@ -106,21 +113,22 @@ const FUN_FACTS_DEF = [
   "Unser Ofen erreicht 485°C in 12 Minuten.",
 ];
 
-// ─── CSS ─────────────────────────────────────────────────────────
+// ─── CSS · Culinary Editorial ────────────────────────────────────
 const getCSS = t => `
-  @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&family=Playfair+Display:wght@400;700;900&display=swap');
   *,*::before,*::after{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
-  html,body{height:100%;width:100%;overflow:hidden;position:fixed;inset:0;overscroll-behavior:none;-webkit-font-smoothing:antialiased}
-  #root{height:100%;width:100%;overflow:hidden;position:fixed;inset:0;background:${t.bg};overscroll-behavior:none}
-  input,textarea,select{user-select:text;-webkit-user-select:text;font-family:inherit;font-size:16px}
+  html,body{height:100%;width:100%;overflow:hidden;position:fixed;inset:0;overscroll-behavior:none;-webkit-font-smoothing:antialiased;font-family:'Plus Jakarta Sans','Inter',-apple-system,sans-serif}
+  #root{height:100%;width:100%;overflow:hidden;position:fixed;inset:0;background:${t.surface};overscroll-behavior:none}
+  input,textarea,select{user-select:text;-webkit-user-select:text;font-family:inherit;font-size:16px;border-radius:14px;border:none;background:${t.grey}}
+  input:focus,textarea:focus,select:focus{outline:none;box-shadow:0 0 0 2px ${t.accent}33}
   ::-webkit-scrollbar{display:none}
-  button{-webkit-appearance:none;appearance:none;font-family:inherit;cursor:pointer;border:none;outline:none}
-  button:active{opacity:0.75;transform:scale(0.97)}
-  @keyframes fadeUp{from{opacity:0;transform:translateY(12px)}to{opacity:1;transform:translateY(0)}}
+  button{-webkit-appearance:none;appearance:none;font-family:inherit;cursor:pointer;border:none;outline:none;transition:all 0.2s ease}
+  button:active{opacity:0.8;transform:scale(0.97)}
+  @keyframes fadeUp{from{opacity:0;transform:translateY(16px)}to{opacity:1;transform:translateY(0)}}
   @keyframes fadeIn{from{opacity:0}to{opacity:1}}
-  @keyframes scaleIn{from{transform:scale(0.8);opacity:0}to{transform:scale(1);opacity:1}}
+  @keyframes scaleIn{from{transform:scale(0.85);opacity:0}to{transform:scale(1);opacity:1}}
   @keyframes slideUp{from{transform:translateY(100%)}to{transform:translateY(0)}}
   @keyframes confetti{0%{transform:translateY(0) rotate(0deg);opacity:1}100%{transform:translateY(600px) rotate(720deg);opacity:0}}
+  @keyframes shimmer{0%{background-position:-200% 0}100%{background-position:200% 0}}
 `;
 const defaultCSS = getCSS(T.light);
 
@@ -176,8 +184,9 @@ const I = {
 };
 
 // ─── Card ─────────────────────────────────────────────────────────
+// Editorial Card — No borders, tonal layering only
 const Card = ({ children, style, onClick }) => (
-  <div onClick={onClick} style={{ background:C.card, borderRadius:"18px", padding:"16px", border:`1px solid ${C.border}`, ...style }}>
+  <div onClick={onClick} style={{ background:C.card, borderRadius:"20px", padding:"20px", border:"none", boxShadow:`0 2px 20px rgba(29,28,19,0.04)`, ...style }}>
     {children}
   </div>
 );
@@ -1929,7 +1938,7 @@ const AdminPanel = ({ onClose }) => {
     {id:"stats",l:"Stats"},{id:"users",l:"User"},{id:"redemptions",l:"Kasse"},{id:"qrscan",l:"QR-Scan"},
     {id:"shop",l:"Shop"},{id:"missions",l:"Missionen"},{id:"dishes",l:"Gerichte"},
     {id:"glow",l:"Glow"},{id:"prizes",l:"Rad"},{id:"facts",l:"Fakten"},
-    {id:"vibes",l:"Vibes"},{id:"suggestions",l:"Vorschläge"},{id:"visits",l:"Heute"},{id:"push",l:"Push"},{id:"qrgen",l:"QR-Gen"},
+    {id:"vibes",l:"Vibes"},{id:"suggestions",l:"Vorschläge"},{id:"visits",l:"Heute"},{id:"push",l:"E-Mail"},{id:"qrgen",l:"QR-Gen"},
   ];
 
   const stats = [
@@ -2255,16 +2264,41 @@ const AdminPanel = ({ onClose }) => {
 
         {!loading&&tab==="push"&&(
           <div>
-            <div style={{ background:"#fff",borderRadius:"16px",padding:"16px",border:"1px solid #e8e8e8",marginBottom:"12px" }}>
-              <div style={{ fontSize:"14px",fontWeight:"700",color:"#111",marginBottom:"14px" }}>Broadcast an alle User</div>
-              <input value={pushTitle} onChange={e=>setPushTitle(e.target.value)} placeholder="Titel" style={{ width:"100%",padding:"13px 16px",border:"1px solid #e8e8e8",borderRadius:"13px",fontSize:"16px",outline:"none",boxSizing:"border-box",marginBottom:"10px",background:"#fff",color:"#111" }}/>
-              <input value={pushBody}  onChange={e=>setPushBody(e.target.value)}  placeholder="Nachricht" style={{ width:"100%",padding:"13px 16px",border:"1px solid #e8e8e8",borderRadius:"13px",fontSize:"16px",outline:"none",boxSizing:"border-box",marginBottom:"14px",background:"#fff",color:"#111" }}/>
-              <button onClick={async()=>{if(!pushTitle)return;await sendPushToAll(pushTitle,pushBody);await supabase.from("admin_notifications").insert({title:pushTitle,body:pushBody,sent_to:"all"});ok2("In Queue ✓");setPushTitle("");setPushBody("");}} style={{ width:"100%",padding:"14px",background:"#e24a28",borderRadius:"14px",color:"#fff",fontSize:"15px",fontWeight:"700" }}>Senden</button>
+            <div style={{ background:C.card,borderRadius:"20px",padding:"20px",marginBottom:"12px",boxShadow:"0 2px 20px rgba(29,28,19,0.04)" }}>
+              <div style={{ fontSize:"14px",fontWeight:"700",color:C.text,marginBottom:"4px" }}>E-Mail an alle User</div>
+              <div style={{ fontSize:"12px",color:C.textLight,marginBottom:"14px" }}>Benachrichtigung per E-Mail versenden</div>
+              <input value={pushTitle} onChange={e=>setPushTitle(e.target.value)} placeholder="Betreff" style={{ width:"100%",padding:"14px 16px",background:C.surfaceLow||C.greyBg,borderRadius:"14px",fontSize:"15px",outline:"none",boxSizing:"border-box",marginBottom:"10px",border:"none",color:C.text }}/>
+              <textarea value={pushBody} onChange={e=>setPushBody(e.target.value)} placeholder="Nachricht..." rows={3} style={{ width:"100%",padding:"14px 16px",background:C.surfaceLow||C.greyBg,borderRadius:"14px",fontSize:"15px",outline:"none",boxSizing:"border-box",marginBottom:"14px",border:"none",color:C.text,resize:"none",fontFamily:"inherit" }}/>
+              <button onClick={async()=>{
+                if(!pushTitle)return;
+                try{
+                  const{data:{session}}=await supabase.auth.getSession();
+                  if(!session)return ok2("Nicht eingeloggt");
+                  const res=await fetch("https://lmspocokowitbbtixugs.supabase.co/functions/v1/send-email",{
+                    method:"POST",headers:{"Content-Type":"application/json","Authorization":`Bearer ${session.access_token}`},
+                    body:JSON.stringify({title:pushTitle,body:pushBody,to:"all"})
+                  });
+                  const data=await res.json();
+                  if(data.ok){ok2(`E-Mail an ${data.sent} User gesendet ✓`);setPushTitle("");setPushBody("");}
+                  else ok2("Fehler: "+(data.error||"unbekannt"));
+                }catch(e){ok2("Fehler: "+e.message);}
+              }} style={{ width:"100%",padding:"14px",background:C.orange,borderRadius:"50px",color:"#fff",fontSize:"15px",fontWeight:"700" }}>E-Mail senden</button>
             </div>
-            {[{t:"Glow Hour startet!",b:"Doppelte XP für die nächsten 2 Stunden!"},{t:"Neue Missionen",b:"Schau dir die Challenges an!"},{t:"Glücksrad wartet",b:"Heute noch nicht gedreht?"},{t:"Neues Gericht",b:"Swipe jetzt in Cinder!"}].map((q,i)=>(
-              <button key={i} onClick={async()=>{await sendPushToAll(q.t,q.b);await supabase.from("admin_notifications").insert({title:q.t,body:q.b,sent_to:"all"});ok2("In Queue ✓");}} style={{ width:"100%",padding:"13px 16px",background:"#fff",border:"1px solid #e8e8e8",borderRadius:"14px",marginBottom:"6px",textAlign:"left",display:"block" }}>
-                <div style={{ fontSize:"14px",fontWeight:"600",color:"#111" }}>{q.t}</div>
-                <div style={{ fontSize:"12px",color:"#999" }}>{q.b}</div>
+            <div style={{ fontSize:"11px",fontWeight:"700",letterSpacing:"1px",color:C.textLight,marginBottom:"10px" }}>SCHNELL-VORLAGEN</div>
+            {[{t:"Glow Hour startet!",b:"Doppelte XP jetzt! Komm vorbei und sammle doppelt."},{t:"Neue Missionen",b:"Neue Challenges warten auf dich. Schau sie dir an!"},{t:"Neues Gericht",b:"Swipe jetzt in Cinder und bewerte das neue Gericht!"}].map((q,i)=>(
+              <button key={i} onClick={async()=>{
+                try{
+                  const{data:{session}}=await supabase.auth.getSession();
+                  if(!session)return;
+                  await fetch("https://lmspocokowitbbtixugs.supabase.co/functions/v1/send-email",{
+                    method:"POST",headers:{"Content-Type":"application/json","Authorization":`Bearer ${session.access_token}`},
+                    body:JSON.stringify({title:q.t,body:q.b,to:"all"})
+                  });
+                  ok2("E-Mail gesendet ✓");
+                }catch{}
+              }} style={{ width:"100%",padding:"14px 18px",background:C.card,borderRadius:"16px",marginBottom:"8px",textAlign:"left",display:"block",boxShadow:"0 2px 12px rgba(29,28,19,0.03)" }}>
+                <div style={{ fontSize:"14px",fontWeight:"700",color:C.text }}>{q.t}</div>
+                <div style={{ fontSize:"12px",color:C.textLight,marginTop:"2px" }}>{q.b}</div>
               </button>
             ))}
           </div>

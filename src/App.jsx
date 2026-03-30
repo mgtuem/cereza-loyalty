@@ -2964,15 +2964,13 @@ export default function App() {
         </div>
       </div>
 
-      {/* Tab Bar – direkt am untersten Displayrand, KEIN Abstand */}
+      {/* Tab Bar + Safe Area Branding */}
       <div style={{
         flexShrink:0,
         background:t.navBg,
         backdropFilter:"blur(24px)",
         WebkitBackdropFilter:"blur(24px)",
         borderTop:`0.5px solid ${t.navBorder}`,
-        paddingBottom:0,
-        marginBottom:0,
       }}>
         <div style={{ display:"grid", gridTemplateColumns:`repeat(${NAV.length},1fr)`, padding:"6px 0 2px", maxWidth:"430px", margin:"0 auto" }}>
           {NAV.map(n => {
@@ -2985,6 +2983,16 @@ export default function App() {
               </button>
             );
           })}
+        </div>
+        {/* Safe Area Filler mit Branding */}
+        <div style={{
+          height:`env(safe-area-inset-bottom, 0px)`,
+          background:t.navBg,
+          display:"flex",
+          alignItems:"center",
+          justifyContent:"center",
+        }}>
+          <span style={{ fontFamily:font.display, fontSize:"11px", fontWeight:"600", color:t.textLight, opacity:0.4, letterSpacing:"3px" }}>cereza</span>
         </div>
       </div>
     </div>

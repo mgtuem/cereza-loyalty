@@ -699,9 +699,18 @@ const HomeTab = ({ user, setUser, setTab }) => {
       const tick = () => {
         const diff = glowInfo.ms_until - (Date.now() - startRef);
         if (diff <= 0) { setGlowCountdown(""); return; }
-        const hrs = Math.floor(diff/3600000);
-        const mins = Math.floor((diff%3600000)/60000);
-        setGlowCountdown(`${hrs}h ${mins}m`);
+        const totalHrs = diff / 3600000;
+        if (totalHrs >= 6) {
+          // Show in days
+          const days = Math.floor(totalHrs / 24);
+          const hrs = Math.floor(totalHrs % 24);
+          setGlowCountdown(days > 0 ? `${days}d ${hrs}h` : `${Math.floor(totalHrs)}h`);
+        } else {
+          // Show hh:mm
+          const hrs = Math.floor(totalHrs);
+          const mins = Math.floor((diff % 3600000) / 60000);
+          setGlowCountdown(`${hrs}:${mins.toString().padStart(2,'0')}`);
+        }
       };
       const startRef = Date.now();
       tick();
@@ -801,55 +810,50 @@ const HomeTab = ({ user, setUser, setTab }) => {
             {I.qr} Punkte scannen
           </button>
 
-          {/* Story-Share Button */}
+          {/* Story-Share Button — Theme-aware */}
           <button onClick={() => {
-            // Story-Card generieren
             const canvas = document.createElement("canvas");
             canvas.width = 1080; canvas.height = 1920;
             const ctx = canvas.getContext("2d");
-            // Background gradient
+            // Theme-aware background
+            const accent = C.orange; const surface = C.beige; const txt = C.text;
             const grad = ctx.createLinearGradient(0,0,1080,1920);
-            grad.addColorStop(0, "#b02605"); grad.addColorStop(0.5, "#8b1e04"); grad.addColorStop(1, "#5a1003");
+            grad.addColorStop(0, accent); grad.addColorStop(0.6, C.surfaceHigh||C.greyBg); grad.addColorStop(1, surface);
             ctx.fillStyle = grad; ctx.fillRect(0,0,1080,1920);
-            // Checkered pattern overlay
-            ctx.globalAlpha = 0.06;
-            for(let y=0;y<1920;y+=80) for(let x=0;x<1080;x+=80) { if((x/80+y/80)%2===0) { ctx.fillStyle="#fef9eb"; ctx.fillRect(x,y,80,80); } }
+            // Checkered overlay in theme color
+            ctx.globalAlpha = 0.05;
+            for(let y=0;y<1920;y+=80) for(let x=0;x<1080;x+=80) { if((x/80+y/80)%2===0) { ctx.fillStyle=surface; ctx.fillRect(x,y,80,80); } }
             ctx.globalAlpha = 1;
-            // Logo text
-            ctx.fillStyle = "#fef9eb"; ctx.font = "700 72px Gallica, serif"; ctx.textAlign = "center";
-            ctx.fillText("cereza", 540, 500);
-            ctx.font = "600 16px 'Plus Jakarta Sans', sans-serif"; ctx.letterSpacing = "6px";
-            ctx.fillStyle = "rgba(254,249,235,0.4)";
-            ctx.fillText("L O Y A L T Y   C L U B", 540, 540);
-            // User card area
-            ctx.fillStyle = "rgba(254,249,235,0.1)"; roundRect(ctx, 140, 640, 800, 560, 40);
-            ctx.fillStyle = "#fef9eb"; ctx.font = "700 48px Gallica, serif"; ctx.textAlign = "center";
-            ctx.fillText("@" + (user.instagram||user.name||"user"), 540, 780);
-            ctx.fillStyle = "rgba(254,249,235,0.6)"; ctx.font = "500 28px 'Plus Jakarta Sans', sans-serif";
-            ctx.fillText(era.name + " \u00b7 Level " + (user.level||1), 540, 830);
+            // Logo
+            ctx.fillStyle = "#fff"; ctx.font = "400 72px Gallica, serif"; ctx.textAlign = "center";
+            ctx.fillText("cereza", 540, 480);
+            ctx.fillStyle = "rgba(255,255,255,0.35)"; ctx.font = "600 16px sans-serif";
+            ctx.fillText("L O Y A L T Y   C L U B", 540, 520);
+            // Card background
+            ctx.fillStyle = "rgba(255,255,255,0.1)"; roundRect(ctx, 140, 620, 800, 580, 40);
+            // User info
+            ctx.fillStyle = "#fff"; ctx.font = "400 48px Gallica, serif";
+            ctx.fillText("@" + (user.instagram||user.name||"user"), 540, 760);
+            ctx.fillStyle = "rgba(255,255,255,0.55)"; ctx.font = "500 28px sans-serif";
+            ctx.fillText(era.name + " \u00b7 Level " + (user.level||1), 540, 810);
             // Stats
-            const stats = [{v:user.pts||0,l:"CP"},{v:user.total_visits||0,l:"Besuche"},{v:user.streak||0,l:"Streak"}];
-            stats.forEach((s,i) => {
+            [{v:user.pts||0,l:"CP"},{v:user.total_visits||0,l:"Besuche"},{v:user.streak||0,l:"Streak"}].forEach((s,i) => {
               const sx = 260 + i*280;
-              ctx.fillStyle = "#fef9eb"; ctx.font = "800 52px Gallica, serif";
-              ctx.fillText(String(s.v), sx, 960);
-              ctx.fillStyle = "rgba(254,249,235,0.45)"; ctx.font = "600 20px 'Plus Jakarta Sans', sans-serif";
-              ctx.fillText(s.l, sx, 1000);
+              ctx.fillStyle = "#fff"; ctx.font = "800 52px Gallica, serif";
+              ctx.fillText(String(s.v), sx, 940);
+              ctx.fillStyle = "rgba(255,255,255,0.4)"; ctx.font = "600 20px sans-serif";
+              ctx.fillText(s.l, sx, 980);
             });
             // Watermark
-            ctx.fillStyle = "rgba(254,249,235,0.2)"; ctx.font = "500 18px 'Plus Jakarta Sans', sans-serif";
+            ctx.fillStyle = "rgba(255,255,255,0.15)"; ctx.font = "500 18px sans-serif";
             ctx.fillText("cereza-loyalty.vercel.app", 540, 1800);
-            // Share
             canvas.toBlob(async blob => {
               if (!blob) return;
               const file = new File([blob], "cereza-story.png", {type:"image/png"});
               try {
-                if (navigator.canShare?.({files:[file]})) {
-                  await navigator.share({files:[file], title:"Mein Cereza Status"});
-                } else {
-                  navigator.share?.({title:"Cereza Loyalty", text:`Ich bin ${era.name} bei Cereza! ${user.pts||0} CP`, url:"https://cereza-loyalty.vercel.app"});
-                }
-              } catch { /* cancelled */ }
+                if (navigator.canShare?.({files:[file]})) await navigator.share({files:[file], title:"Mein Cereza Status"});
+                else navigator.share?.({title:"Cereza Loyalty", text:`Ich bin ${era.name} bei Cereza! ${user.pts||0} CP`, url:"https://cereza-loyalty.vercel.app"});
+              } catch {}
             }, "image/png");
           }} style={{
             width:"100%",marginTop:"10px",padding:"13px",
@@ -1542,13 +1546,40 @@ const ProfileTab = ({ user, setUser, onLogout, theme }) => {
       {/* User Profile PopUp */}
       {profilePopup && <UserProfileCard userId={profilePopup} currentUser={user} C={C} font={font} onClose={() => setProfilePopup(null)}/>}
 
-      {/* Redemption Overlay */}
+      {/* Redemption Overlay — QR Voucher Screen */}
       {rd && (
-        <div style={{ position:"fixed",inset:0,zIndex:999,background:"rgba(0,0,0,0.92)",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",animation:"scaleIn 0.3s" }}>
-          <div style={{ color:C.white,marginBottom:"8px" }}>{I.check}</div>
-          <div style={{ color:C.white,fontSize:"20px",fontWeight:"700" }}>Eingelöst!</div>
-          <div style={{ color:"rgba(255,255,255,0.5)",fontSize:"13px",marginTop:"4px" }}>Zeige dies an der Kasse</div>
-          <div style={{ color:C.white,fontSize:"22px",fontFamily:font.display,marginTop:"12px" }}>{rd.name}</div>
+        <div style={{ position:"fixed",inset:0,zIndex:9999,background:"linear-gradient(160deg, #b02605 0%, #8b1e04 60%, #5a1003 100%)",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",animation:"fadeIn 0.3s",padding:"32px" }}>
+          {/* Confetti particles */}
+          {[...Array(12)].map((_,i) => (
+            <div key={i} style={{ position:"absolute",top:"-10px",left:`${8+i*7.5}%`,width:"8px",height:"8px",borderRadius:i%2?"50%":"2px",background:["#fef9eb","#4a6546","#ffd700","#fff","#b02605","#e8f5e9"][i%6],animation:`confetti ${2+Math.random()*2}s ease-in ${Math.random()*0.5}s forwards`,opacity:0.8,transform:`rotate(${Math.random()*360}deg)` }}/>
+          ))}
+          {/* Success badge */}
+          <div style={{ width:"72px",height:"72px",borderRadius:"50%",background:"rgba(254,249,235,0.15)",display:"flex",alignItems:"center",justifyContent:"center",marginBottom:"20px",animation:"scaleIn 0.4s",backdropFilter:"blur(8px)" }}>
+            <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="#fef9eb" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+          </div>
+          <div style={{ color:"#fef9eb",fontSize:"24px",fontFamily:font.display,animation:"fadeUp 0.4s",marginBottom:"4px" }}>Eingelöst!</div>
+          <div style={{ color:"rgba(254,249,235,0.5)",fontSize:"13px",marginBottom:"24px",animation:"fadeUp 0.5s" }}>Zeige diesen Code an der Kasse</div>
+          {/* Voucher Card */}
+          <div style={{ background:"rgba(254,249,235,0.12)",backdropFilter:"blur(16px)",borderRadius:"24px",padding:"28px 24px",width:"100%",maxWidth:"300px",textAlign:"center",animation:"fadeUp 0.5s",boxShadow:"0 0 0 0.5px rgba(254,249,235,0.1)" }}>
+            <div style={{ fontSize:"26px",marginBottom:"6px" }}>{rd.icon || "\u{1F381}"}</div>
+            <div style={{ color:"#fef9eb",fontSize:"20px",fontFamily:font.display,marginBottom:"4px" }}>{rd.name}</div>
+            <div style={{ color:"rgba(254,249,235,0.45)",fontSize:"12px",marginBottom:"20px" }}>{rd.cost} CP eingelöst</div>
+            {/* QR-Code style voucher code */}
+            <div style={{ background:"#fef9eb",borderRadius:"16px",padding:"20px",marginBottom:"16px" }}>
+              <div style={{ display:"grid",gridTemplateColumns:"repeat(7,1fr)",gap:"3px",width:"fit-content",margin:"0 auto",marginBottom:"12px" }}>
+                {[...Array(49)].map((_,i) => (
+                  <div key={i} style={{ width:"8px",height:"8px",borderRadius:"2px",background: Math.random()>0.45 ? "#1d1c13" : "transparent" }}/>
+                ))}
+              </div>
+              <div style={{ fontFamily:"monospace",fontSize:"16px",fontWeight:"800",color:"#1d1c13",letterSpacing:"3px" }}>
+                {`CRZ-${(rd.id||"").toString().slice(0,4).toUpperCase().padStart(4,"0")}-${Date.now().toString(36).slice(-4).toUpperCase()}`}
+              </div>
+            </div>
+            <div style={{ color:"rgba(254,249,235,0.35)",fontSize:"11px" }}>Gültig für 24 Stunden</div>
+          </div>
+          <button onClick={() => setRd(null)} style={{ marginTop:"24px",padding:"14px 40px",background:"rgba(254,249,235,0.15)",borderRadius:"50px",color:"#fef9eb",fontSize:"15px",fontWeight:"700",backdropFilter:"blur(8px)",boxShadow:"0 0 0 0.5px rgba(254,249,235,0.15)" }}>
+            Schließen
+          </button>
         </div>
       )}
       {showShare && <div style={{ position:"fixed",top:"24px",left:"50%",transform:"translateX(-50%)",background:C.green,color:C.white,padding:"11px 22px",borderRadius:"12px",fontSize:"13px",fontWeight:"600",zIndex:999,animation:"fadeUp 0.3s" }}>Link kopiert!</div>}
@@ -2704,7 +2735,7 @@ export default function App() {
           {tab==="missions" && <WheelTab   user={user} setUser={setUser}/>}
           {tab==="scan"     && <ScanTab    user={user} setUser={setUser}/>}
           {tab==="fam"      && <FamTab     user={user} C={C} font={font}/>}
-          {tab==="profile"  && <ProfileTab user={user} setUser={setUser} onLogout={async () => { await db.signOut(); setUser(null); }} theme={theme}/>}
+          {tab==="profile"  && <ProfileTab user={user} setUser={setUser} onLogout={async () => { await supabase.auth.signOut(); localStorage.removeItem("cz-user"); setUser(null); setTab("home"); }} theme={theme}/>}
         </div>
       </div>
 

@@ -191,6 +191,7 @@ const I = {
   img:      <svg width="20" height="20" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>,
   fam:      <svg width="24" height="24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" viewBox="0 0 24 24"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>,
   bell:     <svg width="20" height="20" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" viewBox="0 0 24 24"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>,
+  shop:     <svg width="24" height="24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" viewBox="0 0 24 24"><path d="M6 2L3 6v14a2 2 0 002 2h14a2 2 0 002-2V6l-3-4z"/><line x1="3" y1="6" x2="21" y2="6"/><path d="M16 10a4 4 0 01-8 0"/></svg>,
 };
 
 // ─── Card ─────────────────────────────────────────────────────────
@@ -1918,7 +1919,7 @@ const AdminLogin = ({ onLogin, onBack }) => {
       await new Promise(r => setTimeout(r, 700));
       let p = await db.getProfile(data.user.id);
       if (!p) { await new Promise(r => setTimeout(r, 1000)); p = await db.getProfile(data.user.id); }
-      if (p?.is_admin) onLogin(p);
+      if (p?.is_admin || p?.role === 'admin' || p?.role === 'cashier') onLogin(p);
       else { setErr("Kein Admin-Zugang"); await db.signOut(); }
     } catch(e) { setErr("Verbindungsfehler"); }
     setLoading(false);
@@ -1960,7 +1961,7 @@ const SuggestionsAdmin = () => {
   ));
 };
 
-const AdminPanel = ({ onClose }) => {
+const AdminPanel = ({ onClose, adminProfile }) => {
   // Inline QR Mission Scanner
   const QRMissionInline = () => {
     const [qrMissions, setQrMissions] = useState([]);
@@ -2071,6 +2072,8 @@ const AdminPanel = ({ onClose }) => {
   const [visitors, setVisitors] = useState([]);
   const [pushTitle,setPushTitle]= useState("");
   const [pushBody, setPushBody] = useState("");
+  const [adminLinks,setAdminLinks]=useState([]);
+  const [editLink,  setEditLink]  = useState(null);
   const [toast,    setToast]    = useState(null);
   const [loading,  setLoading]  = useState(true);
   const [searchQ,  setSearchQ]  = useState("");
@@ -2086,15 +2089,15 @@ const AdminPanel = ({ onClose }) => {
 
   const loadAll = useCallback(async () => {
     setLoading(true);
-    const [u,m,f,p,s,r,v,vis] = await Promise.all([
+    const [u,m,f,p,s,r,v,vis,lnk] = await Promise.all([
       db.getAllProfiles(), db.getMissions(), db.getFunFacts(),
       db.getWheelPrizes(), db.getShopItems(), db.getPendingRedemptions(),
-      db.getPendingVibes(), db.getTodayVisitors(),
+      db.getPendingVibes(), db.getTodayVisitors(), db.getAllLinks(),
     ]);
     const { data:d }  = await supabase.from('dishes').select('*,dish_votes(vote)').eq('active',true);
     const { data:gh } = await supabase.from('glow_hours').select('*').order('id');
     setUsers(u); setMissions(m); setFacts(f); setPrizes(p); setShopItems(s);
-    setRedemptions(r); setVibes(v); setVisitors(vis);
+    setRedemptions(r); setVibes(v); setVisitors(vis); setAdminLinks(lnk);
     setDishes((d||[]).map(x => ({ ...x, votes:x.dish_votes?.filter(v=>v.vote).length||0 })));
     setGlowHours(gh||[]);
     setLoading(false);
@@ -2135,12 +2138,17 @@ const AdminPanel = ({ onClose }) => {
     } catch(e) { ok2("Fehler: "+e.message, false); }
   };
 
-  const TABS = [
+  // Rollen-basierte Tabs: Kasse sieht nur bestimmte Tabs
+  const isFullAdmin = adminProfile?.role === 'admin' || adminProfile?.is_admin;
+  const CASHIER_TABS = new Set(["redemptions","qrscan","vibes","visits","qrgen"]);
+  const ALL_TABS = [
     {id:"stats",l:"Stats"},{id:"users",l:"User"},{id:"redemptions",l:"Kasse"},{id:"qrscan",l:"QR-Scan"},
     {id:"shop",l:"Shop"},{id:"missions",l:"Missionen"},{id:"dishes",l:"Gerichte"},
     {id:"glow",l:"Glow"},{id:"prizes",l:"Rad"},{id:"facts",l:"Fakten"},
     {id:"vibes",l:"Vibes"},{id:"suggestions",l:"Vorschläge"},{id:"visits",l:"Heute"},{id:"push",l:"E-Mail"},{id:"qrgen",l:"QR-Gen"},
+    {id:"links",l:"Links"},
   ];
+  const TABS = isFullAdmin ? ALL_TABS : ALL_TABS.filter(t => CASHIER_TABS.has(t.id));
 
   const stats = [
     {v:users.length,l:"Registrierte User"},{v:users.filter(u=>u.last_visit===today2).length,l:"Heute aktiv"},
@@ -2506,6 +2514,58 @@ const AdminPanel = ({ onClose }) => {
         )}
 
         {!loading&&tab==="qrgen"&&<QRGenInline/>}
+
+        {!loading&&tab==="links"&&(
+          <div>
+            <button onClick={()=>setEditLink({title:"",url:"",icon:"\uD83D\uDD17",description:"",category:"shop",active:true,sort_order:0})} style={{ width:"100%",padding:"13px",background:"#b02605",borderRadius:"14px",color:"#fff",fontSize:"15px",fontWeight:"700",marginBottom:"14px" }}>+ Neuer Link</button>
+            {/* Edit Modal */}
+            {editLink && (
+              <div style={{ background:"#fff",borderRadius:"18px",padding:"18px",border:"1px solid #e8e8e8",marginBottom:"14px" }}>
+                <div style={{ fontSize:"16px",fontWeight:"700",color:"#111",marginBottom:"14px" }}>{editLink.id?"Link bearbeiten":"Neuer Link"}</div>
+                <input value={editLink.title} onChange={e=>setEditLink({...editLink,title:e.target.value})} placeholder="Titel (z.B. Matcha Abo)" style={{ width:"100%",padding:"12px 14px",borderRadius:"12px",border:"1px solid #e8e8e8",fontSize:"15px",marginBottom:"8px",boxSizing:"border-box" }}/>
+                <input value={editLink.url} onChange={e=>setEditLink({...editLink,url:e.target.value})} placeholder="URL (https://...)" style={{ width:"100%",padding:"12px 14px",borderRadius:"12px",border:"1px solid #e8e8e8",fontSize:"15px",marginBottom:"8px",boxSizing:"border-box" }}/>
+                <input value={editLink.description||""} onChange={e=>setEditLink({...editLink,description:e.target.value})} placeholder="Beschreibung (optional)" style={{ width:"100%",padding:"12px 14px",borderRadius:"12px",border:"1px solid #e8e8e8",fontSize:"15px",marginBottom:"8px",boxSizing:"border-box" }}/>
+                <div style={{ display:"flex",gap:"8px",marginBottom:"8px" }}>
+                  <input value={editLink.icon} onChange={e=>setEditLink({...editLink,icon:e.target.value})} placeholder="Icon" style={{ width:"60px",padding:"12px",borderRadius:"12px",border:"1px solid #e8e8e8",fontSize:"20px",textAlign:"center" }}/>
+                  <select value={editLink.category} onChange={e=>setEditLink({...editLink,category:e.target.value})} style={{ flex:1,padding:"12px",borderRadius:"12px",border:"1px solid #e8e8e8",fontSize:"14px" }}>
+                    <option value="abo">Abo</option>
+                    <option value="shop">Shop</option>
+                    <option value="external">Extern</option>
+                  </select>
+                  <input type="number" value={editLink.sort_order} onChange={e=>setEditLink({...editLink,sort_order:parseInt(e.target.value)||0})} placeholder="Reihenfolge" style={{ width:"70px",padding:"12px",borderRadius:"12px",border:"1px solid #e8e8e8",fontSize:"14px",textAlign:"center" }}/>
+                </div>
+                <label style={{ display:"flex",alignItems:"center",gap:"8px",fontSize:"14px",color:"#555",marginBottom:"12px" }}>
+                  <input type="checkbox" checked={editLink.active} onChange={e=>setEditLink({...editLink,active:e.target.checked})}/>Aktiv
+                </label>
+                <div style={{ display:"flex",gap:"8px" }}>
+                  <button onClick={async()=>{
+                    if(!editLink.title||!editLink.url)return ok2("Titel und URL sind Pflicht");
+                    if(editLink.id){await db.updateLink(editLink.id,{title:editLink.title,url:editLink.url,icon:editLink.icon,description:editLink.description,category:editLink.category,active:editLink.active,sort_order:editLink.sort_order});}
+                    else{await db.addLink({title:editLink.title,url:editLink.url,icon:editLink.icon,description:editLink.description,category:editLink.category,active:editLink.active,sort_order:editLink.sort_order});}
+                    ok2("Gespeichert \u2713"); setEditLink(null); db.getAllLinks().then(setAdminLinks);
+                  }} style={{ flex:1,padding:"12px",background:"#b02605",borderRadius:"12px",color:"#fff",fontSize:"14px",fontWeight:"700" }}>Speichern</button>
+                  <button onClick={()=>setEditLink(null)} style={{ padding:"12px 18px",background:"#f5f5f5",borderRadius:"12px",color:"#999",fontSize:"14px" }}>Abbrechen</button>
+                </div>
+              </div>
+            )}
+            {/* Links Liste */}
+            {adminLinks.map(l=>(
+              <div key={l.id} style={{ background:"#fff",borderRadius:"16px",padding:"13px",border:"1px solid #e8e8e8",marginBottom:"6px",display:"flex",alignItems:"center",gap:"12px" }}>
+                <div style={{ fontSize:"24px",flexShrink:0 }}>{l.icon}</div>
+                <div style={{ flex:1 }}>
+                  <div style={{ fontSize:"15px",fontWeight:"700",color:"#111" }}>{l.title}</div>
+                  <div style={{ fontSize:"11px",color:"#999" }}>{l.category} {l.active?"\u2022 aktiv":"\u2022 inaktiv"}</div>
+                  <div style={{ fontSize:"11px",color:"#b02605",wordBreak:"break-all" }}>{l.url}</div>
+                </div>
+                <div style={{ display:"flex",gap:"4px" }}>
+                  <button onClick={()=>setEditLink({...l})} style={{ background:"#f5f5f5",border:"1px solid #e8e8e8",borderRadius:"10px",padding:"8px 12px",color:"#555",fontSize:"12px" }}>{I.edit}</button>
+                  <button onClick={async()=>{await db.deleteLink(l.id);ok2("Gel\u00f6scht");db.getAllLinks().then(setAdminLinks);}} style={{ background:"#fff5f5",border:"1px solid #fecaca",borderRadius:"10px",padding:"8px 12px",color:"#dc2626",fontSize:"12px" }}>\u2715</button>
+                </div>
+              </div>
+            ))}
+            {adminLinks.length===0&&<div style={{ textAlign:"center",padding:"30px",color:"#999" }}>Noch keine Links</div>}
+          </div>
+        )}
       </div>
     </div>
   );
@@ -2586,11 +2646,119 @@ const QRGenInline = () => {
     </div>
   );
 };
+// ─── Shop Tab (User-seitig) ─────────────────────────────────────
+const ShopTab = ({ user, setUser }) => {
+  const [links, setLinks] = useState([]);
+  const [items, setItems] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [redeemingId, setRedeemingId] = useState(null);
+  const [voucher, setVoucher] = useState(null);
+
+  useEffect(() => {
+    Promise.all([db.getLinks(), db.getShopItems()]).then(([l, s]) => {
+      setLinks(l); setItems(s); setLoading(false);
+    });
+  }, []);
+
+  const abos = links.filter(l => l.category === 'abo');
+  const shopLinks = links.filter(l => l.category === 'shop' || l.category === 'external');
+  const era = ERAS.find(e => (user?.level||1) >= e.min) || ERAS[0];
+
+  const redeem = async (item) => {
+    if (redeemingId || !user?.id) return;
+    if ((user.pts||0) < item.cost) return;
+    if ((user.level||1) < item.min_level) return;
+    setRedeemingId(item.id);
+    const result = await db.redeemItem(user.id, item.id, item.cost);
+    if (result.ok) {
+      setUser(u => ({ ...u, pts: (u.pts||0) - item.cost }));
+      const code = `CZ-${Math.random().toString(36).slice(2,8).toUpperCase()}`;
+      setVoucher({ item, code });
+    }
+    setRedeemingId(null);
+  };
+
+  if (loading) return <div style={{ padding:`calc(${ST} + 24px) 20px`, textAlign:"center", color:C.textLight }}>Laden...</div>;
+
+  return (
+    <div style={{ padding:`calc(${ST} + 20px) 16px 24px` }}>
+      <div style={{ fontSize:"10px",fontWeight:"700",letterSpacing:"3px",color:C.textLight,marginBottom:"4px" }}>CEREZA</div>
+      <div style={{ fontSize:"28px",fontFamily:font.display,color:C.text,fontWeight:"700",marginBottom:"20px" }}>Shop</div>
+
+      {/* Voucher Overlay */}
+      {voucher && (
+        <div style={{ position:"fixed",inset:0,zIndex:9999,background:"rgba(0,0,0,0.6)",display:"flex",alignItems:"center",justifyContent:"center",padding:"20px" }} onClick={() => setVoucher(null)}>
+          <div onClick={e=>e.stopPropagation()} style={{ background:C.card,borderRadius:"24px",padding:"28px",maxWidth:"340px",width:"100%",textAlign:"center" }}>
+            <div style={{ fontSize:"48px",marginBottom:"12px" }}>{voucher.item.icon}</div>
+            <div style={{ fontSize:"20px",fontWeight:"800",color:C.text,marginBottom:"6px" }}>{voucher.item.name}</div>
+            <div style={{ fontSize:"13px",color:C.textLight,marginBottom:"20px" }}>Zeige diesen Code an der Kasse</div>
+            <div style={{ padding:"16px",background:C.greyBg,borderRadius:"16px",fontSize:"24px",fontWeight:"800",letterSpacing:"4px",fontFamily:"monospace",color:C.orange,marginBottom:"16px" }}>{voucher.code}</div>
+            <button onClick={() => setVoucher(null)} style={{ padding:"12px 32px",background:C.orange,borderRadius:"50px",color:"#fff",fontSize:"14px",fontWeight:"700" }}>Fertig</button>
+          </div>
+        </div>
+      )}
+
+      {/* Abos */}
+      {abos.length > 0 && (
+        <>
+          <div style={{ fontSize:"10px",fontWeight:"700",letterSpacing:"2px",color:C.textLight,marginBottom:"10px" }}>ABOS & MITGLIEDSCHAFTEN</div>
+          {abos.map(l => (
+            <Card key={l.id} onClick={() => window.open(l.url, "_blank")} style={{ marginBottom:"10px",cursor:"pointer",display:"flex",alignItems:"center",gap:"14px" }}>
+              <div style={{ fontSize:"28px" }}>{l.icon}</div>
+              <div style={{ flex:1 }}>
+                <div style={{ fontSize:"15px",fontWeight:"700",color:C.text }}>{l.title}</div>
+                {l.description && <div style={{ fontSize:"12px",color:C.textLight,marginTop:"2px" }}>{l.description}</div>}
+              </div>
+              <div style={{ color:C.textLight,fontSize:"16px" }}>{"\u2192"}</div>
+            </Card>
+          ))}
+        </>
+      )}
+
+      {/* CP Gutscheine */}
+      <div style={{ fontSize:"10px",fontWeight:"700",letterSpacing:"2px",color:C.textLight,marginBottom:"10px",marginTop:abos.length?"16px":"0" }}>GUTSCHEINE EINL\u00d6SEN</div>
+      <div style={{ display:"grid",gridTemplateColumns:"1fr 1fr",gap:"10px",marginBottom:"16px" }}>
+        {items.map(item => {
+          const ok = (user?.level||1) >= item.min_level && (user?.pts||0) >= item.cost;
+          const locked = (user?.level||1) < item.min_level;
+          return (
+            <Card key={item.id} onClick={() => ok && redeem(item)} style={{ cursor:ok?"pointer":"default",opacity:locked?0.5:1,textAlign:"center",padding:"16px" }}>
+              <div style={{ fontSize:"32px",marginBottom:"6px" }}>{item.icon}</div>
+              <div style={{ fontSize:"14px",fontWeight:"700",color:C.text }}>{item.name}</div>
+              <div style={{ fontSize:"12px",color:C.orange,fontWeight:"700",marginTop:"4px" }}>{item.cost} CP</div>
+              {locked && <div style={{ fontSize:"10px",color:C.textLight,marginTop:"4px" }}>Ab Level {item.min_level}</div>}
+            </Card>
+          );
+        })}
+        {items.length===0 && <div style={{ gridColumn:"1/3",textAlign:"center",padding:"20px",color:C.textLight }}>Noch keine Gutscheine</div>}
+      </div>
+
+      {/* Externe Shop-Links */}
+      {shopLinks.length > 0 && (
+        <>
+          <div style={{ fontSize:"10px",fontWeight:"700",letterSpacing:"2px",color:C.textLight,marginBottom:"10px" }}>MEHR ENTDECKEN</div>
+          {shopLinks.map(l => (
+            <Card key={l.id} onClick={() => window.open(l.url, "_blank")} style={{ marginBottom:"10px",cursor:"pointer",display:"flex",alignItems:"center",gap:"14px" }}>
+              <div style={{ fontSize:"28px" }}>{l.icon}</div>
+              <div style={{ flex:1 }}>
+                <div style={{ fontSize:"15px",fontWeight:"700",color:C.text }}>{l.title}</div>
+                {l.description && <div style={{ fontSize:"12px",color:C.textLight,marginTop:"2px" }}>{l.description}</div>}
+              </div>
+              <div style={{ color:C.textLight,fontSize:"16px" }}>{"\u2192"}</div>
+            </Card>
+          ))}
+        </>
+      )}
+    </div>
+  );
+};
+
 export default function App() {
   const [user,        setUser]       = useState(null);
   const [tab,         setTab]        = useState("home");
   const [showLevelUp, setShowLevelUp]= useState(null);
   const [adminMode,   setAdminMode]  = useState(false);
+  const [adminProfile, setAdminProfile] = useState(null);
   const [loading,     setLoading]    = useState(true);
   const [toast,       setToast]      = useState(null);
   const [showOnboard, setShowOnboard]= useState(false); // Onboarding
@@ -2696,8 +2864,8 @@ export default function App() {
     </div>
   );
 
-  if (adminMode==="login") return <AdminLogin onLogin={() => setAdminMode("panel")} onBack={() => setAdminMode(false)}/>;
-  if (adminMode==="panel") return <AdminPanel onClose={async () => { await db.signOut(); setAdminMode(false); }}/>;
+  if (adminMode==="login") return <AdminLogin onLogin={(p) => { setAdminProfile(p); setAdminMode("panel"); }} onBack={() => setAdminMode(false)}/>;
+  if (adminMode==="panel") return <AdminPanel adminProfile={adminProfile} onClose={async () => { await db.signOut(); setAdminProfile(null); setAdminMode(false); }}/>;
   if (!user) return (
     <div style={{ position:"fixed",inset:0,maxWidth:"430px",margin:"0 auto" }}>
       <AuthScreen onLogin={setUser}/>
@@ -2712,7 +2880,7 @@ export default function App() {
     {id:"home",     icon:I.home,   l:"Home"},
     {id:"missions", icon:I.target, l:"Missions"},
     {id:"scan",     icon:I.qr,     l:"Scan"},
-    {id:"fam",      icon:I.fam,    l:"Fam"},
+    {id:"shop",     icon:I.shop,   l:"Shop"},
     {id:"profile",  icon:I.user,   l:"Profil"},
   ];
 
@@ -2737,7 +2905,7 @@ export default function App() {
           {tab==="home"     && <HomeTab    user={user} setUser={setUser} setTab={setTab}/>}
           {tab==="missions" && <WheelTab   user={user} setUser={setUser}/>}
           {tab==="scan"     && <ScanTab    user={user} setUser={setUser}/>}
-          {tab==="fam"      && <FamTab     user={user} C={C} font={font}/>}
+          {tab==="shop"     && <ShopTab    user={user} setUser={setUser}/>}
           {tab==="profile"  && <ProfileTab user={user} setUser={setUser} onLogout={async () => { await supabase.auth.signOut(); localStorage.removeItem("cz-user"); setUser(null); setTab("home"); }} theme={theme}/>}
         </div>
       </div>

@@ -442,6 +442,27 @@ export const db = {
     return updated
   },
 
+  // ─── Admin Links ─────────────────────────────────────────────
+  getLinks: async () => {
+    const { data } = await supabase.from('admin_links').select('*').eq('active', true).order('sort_order').order('id')
+    return data || []
+  },
+  getAllLinks: async () => {
+    const { data } = await supabase.from('admin_links').select('*').order('sort_order').order('id')
+    return data || []
+  },
+  addLink: async (link) => {
+    const { data, error } = await supabase.from('admin_links').insert(link).select().single()
+    return { data, error }
+  },
+  updateLink: async (id, updates) => {
+    const { data, error } = await supabase.from('admin_links').update(updates).eq('id', id).select().single()
+    return { data, error }
+  },
+  deleteLink: async (id) => {
+    await supabase.from('admin_links').delete().eq('id', id)
+  },
+
   // ─── Admin ────────────────────────────────────────────────────
   getAllProfiles: async () => {
     const { data } = await supabase.from('profiles').select('*').order('pts', { ascending: false })

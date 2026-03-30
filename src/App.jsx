@@ -957,7 +957,7 @@ const WheelTab = ({ user, setUser }) => {
         if (fresh) {
           setUser(u => ({ ...u, ...fresh }));
           const today = new Date().toISOString().split('T')[0];
-          setSpins(fresh.last_spin_date===today ? (fresh.wheel_spun_today?2:1) : 0);
+          setSpins(fresh.last_spin_date===today ? (fresh.spins_today||0) : 0);
         }
       }
       const p = await db.getWheelPrizes(); if(p.length) setPrizes(p);
@@ -984,29 +984,31 @@ const WheelTab = ({ user, setUser }) => {
     const today = new Date().toISOString().split('T')[0];
     if (user?.id) {
       const fresh = await db.getProfile(user.id);
-      if (fresh && fresh.last_spin_date===today && (fresh.wheel_spun_today?2:1)>=MAX) { setSpins(2); return; }
+      if (fresh && fresh.last_spin_date===today && (fresh.spins_today||0)>=MAX) { setSpins(fresh.spins_today||0); return; }
     }
     if (needsPay) {
       const fresh = user?.id ? await db.getProfile(user.id) : null;
       const cur = fresh ? (fresh.pts||0) : (user.pts||0);
-      if (cur < 100) return;
-      setUser(u => ({ ...u, pts:cur-100 }));
-      if (user?.id) await db.updateProfile(user.id, { pts:cur-100 });
+      if (cur < 100) { setUser(u => ({ ...u, pts: cur })); return; }
+      const newPts = cur - 100;
+      setUser(u => ({ ...u, pts: newPts }));
+      if (user?.id) await db.updateProfile(user.id, { pts: newPts });
     }
     setSpinning(true); setResult(null); Sound.spin();
     const idx = Math.floor(Math.random() * prizes.length);
     const seg = 360 / prizes.length;
     setRot(r => r + 360*7 + (360 - idx*seg - seg/2));
     setTimeout(async () => {
-      setSpinning(false); setSpins(s => s+1);
+      const newSpins = spins + 1;
+      setSpinning(false); setSpins(newSpins);
       const prize = prizes[idx]; setResult(prize);
       prize.value > 0 ? Sound.win() : Sound.lose();
       const fresh = user?.id ? await db.getProfile(user.id) : null;
       const cur   = fresh ? (fresh.pts||0) : (user.pts||0);
       const today2 = new Date().toISOString().split('T')[0];
-      const upd = { wheel_spun_today:true, last_spin_date:today2 };
-      if (prize.value > 0) { upd.pts=cur+prize.value; setUser(u => ({ ...u, pts:upd.pts, wheel_spun_today:true })); }
-      else setUser(u => ({ ...u, wheel_spun_today:true }));
+      const upd = { spins_today: newSpins, last_spin_date: today2 };
+      if (prize.value > 0) { upd.pts=cur+prize.value; setUser(u => ({ ...u, pts:upd.pts, spins_today: newSpins })); }
+      else setUser(u => ({ ...u, spins_today: newSpins }));
       if (user?.id) await db.updateProfile(user.id, upd);
     }, 5200);
   };
@@ -2715,7 +2717,8 @@ export default function App() {
   ];
 
   return (
-    <div style={{ position:"fixed",inset:0,maxWidth:"430px",margin:"0 auto",fontFamily:font.ui,background:t.bg,display:"flex",flexDirection:"column",overflow:"hidden" }}>
+    <div style={{ position:"fixed",inset:0,fontFamily:font.ui,background:t.bg }}>
+    <div style={{ position:"absolute",inset:0,maxWidth:"430px",margin:"0 auto",display:"flex",flexDirection:"column",overflow:"hidden" }}>
       <style>{CSS}</style>
       {showLevelUp && <LevelUpOverlay level={showLevelUp} onClose={() => setShowLevelUp(null)}/>}
       {toast && (
@@ -2761,6 +2764,7 @@ export default function App() {
           })}
         </div>
       </div>
+    </div>
     </div>
   );
 }

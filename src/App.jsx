@@ -50,7 +50,7 @@ const useTheme = () => {
   const setMode = m => { setModeRaw(m); localStorage.setItem("cz-mode", m); };
   const setGlow = g => { setGlowRaw(g); localStorage.setItem("cz-glow", g); };
   useEffect(() => {
-    const check = async () => { try { setIsGlow(await db.isGlowHourNow()); } catch(e) { console.error('glow check error:', e?.message); } };
+    const check = async () => { try { setIsGlow(await db.isGlowHourNow()); } catch {} };
     check(); const iv = setInterval(check, 60000); return () => clearInterval(iv);
   }, []);
   const key = isGlow ? glow : mode;
@@ -114,9 +114,8 @@ const getCSS = t => `
   #root{height:100%;width:100%;overflow:hidden;position:fixed;inset:0;background:${t.bg};overscroll-behavior:none}
   input,textarea,select{user-select:text;-webkit-user-select:text;font-family:inherit;font-size:16px}
   ::-webkit-scrollbar{display:none}
-  button{-webkit-appearance:none;appearance:none;font-family:inherit;cursor:pointer;border:none;outline:none;-webkit-tap-highlight-color:transparent;user-select:none;-webkit-user-select:none}
+  button{-webkit-appearance:none;appearance:none;font-family:inherit;cursor:pointer;border:none;outline:none}
   button:active{opacity:0.75;transform:scale(0.97)}
-  nav button:active{opacity:0.6;transform:scale(0.92)!important;transition:transform 0.08s ease}
   @keyframes fadeUp{from{opacity:0;transform:translateY(12px)}to{opacity:1;transform:translateY(0)}}
   @keyframes fadeIn{from{opacity:0}to{opacity:1}}
   @keyframes scaleIn{from{transform:scale(0.8);opacity:0}to{transform:scale(1);opacity:1}}
@@ -242,7 +241,7 @@ const AuthScreen = ({ onLogin }) => {
           }
           // Phone manuell updaten falls Trigger es nicht gesetzt hat
           if (p) {
-            if (!p.phone && phone) await db.updateProfile(data.user.id, { phone }).catch(e => console.error('phone update error:', e.message));
+            if (!p.phone && phone) await db.updateProfile(data.user.id, { phone }).catch(() => {});
             p = await db.getProfile(data.user.id) || p;
           }
           onLogin(p || { id:data.user.id, name, email, phone, pts:0, level:1, streak:0, total_visits:0, treat_count:0, treat_goal:8, wheel_spun_today:false, is_abo_member:false, is_admin:false });
@@ -475,13 +474,13 @@ const BestenlisteCard = ({ lb, user }) => {
   const [addingId, setAddingId] = useState(null);
   const [addedIds, setAddedIds] = useState(new Set());
 
-  const addFriend = async (e, targetId) => {
+  const addFriend = async (e, userId) => {
     e.stopPropagation();
-    if (!user?.id || !targetId || targetId === user.id || addingId) return;
-    setAddingId(targetId);
-    const res = await db.sendFriendRequest(user.id, targetId);
-    if (!res.error) setAddedIds(prev => new Set([...prev, targetId]));
+    if (!user?.id || userId === user.id || addedIds.has(userId)) return;
+    setAddingId(userId);
+    const { error } = await db.sendFriendRequest(user.id, userId);
     setAddingId(null);
+    if (!error) setAddedIds(s => new Set([...s, userId]));
   };
 
   return (
@@ -500,13 +499,12 @@ const BestenlisteCard = ({ lb, user }) => {
               {p.name}{p.name===user.name && <span style={{ fontSize:"10px",color:C.orange,marginLeft:"4px" }}>(Du)</span>}
             </div>
             <div style={{ fontSize:"13px",fontWeight:"700",color:C.green,marginRight:"8px" }}>{p.pts} XP</div>
-            {p.id && p.id !== user?.id && !addedIds.has(p.id) && (
-              <button onClick={e => addFriend(e, p.id)} disabled={addingId===p.id}
-                style={{ padding:"5px 10px",borderRadius:"10px",background:`${C.orange}15`,border:`1px solid ${C.orange}33`,color:C.orange,fontSize:"11px",fontWeight:"700",flexShrink:0 }}>
-                {addingId===p.id ? "..." : "+"}
+            {p.id && p.id !== user?.id && (
+              <button onClick={e => addFriend(e, p.id)} disabled={addedIds.has(p.id) || addingId===p.id}
+                style={{ padding:"4px 10px",borderRadius:"8px",fontSize:"11px",fontWeight:"700",border:`1px solid ${addedIds.has(p.id)?C.green:C.orange}`,background:addedIds.has(p.id)?`${C.green}15`:"transparent",color:addedIds.has(p.id)?C.green:C.orange,cursor:"pointer",flexShrink:0 }}>
+                {addedIds.has(p.id) ? "Gesendet" : addingId===p.id ? "..." : "+"}
               </button>
             )}
-            {addedIds.has(p.id) && <div style={{ fontSize:"11px",color:C.green,fontWeight:"600",flexShrink:0 }}>✓</div>}
           </div>
         ))}
       </Card>
@@ -526,8 +524,8 @@ const HomeTab = ({ user, setUser, setTab }) => {
   const [visit,    setVisitLocal]    = useState(null);
   const [started,  setStarted]       = useState(new Set());
   const [vibe,     setVibe]          = useState(null);
-  const [glowInfo, setGlowInfo]     = useState(null); // { active, label, countdown }
-  const [glowTick, setGlowTick]     = useState(0);
+  const [glowInfo, setGlowInfo]      = useState(null);
+  const [glowCountdown, setGlowCountdown] = useState("");
 
   const computeVibe = (yes, no) => {
     const total = yes + no;
@@ -552,6 +550,49 @@ const HomeTab = ({ user, setUser, setTab }) => {
     }
   };
 
+  // Glow Hour Countdown Timer
+  useEffect(() => {
+    const updateGlow = async () => {
+      const info = await db.getNextGlowHour();
+      setGlowInfo(info);
+    };
+    updateGlow();
+    const glowIv = setInterval(updateGlow, 60000);
+    return () => clearInterval(glowIv);
+  }, []);
+
+  useEffect(() => {
+    if (!glowInfo) { setGlowCountdown(""); return; }
+    if (glowInfo.active) {
+      // Countdown bis Ende
+      const tick = () => {
+        const now = new Date();
+        const [h,m] = glowInfo.end_time.split(':').map(Number);
+        const end = new Date(now); end.setHours(h,m,0,0);
+        const diff = end - now;
+        if (diff <= 0) { setGlowCountdown(""); return; }
+        const mins = Math.floor(diff/60000);
+        const secs = Math.floor((diff%60000)/1000);
+        setGlowCountdown(`${mins}:${secs.toString().padStart(2,'0')}`);
+      };
+      tick();
+      const iv = setInterval(tick, 1000);
+      return () => clearInterval(iv);
+    } else if (glowInfo.ms_until) {
+      const tick = () => {
+        const diff = glowInfo.ms_until - (Date.now() - startRef);
+        if (diff <= 0) { setGlowCountdown(""); return; }
+        const hrs = Math.floor(diff/3600000);
+        const mins = Math.floor((diff%3600000)/60000);
+        setGlowCountdown(`${hrs}h ${mins}m`);
+      };
+      const startRef = Date.now();
+      tick();
+      const iv = setInterval(tick, 30000);
+      return () => clearInterval(iv);
+    }
+  }, [glowInfo]);
+
   useEffect(() => {
     db.getLeaderboard().then(d => { if(d.length) setLb(d); });
     db.getMissions().then(d => { if(d.length) setMissions(d); });
@@ -560,7 +601,7 @@ const HomeTab = ({ user, setUser, setTab }) => {
     if (user?.id) {
       db.getStartedMissions(user.id).then(setStarted);
       const today = new Date().toISOString().split('T')[0];
-      db.getVisitIntention(user.id, today).then(d => { if(d) setVisitLocal(d.status); }).catch(e => console.error('async error:', e?.message));
+      db.getVisitIntention(user.id, today).then(d => { if(d) setVisitLocal(d.status); }).catch(() => {});
     }
     const ch = supabase.channel('home-rt')
       .on('postgres_changes',{event:'*',schema:'public',table:'missions'},     () => db.getMissions().then(d => { if(d.length) setMissions(d); }))
@@ -575,55 +616,6 @@ const HomeTab = ({ user, setUser, setTab }) => {
     const iv = setInterval(() => setFi(i => (i+1) % facts.length), 5000);
     return () => clearInterval(iv);
   }, [facts]);
-
-  // Glow Hour Countdown
-  useEffect(() => {
-    const DAYS = ['So','Mo','Di','Mi','Do','Fr','Sa'];
-    const calcGlow = async () => {
-      const { data: hours } = await supabase.from('glow_hours').select('*').eq('active', true);
-      if (!hours?.length) { setGlowInfo(null); return; }
-      const now = new Date();
-      const nowDay = now.getDay();
-      const nowMins = now.getHours() * 60 + now.getMinutes();
-
-      // Prüfe ob gerade eine Glow Hour aktiv ist
-      for (const g of hours) {
-        if (g.day_of_week === nowDay) {
-          const [sh, sm] = g.start_time.split(':').map(Number);
-          const [eh, em] = g.end_time.split(':').map(Number);
-          const start = sh * 60 + sm, end = eh * 60 + em;
-          if (nowMins >= start && nowMins < end) {
-            const left = end - nowMins;
-            setGlowInfo({ active: true, label: `${g.multiplier}× XP aktiv`, countdown: `Noch ${left} Min`, multiplier: g.multiplier });
-            return;
-          }
-        }
-      }
-
-      // Nächste Glow Hour finden
-      let bestDiff = Infinity, bestGlow = null;
-      for (const g of hours) {
-        const [sh, sm] = g.start_time.split(':').map(Number);
-        const startMins = sh * 60 + sm;
-        let dayDiff = g.day_of_week - nowDay;
-        if (dayDiff < 0) dayDiff += 7;
-        if (dayDiff === 0 && startMins <= nowMins) dayDiff = 7;
-        const totalMins = dayDiff * 24 * 60 + (startMins - nowMins);
-        if (totalMins < bestDiff) { bestDiff = totalMins; bestGlow = g; }
-      }
-      if (bestGlow) {
-        const h = Math.floor(bestDiff / 60);
-        const m = bestDiff % 60;
-        const label = h >= 24
-          ? `${DAYS[bestGlow.day_of_week]} ${bestGlow.start_time}`
-          : h > 0 ? `in ${h}h ${m}m` : `in ${m} Min`;
-        setGlowInfo({ active: false, label: `Nächste: ${label}`, countdown: `${bestGlow.multiplier}× XP`, multiplier: bestGlow.multiplier });
-      }
-    };
-    calcGlow();
-    const iv = setInterval(() => { calcGlow(); setGlowTick(t => t + 1); }, 30000);
-    return () => clearInterval(iv);
-  }, []);
 
   const setVisit = async status => {
     setVisitLocal(status);
@@ -694,27 +686,16 @@ const HomeTab = ({ user, setUser, setTab }) => {
         </Card>
 
         {/* Glow Hour Countdown */}
-        {glowInfo && (
-          <Card style={{ marginBottom:"12px", background: glowInfo.active ? `linear-gradient(135deg, ${C.orange}, #8B0000)` : C.card, border: glowInfo.active ? "none" : `1px solid ${C.border}` }}>
+        {glowCountdown && (
+          <Card style={{ marginBottom:"12px", background: glowInfo?.active ? "linear-gradient(135deg,#db2777,#e24a28)" : C.card, border: glowInfo?.active ? "none" : `1px solid ${C.border}` }}>
             <div style={{ display:"flex",alignItems:"center",justifyContent:"space-between" }}>
-              <div style={{ display:"flex",alignItems:"center",gap:"10px" }}>
-                <div style={{ fontSize:"24px" }}>{glowInfo.active ? "🔥" : "✨"}</div>
-                <div>
-                  <div style={{ fontSize:"13px",fontWeight:"700",color:glowInfo.active?"#fff":C.text }}>
-                    {glowInfo.active ? "GLOW HOUR AKTIV" : "GLOW HOUR"}
-                  </div>
-                  <div style={{ fontSize:"12px",color:glowInfo.active?"rgba(255,255,255,0.7)":C.textLight,marginTop:"2px" }}>
-                    {glowInfo.label}
-                  </div>
-                </div>
+              <div>
+                <div style={{ fontSize:"10px",fontWeight:"700",letterSpacing:"2px",color:glowInfo?.active?"rgba(255,255,255,0.7)":C.textLight }}>{glowInfo?.active ? "GLOW HOUR AKTIV" : "NÄCHSTE GLOW HOUR"}</div>
+                <div style={{ fontSize:"13px",fontWeight:"600",color:glowInfo?.active?"#fff":C.textSub,marginTop:"4px" }}>{glowInfo?.active ? "Doppelte XP jetzt!" : "Doppelte XP bald"}</div>
               </div>
               <div style={{ textAlign:"right" }}>
-                <div style={{ fontSize:"18px",fontWeight:"800",color:glowInfo.active?"#fff":C.orange,fontFamily:font.display }}>
-                  {glowInfo.countdown}
-                </div>
-                {glowInfo.active && (
-                  <div style={{ width:"8px",height:"8px",borderRadius:"50%",background:"#fff",display:"inline-block",animation:"fadeIn 1s infinite alternate",marginTop:"4px" }}/>
-                )}
+                <div style={{ fontSize:"28px",fontWeight:"800",fontFamily:"monospace",color:glowInfo?.active?"#fff":C.orange }}>{glowCountdown}</div>
+                <div style={{ fontSize:"10px",color:glowInfo?.active?"rgba(255,255,255,0.6)":C.textLight }}>{glowInfo?.active ? "verbleibend" : "bis Start"}</div>
               </div>
             </div>
           </Card>
@@ -775,37 +756,38 @@ const HomeTab = ({ user, setUser, setTab }) => {
 // ─── Wheel + Missions Tab ─────────────────────────────────────────
 // FIX: rotReady verhindert Dreh-Animation beim ersten Render
 const WheelTab = ({ user, setUser }) => {
-  const [scratching, setScratching] = useState(false);
-  const [revealed,   setRevealed]   = useState(false);
-  const [result,     setResult]     = useState(null);
-  const [spins,      setSpins]      = useState(0);
-  const [loading,    setLoading]    = useState(true);
-  const [missions,   setMissions]   = useState(MOCK_MISSIONS);
-  const [prizes,     setPrizes]     = useState(WHEEL_DEFAULT);
-  const [scratchPct, setScratchPct] = useState(0);
-  const canvasRef = useRef(null);
+  const [spinning,  setSpinning]  = useState(false);
+  const [rot,       setRot]       = useState(0);
+  const [rotReady,  setRotReady]  = useState(false); // NEU: verhindert Dreh beim Mount
+  const [result,    setResult]    = useState(null);
+  const [spins,     setSpins]     = useState(0);
+  const [loading,   setLoading]   = useState(true);
+  const [missions,  setMissions]  = useState(MOCK_MISSIONS);
+  const [prizes,    setPrizes]    = useState(WHEEL_DEFAULT);
   const MAX=2; const FREE=1;
 
   useEffect(() => {
+    // Rad auf 0 zurücksetzen beim Mount – KEINE Transition
+    setRot(0);
+    setRotReady(false);
+
     const init = async () => {
       if (user?.id) {
         const fresh = await db.getProfile(user.id);
         if (fresh) {
-          setUser(u => {
-            const merged = { ...u };
-            for (const [k, v] of Object.entries(fresh)) { if (v !== null && v !== undefined) merged[k] = v; }
-            return merged;
-          });
+          setUser(u => ({ ...u, ...fresh }));
           const today = new Date().toISOString().split('T')[0];
-          // spins_today Feld statt Boolean
-          setSpins(fresh.last_spin_date === today ? (fresh.spins_today || 0) : 0);
+          setSpins(fresh.last_spin_date===today ? (fresh.wheel_spun_today?2:1) : 0);
         }
       }
       const p = await db.getWheelPrizes(); if(p.length) setPrizes(p);
       const m = await db.getMissions();    if(m.length) setMissions(m);
       setLoading(false);
+      // Erst NACH dem Rendern sichtbar machen – verhindert Dreh-Animation
+      setTimeout(() => setRotReady(true), 80);
     };
     init();
+
     if (!user?.id) return;
     const ch = supabase.channel('wheel-rt')
       .on('postgres_changes',{event:'*',schema:'public',table:'wheel_prizes'}, async () => { const p=await db.getWheelPrizes(); if(p.length) setPrizes(p); })
@@ -817,154 +799,89 @@ const WheelTab = ({ user, setUser }) => {
   const canSpin  = spins < MAX;
   const needsPay = spins >= FREE;
 
-  // Rubbellos initialisieren
-  const initScratch = () => {
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-    const ctx = canvas.getContext("2d");
-    const w = canvas.width, h = canvas.height;
-    // Goldener Rubbelfeld-Overlay
-    const grad = ctx.createLinearGradient(0, 0, w, h);
-    grad.addColorStop(0, "#c9a84c"); grad.addColorStop(0.3, "#f0d78c");
-    grad.addColorStop(0.5, "#dfc060"); grad.addColorStop(0.7, "#f0d78c");
-    grad.addColorStop(1, "#b8943d");
-    ctx.fillStyle = grad;
-    ctx.fillRect(0, 0, w, h);
-    // Muster
-    ctx.fillStyle = "rgba(255,255,255,0.08)";
-    for (let i = 0; i < 8; i++) {
-      ctx.beginPath(); ctx.arc(Math.random()*w, Math.random()*h, 20+Math.random()*30, 0, Math.PI*2); ctx.fill();
-    }
-    // Text
-    ctx.fillStyle = "rgba(255,255,255,0.6)"; ctx.font = "bold 18px Inter, sans-serif"; ctx.textAlign = "center";
-    ctx.fillText("✦ HIER RUBBELN ✦", w/2, h/2 + 6);
-    setScratchPct(0);
-  };
-
-  const startScratchCard = async () => {
-    if (scratching || revealed || !canSpin) return;
+  const spin = async () => {
+    if (spinning || !canSpin) return;
     const today = new Date().toISOString().split('T')[0];
-    // Server-Check: wie viele Spins heute wirklich verbraucht?
     if (user?.id) {
       const fresh = await db.getProfile(user.id);
-      if (fresh) {
-        const serverSpins = fresh.last_spin_date === today ? (fresh.spins_today || 0) : 0;
-        setSpins(serverSpins);
-        if (serverSpins >= MAX) return; // Wirklich kein Spin mehr
-      }
+      if (fresh && fresh.last_spin_date===today && (fresh.wheel_spun_today?2:1)>=MAX) { setSpins(2); return; }
     }
     if (needsPay) {
       const fresh = user?.id ? await db.getProfile(user.id) : null;
       const cur = fresh ? (fresh.pts||0) : (user.pts||0);
       if (cur < 100) return;
-      if (user?.id) await db.addPts(user.id, -100);
-      const updated = await db.getProfile(user.id);
-      if (updated) setUser(u => ({ ...u, pts: updated.pts || 0 }));
+      setUser(u => ({ ...u, pts:cur-100 }));
+      if (user?.id) await db.updateProfile(user.id, { pts:cur-100 });
     }
-    // Zufälliger Preis — Counter wird NICHT hier hochgezählt, erst beim Reveal
+    setSpinning(true); setResult(null); Sound.spin();
     const idx = Math.floor(Math.random() * prizes.length);
-    setResult(prizes[idx]);
-    setRevealed(false);
-    setScratching(true);
-    setTimeout(initScratch, 50);
+    const seg = 360 / prizes.length;
+    setRot(r => r + 360*7 + (360 - idx*seg - seg/2));
+    setTimeout(async () => {
+      setSpinning(false); setSpins(s => s+1);
+      const prize = prizes[idx]; setResult(prize);
+      prize.value > 0 ? Sound.win() : Sound.lose();
+      const fresh = user?.id ? await db.getProfile(user.id) : null;
+      const cur   = fresh ? (fresh.pts||0) : (user.pts||0);
+      const today2 = new Date().toISOString().split('T')[0];
+      const upd = { wheel_spun_today:true, last_spin_date:today2 };
+      if (prize.value > 0) { upd.pts=cur+prize.value; setUser(u => ({ ...u, pts:upd.pts, wheel_spun_today:true })); }
+      else setUser(u => ({ ...u, wheel_spun_today:true }));
+      if (user?.id) await db.updateProfile(user.id, upd);
+    }, 5200);
   };
 
-  const handleScratch = (clientX, clientY) => {
-    const canvas = canvasRef.current;
-    if (!canvas || !scratching || revealed) return;
-    const rect = canvas.getBoundingClientRect();
-    const x = (clientX - rect.left) * (canvas.width / rect.width);
-    const y = (clientY - rect.top) * (canvas.height / rect.height);
-    const ctx = canvas.getContext("2d");
-    ctx.globalCompositeOperation = "destination-out";
-    ctx.beginPath(); ctx.arc(x, y, 28, 0, Math.PI*2); ctx.fill();
-    ctx.globalCompositeOperation = "source-over";
-    // Prüfe wie viel freigerubbelt wurde
-    const data = ctx.getImageData(0, 0, canvas.width, canvas.height).data;
-    let clear = 0;
-    for (let i = 3; i < data.length; i += 16) { if (data[i] === 0) clear++; }
-    const pct = clear / (data.length / 16);
-    setScratchPct(pct);
-    if (pct > 0.45 && !revealed) reveal();
-  };
-
-  const reveal = async () => {
-    setRevealed(true); setScratching(false);
-    if (!result) return;
-    result.value > 0 ? Sound.win() : Sound.lose();
-    const today2 = new Date().toISOString().split('T')[0];
-    const newSpins = spins + 1;
-    setSpins(newSpins);
-    // XP gutschreiben + Spin-Counter in DB speichern
-    if (result.value > 0 && user?.id) {
-      await db.addPts(user.id, result.value);
-    }
-    if (user?.id) await db.updateProfile(user.id, { spins_today: newSpins, last_spin_date: today2 });
-    const fresh = await db.getProfile(user.id);
-    if (fresh) setUser(u => ({ ...u, ...fresh }));
-  };
-
-  const resetCard = () => { setResult(null); setRevealed(false); setScratching(false); setScratchPct(0); };
+  const sz=280, cx=sz/2, cy=sz/2, r=sz/2-12;
 
   return (
     <div style={{ background:C.beige, paddingBottom:"24px", minHeight:"100%" }}>
       <div style={{ padding:`calc(${ST} + 20px) 20px 14px` }}>
         <div style={{ fontSize:"12px",letterSpacing:"2px",color:C.textLight,fontWeight:"600",textTransform:"uppercase" }}>Täglich</div>
-        <div style={{ fontSize:"28px",fontFamily:font.display,color:C.text,fontWeight:"700" }}>Rubbellos & Missionen</div>
+        <div style={{ fontSize:"28px",fontFamily:font.display,color:C.text,fontWeight:"700" }}>Glücksrad & Missionen</div>
       </div>
       <div style={{ padding:"0 16px" }}>
-        {/* Rubbellos */}
+        {/* Glücksrad */}
         <Card style={{ marginBottom:"16px", padding:"20px", textAlign:"center" }}>
           <div style={{ fontSize:"11px",fontWeight:"700",letterSpacing:"2px",color:C.textLight,marginBottom:"4px" }}>TÄGLICH</div>
-          <div style={{ fontSize:"20px",fontFamily:font.display,color:C.text,fontWeight:"700",marginBottom:"4px" }}>Rubbellos</div>
-          <div style={{ fontSize:"12px",color:C.textLight,marginBottom:"16px" }}>Rubble das Feld frei und gewinne XP</div>
-
-          {!scratching && !revealed && (
-            <>
-              <div style={{ width:"280px",height:"140px",margin:"0 auto 16px",borderRadius:"20px",background:`linear-gradient(135deg, #1a0000, ${C.orange}22, #1a0000)`,border:`2px solid ${C.orange}33`,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",gap:"8px" }}>
-                <div style={{ fontSize:"36px" }}>🎟️</div>
-                <div style={{ fontSize:"14px",fontWeight:"700",color:C.orange }}>Cereza Lucky Card</div>
-                <div style={{ fontSize:"11px",color:C.textLight }}>{spins}/{MAX} heute genutzt</div>
-              </div>
-              <button onClick={startScratchCard} disabled={!canSpin||(needsPay&&(user.pts||0)<100)}
-                style={{ padding:"14px 48px",borderRadius:"50px",fontSize:"15px",fontWeight:"700",background:!canSpin?C.greyBg:C.orange,color:!canSpin?C.textLight:C.white,transition:"all 0.2s" }}>
-                {!canSpin?"Fertig für heute":needsPay?"Neues Los (100 XP)":"Los aufrubbeln"}
-              </button>
-            </>
-          )}
-
-          {scratching && !revealed && (
-            <div style={{ position:"relative",width:"280px",height:"140px",margin:"0 auto 16px",borderRadius:"20px",overflow:"hidden",border:`2px solid ${C.orange}33` }}>
-              {/* Preis darunter */}
-              <div style={{ position:"absolute",inset:0,background:`linear-gradient(135deg, #1a0000, ${C.orange}15)`,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center" }}>
-                <div style={{ fontSize:"32px",fontWeight:"900",color:C.orange,fontFamily:font.display }}>
-                  {result?.value>0?`+${result.value} XP`:result?.value===-1?"2× XP":"Nächstes Mal!"}
-                </div>
-                <div style={{ fontSize:"13px",color:C.textLight,marginTop:"4px" }}>{result?.value>0?"Gewonnen!":"Mehr Glück beim nächsten Mal"}</div>
-              </div>
-              {/* Rubbelfeld darüber */}
-              <canvas ref={canvasRef} width={560} height={280}
-                style={{ position:"absolute",inset:0,width:"100%",height:"100%",touchAction:"none",cursor:"grabbing" }}
-                onMouseMove={e => { if(e.buttons===1) handleScratch(e.clientX, e.clientY); }}
-                onTouchMove={e => { const t=e.touches[0]; handleScratch(t.clientX, t.clientY); }}
-              />
+          <div style={{ fontSize:"20px",fontFamily:font.display,color:C.text,fontWeight:"700",marginBottom:"18px" }}>Glücksrad</div>
+          <div style={{ display:"flex",flexDirection:"column",alignItems:"center" }}>
+            <div style={{ position:"relative" }}>
+              <div style={{ position:"absolute",top:"-3px",left:"50%",transform:"translateX(-50%)",zIndex:3,width:0,height:0,borderLeft:"9px solid transparent",borderRight:"9px solid transparent",borderTop:`16px solid ${C.orange}` }}/>
+              <div style={{ position:"absolute",inset:"-5px",borderRadius:"50%",border:`3px solid ${C.border}`,boxShadow:spinning?"0 0 28px rgba(226,74,40,0.25)":"none",transition:"box-shadow 0.5s",pointerEvents:"none" }}/>
+              {/* FIX: opacity:0 bis rotReady, transition nur beim Spinning */}
+              <svg width={sz} height={sz} viewBox={`0 0 ${sz} ${sz}`}
+                style={{
+                  transform:`rotate(${rot}deg)`,
+                  transition: spinning ? "transform 5.2s cubic-bezier(0.1,0.6,0.1,1)" : "none",
+                  display:"block",
+                  opacity: rotReady ? 1 : 0,
+                }}>
+                {prizes.map((p,i) => {
+                  const seg=360/prizes.length, s=(i*seg-90)*Math.PI/180, e=((i+1)*seg-90)*Math.PI/180, mid=(s+e)/2;
+                  return (
+                    <g key={i}>
+                      <path d={`M${cx},${cy} L${cx+r*Math.cos(s)},${cy+r*Math.sin(s)} A${r},${r} 0 0,1 ${cx+r*Math.cos(e)},${cy+r*Math.sin(e)} Z`} fill={p.color||"#f5f5f5"} stroke="#fff" strokeWidth="2"/>
+                      <text x={cx+(r*0.65)*Math.cos(mid)} y={cy+(r*0.65)*Math.sin(mid)} transform={`rotate(${i*seg+seg/2},${cx+(r*0.65)*Math.cos(mid)},${cy+(r*0.65)*Math.sin(mid)})`} textAnchor="middle" dominantBaseline="middle" fill={WHEEL_TC[i%WHEEL_TC.length]} fontSize="11" fontWeight="700" fontFamily={font.ui}>{p.label}</text>
+                    </g>
+                  );
+                })}
+                <circle cx={cx} cy={cy} r="32" fill="white" stroke={C.orange} strokeWidth="2.5" style={{ filter:"drop-shadow(0 2px 8px rgba(226,74,40,0.3))" }}/>
+                <text x={cx} y={cy+11} textAnchor="middle" dominantBaseline="middle" fill={C.orange} fontSize="30" fontWeight="900" fontFamily="Playfair Display,serif">c</text>
+              </svg>
             </div>
-          )}
-
-          {revealed && (
-            <div style={{ animation:"scaleIn 0.4s" }}>
-              <div style={{ width:"280px",height:"140px",margin:"0 auto 16px",borderRadius:"20px",background:`linear-gradient(135deg, #1a0000, ${C.orange}15)`,border:`2px solid ${result?.value>0?C.orange:C.border}`,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center" }}>
-                <div style={{ fontSize:"36px",marginBottom:"4px" }}>{result?.value>0?"🎉":"😅"}</div>
-                <div style={{ fontSize:"28px",fontWeight:"900",color:result?.value>0?C.orange:C.text,fontFamily:font.display }}>
-                  {result?.value>0?`+${result.value} XP!`:result?.value===-1?"2× XP heute!":"Kein Gewinn"}
+            <button onClick={spin} disabled={spinning||!canSpin||(needsPay&&(user.pts||0)<100)}
+              style={{ marginTop:"18px",padding:"14px 48px",borderRadius:"50px",fontSize:"15px",fontWeight:"700",background:!canSpin?C.greyBg:C.orange,color:!canSpin?C.textLight:C.white,transition:"all 0.2s" }}>
+              {!canSpin?"Fertig für heute":spinning?"Dreht...":needsPay?"Nochmal (100 XP)":"Drehen"}
+            </button>
+            <div style={{ fontSize:"11px",color:C.textLight,marginTop:"6px" }}>{spins}/{MAX} Spins heute</div>
+            {result && (
+              <Card style={{ marginTop:"12px",padding:"14px",animation:"scaleIn 0.4s",maxWidth:"200px" }}>
+                <div style={{ fontSize:"15px",fontWeight:"800",color:result.value>0?C.orange:C.text }}>
+                  {result.value>0?`+${result.value} XP!`:result.value===-1?"2× XP heute!":"Kein Glück"}
                 </div>
-              </div>
-              <button onClick={resetCard}
-                style={{ padding:"12px 36px",borderRadius:"50px",fontSize:"14px",fontWeight:"600",background:C.greyBg,color:C.textSub,border:`1px solid ${C.border}` }}>
-                OK
-              </button>
-            </div>
-          )}
+              </Card>
+            )}
+          </div>
         </Card>
 
         {/* Missionen */}
@@ -980,9 +897,9 @@ const WheelTab = ({ user, setUser }) => {
 // Token wird im Admin Panel → QR-Gen generiert
 // cereza:USER_ID QR-Codes (User-QR) werden ABGELEHNT
 
-// QR-Validierung läuft serverseitig über db.validateBelegQR()
-// Client prüft nur Format, Secret bleibt auf dem Server
-const parseQRFormat = (text) => {
+const QR_SECRET = "czlyl2024";
+
+const validateBelegQR = (text) => {
   text = (text||"").trim();
   if (!text.startsWith("cereza:")) return null;
   const parts = text.split(":");
@@ -990,8 +907,10 @@ const parseQRFormat = (text) => {
   if (parts.length === 3) {
     const pts = parseInt(parts[1]);
     const token = parts[2];
-    if (isNaN(pts) || pts <= 0 || pts > 999999 || !token) return null;
-    return { pts, token };
+    if (isNaN(pts) || pts <= 0 || pts > 999999) return null;
+    const expected = btoa(`${pts}:${QR_SECRET}`).replace(/=/g,"").substring(0,8);
+    if (token === expected) return pts;
+    return null;
   }
   // UUID-Format = User-QR → ablehnen
   const uuidRx = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -1010,26 +929,22 @@ const ScanTab = ({ user, setUser }) => {
 
   const award = async p => {
     setPts(p); Sound.scan();
-    if (!user?.id) { setDone(true); return; }
     const today     = new Date().toISOString().split('T')[0];
     const yesterday = new Date(Date.now()-86400000).toISOString().split('T')[0];
-    // Scan loggen und Punkte serverseitig vergeben
-    await supabase.from("scan_log").insert({ user_id:user.id, pts_earned:p, was_glow_hour:false });
-    await db.addPts(user.id, p);
-    // Frische Daten holen für Visit-Tracking
-    const fresh = await db.getProfile(user.id);
-    if (fresh) {
-      const lv = fresh.last_visit || null;
-      const ns = lv===yesterday ? (fresh.streak||0)+1 : lv===today ? (fresh.streak||0) : 1;
-      const tg = fresh.treat_goal || 8;
-      const tc = (fresh.treat_count||0) + 1;
-      const nt = tc >= tg ? 0 : tc;
-      const won = tc >= tg;
-      setStreak(ns); setTreatDone(won);
-      await db.updateProfile(user.id, { total_visits:(fresh.total_visits||0)+1, treat_count:nt, streak:ns, last_visit:today });
-      // Nochmal frisch holen für korrekte UI
-      const latest = await db.getProfile(user.id);
-      if (latest) setUser(u => ({ ...u, ...latest }));
+    const fresh = user?.id ? await db.getProfile(user.id) : null;
+    const np  = (fresh?.pts||user.pts||0) + p;
+    const nv  = (fresh?.total_visits||user.total_visits||0) + 1;
+    const lv  = fresh?.last_visit || null;
+    const ns  = lv===yesterday ? (fresh?.streak||0)+1 : lv===today ? (fresh?.streak||0) : 1;
+    const tg  = fresh?.treat_goal || 8;
+    const tc  = (fresh?.treat_count||0) + 1;
+    const nt  = tc >= tg ? 0 : tc;
+    const won = tc >= tg;
+    setStreak(ns); setTreatDone(won);
+    setUser(u => ({ ...u, pts:np, total_visits:nv, treat_count:nt, streak:ns }));
+    if (user?.id) {
+      await db.updateProfile(user.id, { pts:np, total_visits:nv, treat_count:nt, streak:ns, last_visit:today });
+      await supabase.from("scan_log").insert({ user_id:user.id, pts_earned:p, was_glow_hour:false });
     }
     setDone(true);
   };
@@ -1037,24 +952,16 @@ const ScanTab = ({ user, setUser }) => {
   const startScan = async () => {
     setScanning(true); setErr("");
     try {
-      // Kamera-Permission zuerst explizit anfragen (nötig für iOS PWA)
-      try { const stream = await navigator.mediaDevices.getUserMedia({ video:{ facingMode:"environment" } }); stream.getTracks().forEach(t => t.stop()); } catch(e) { console.log('Camera pre-request:', e.message); }
       const { Html5Qrcode } = await import("html5-qrcode");
       const s = new Html5Qrcode("qr-reader"); scannerRef.current = s;
       await s.start(
         { facingMode:"environment" },
-        { fps:10, qrbox:{ width:220, height:220 }, aspectRatio:1 },
+        { fps:10, qrbox:{ width:220, height:220 } },
         async (text) => {
           await s.stop(); setScanning(false);
-          const parsed = parseQRFormat(text);
-          if (parsed !== null) {
-            // Server-seitige Validierung des Tokens
-            const valid = await db.validateBelegQR(parsed.pts, parsed.token);
-            if (valid) {
-              await award(parsed.pts);
-            } else {
-              setErr("Ungültiger QR-Code. Bitte einen gültigen Cereza-Beleg scannen.");
-            }
+          const p = validateBelegQR(text);
+          if (p !== null) {
+            await award(p);
           } else if (text.includes("cereza:")) {
             setErr("Das ist dein persönlicher QR-Code. Scanne den QR-Code auf deinem Kassenbeleg.");
           } else {
@@ -1149,6 +1056,10 @@ const VoteTab = ({ user, setUser }) => {
   const [dragStart, setDragStart] = useState(null);
   const [loading,   setLoading]   = useState(true);
   const [visit,     setVisitLocal]= useState(null);
+  const [showSuggest, setShowSuggest] = useState(false);
+  const [sugName, setSugName] = useState("");
+  const [sugDesc, setSugDesc] = useState("");
+  const [sugSent, setSugSent] = useState(false);
 
   useEffect(() => {
     // Reset beim Tab-Öffnen
@@ -1164,7 +1075,7 @@ const VoteTab = ({ user, setUser }) => {
         const voted = await db.getUserVotes(user.id);
         setUnvoted(list.filter(d => !voted.has(d.id)));
         const today = new Date().toISOString().split('T')[0];
-        db.getVisitIntention(user.id, today).then(d => { if(d) setVisitLocal(d.status); }).catch(e => console.error('async error:', e?.message));
+        db.getVisitIntention(user.id, today).then(d => { if(d) setVisitLocal(d.status); }).catch(() => {});
       } else {
         setUnvoted(list);
       }
@@ -1193,14 +1104,11 @@ const VoteTab = ({ user, setUser }) => {
     Sound.vote();
     setDir(liked ? "right" : "left");
     if (user?.id) {
-      try {
-        await db.voteDish(user.id, dish.id, liked);
-        if (liked) {
-          await db.addPts(user.id, 10);
-          const fresh = await db.getProfile(user.id);
-          if (fresh) setUser(u => ({ ...u, pts: fresh.pts || 0 }));
-        }
-      } catch (e) { console.error('Vote error:', e.message); }
+      await db.voteDish(user.id, dish.id, liked).catch(() => {});
+      if (liked) {
+        const fresh = await db.getProfile(user.id);
+        if (fresh) { await db.updateProfile(user.id, { pts:(fresh.pts||0)+10 }); setUser(u => ({ ...u, pts:(u.pts||0)+10 })); }
+      }
     }
     setTimeout(() => { setDir(null); setDragX(0); setCur(i => i+1); }, 320);
   };
@@ -1285,6 +1193,38 @@ const VoteTab = ({ user, setUser }) => {
               <button onPointerDown={e => e.preventDefault()} onClick={() => doVote(true)}  style={{ width:"74px",height:"74px",borderRadius:"50%",background:C.orange,border:"none",display:"flex",alignItems:"center",justifyContent:"center",boxShadow:`0 6px 24px ${C.orange}55`,color:"white" }}>{I.heartFill}</button>
             </div>
             <div style={{ textAlign:"center",color:C.textLight,fontSize:"11px",marginTop:"12px" }}>Swipe oder Buttons</div>
+
+            {/* Gericht vorschlagen ab Level 5 */}
+            {(user?.level||1) >= 5 && (
+              <Card style={{ marginTop:"16px" }}>
+                {!showSuggest ? (
+                  <button onClick={() => setShowSuggest(true)} style={{ width:"100%",padding:"12px",background:"transparent",border:`1px dashed ${C.orange}`,borderRadius:"12px",color:C.orange,fontSize:"13px",fontWeight:"700",cursor:"pointer" }}>
+                    + Gericht vorschlagen
+                  </button>
+                ) : sugSent ? (
+                  <div style={{ textAlign:"center",padding:"12px" }}>
+                    <div style={{ fontSize:"24px",marginBottom:"4px" }}>✓</div>
+                    <div style={{ fontSize:"14px",fontWeight:"700",color:C.green }}>Vorschlag gesendet!</div>
+                    <div style={{ fontSize:"12px",color:C.textLight,marginTop:"4px" }}>Der Admin wird ihn prüfen.</div>
+                  </div>
+                ) : (
+                  <>
+                    <div style={{ fontSize:"12px",fontWeight:"700",letterSpacing:"1px",color:C.textSub,marginBottom:"10px" }}>GERICHT VORSCHLAGEN</div>
+                    <input value={sugName} onChange={e=>setSugName(e.target.value)} placeholder="Name des Gerichts" style={{ width:"100%",padding:"12px 14px",border:`1px solid ${C.border}`,borderRadius:"12px",fontSize:"15px",marginBottom:"8px",outline:"none",boxSizing:"border-box",background:C.card,color:C.text }}/>
+                    <input value={sugDesc} onChange={e=>setSugDesc(e.target.value)} placeholder="Beschreibung (optional)" style={{ width:"100%",padding:"12px 14px",border:`1px solid ${C.border}`,borderRadius:"12px",fontSize:"15px",marginBottom:"12px",outline:"none",boxSizing:"border-box",background:C.card,color:C.text }}/>
+                    <div style={{ display:"flex",gap:"8px" }}>
+                      <button onClick={() => setShowSuggest(false)} style={{ flex:1,padding:"11px",background:C.greyBg,borderRadius:"12px",color:C.textLight,fontSize:"14px",fontWeight:"600" }}>Abbrechen</button>
+                      <button onClick={async () => {
+                        if (!sugName.trim() || !user?.id) return;
+                        await db.suggestDish(user.id, sugName.trim(), sugDesc.trim());
+                        setSugSent(true);
+                        setTimeout(() => { setShowSuggest(false); setSugSent(false); setSugName(""); setSugDesc(""); }, 2500);
+                      }} style={{ flex:1,padding:"11px",background:C.orange,borderRadius:"12px",color:C.white,fontSize:"14px",fontWeight:"700" }}>Senden</button>
+                    </div>
+                  </>
+                )}
+              </Card>
+            )}
           </>
         ) : (
           <>
@@ -1335,171 +1275,6 @@ const ProfileTab = ({ user, setUser, onLogout, theme }) => {
   const [vibes,        setVibes]       = useState([]);
   const [pendingCount, setPendingCount]= useState(0);
   const [profilePopup, setProfilePopup]= useState(null);
-  const [showQR,       setShowQR]      = useState(false);
-  const [storyLoading, setStoryLoading]= useState(false);
-
-  const myFriendsCount = () => friends.filter(f => f.status==="accepted").length;
-
-  const shareStory = async () => {
-    if (storyLoading) return;
-    setStoryLoading(true);
-    try {
-      const W = 1080, H = 1920;
-      const canvas = document.createElement("canvas");
-      canvas.width = W; canvas.height = H;
-      const ctx = canvas.getContext("2d");
-
-      // Hintergrund: Cereza Rot Gradient
-      const bg = ctx.createLinearGradient(0, 0, 0, H);
-      bg.addColorStop(0, "#C1272D");
-      bg.addColorStop(0.5, "#8B0000");
-      bg.addColorStop(1, "#1a0000");
-      ctx.fillStyle = bg;
-      ctx.fillRect(0, 0, W, H);
-
-      // Dekorative Kreise
-      ctx.globalAlpha = 0.06;
-      ctx.fillStyle = "#fff";
-      ctx.beginPath(); ctx.arc(200, 300, 300, 0, Math.PI*2); ctx.fill();
-      ctx.beginPath(); ctx.arc(880, 1500, 250, 0, Math.PI*2); ctx.fill();
-      ctx.globalAlpha = 1;
-
-      // Cereza Logo Text oben
-      ctx.fillStyle = "rgba(255,255,255,0.3)";
-      ctx.font = "600 28px Inter, sans-serif";
-      ctx.textAlign = "center";
-      ctx.letterSpacing = "8px";
-      ctx.fillText("CEREZA LOYALTY CLUB", W/2, 120);
-
-      // Avatar Kreis
-      const avatarY = 380, avatarR = 120;
-      ctx.save();
-      ctx.beginPath();
-      ctx.arc(W/2, avatarY, avatarR + 6, 0, Math.PI*2);
-      ctx.fillStyle = "rgba(255,255,255,0.2)";
-      ctx.fill();
-      ctx.beginPath();
-      ctx.arc(W/2, avatarY, avatarR, 0, Math.PI*2);
-      ctx.clip();
-      if (user.avatar_url) {
-        try {
-          const img = new Image();
-          img.crossOrigin = "anonymous";
-          await new Promise((res, rej) => { img.onload = res; img.onerror = rej; img.src = user.avatar_url; });
-          ctx.drawImage(img, W/2 - avatarR, avatarY - avatarR, avatarR*2, avatarR*2);
-        } catch(e) {
-          ctx.fillStyle = "#e24a28";
-          ctx.fillRect(W/2 - avatarR, avatarY - avatarR, avatarR*2, avatarR*2);
-          ctx.fillStyle = "#fff";
-          ctx.font = "bold 80px Inter, sans-serif";
-          ctx.textAlign = "center";
-          ctx.fillText((user.name||"U")[0].toUpperCase(), W/2, avatarY + 28);
-        }
-      } else {
-        ctx.fillStyle = "#e24a28";
-        ctx.fillRect(W/2 - avatarR, avatarY - avatarR, avatarR*2, avatarR*2);
-        ctx.fillStyle = "#fff";
-        ctx.font = "bold 80px Inter, sans-serif";
-        ctx.textAlign = "center";
-        ctx.fillText((user.name||"U")[0].toUpperCase(), W/2, avatarY + 28);
-      }
-      ctx.restore();
-
-      // Username
-      ctx.fillStyle = "#ffffff";
-      ctx.font = "900 64px Inter, sans-serif";
-      ctx.textAlign = "center";
-      ctx.fillText(`@${user.name||"user"}`, W/2, 580);
-
-      // Level Badge
-      ctx.fillStyle = "rgba(255,255,255,0.12)";
-      const badgeW = 320, badgeH = 56, badgeX = W/2-badgeW/2, badgeY = 610;
-      ctx.beginPath();
-      ctx.roundRect(badgeX, badgeY, badgeW, badgeH, 28);
-      ctx.fill();
-      ctx.fillStyle = "#fff";
-      ctx.font = "700 26px Inter, sans-serif";
-      ctx.fillText(`${era.name} · Level ${user.level||1}`, W/2, badgeY + 37);
-
-      // Stats Cards
-      const stats = [
-        { label: "XP", value: (user.pts||0).toLocaleString() },
-        { label: "Streak", value: `${user.streak||0} Tage` },
-        { label: "Besuche", value: `${user.total_visits||0}` },
-        { label: "Freunde", value: `${myFriendsCount()}` },
-      ];
-      const cardW = 220, cardH = 160, gap = 30, startX = (W - cardW*2 - gap) / 2, startY = 740;
-      stats.forEach((s, i) => {
-        const x = startX + (i % 2) * (cardW + gap);
-        const y = startY + Math.floor(i / 2) * (cardH + gap);
-        ctx.fillStyle = "rgba(255,255,255,0.08)";
-        ctx.beginPath();
-        ctx.roundRect(x, y, cardW, cardH, 24);
-        ctx.fill();
-        ctx.fillStyle = "#fff";
-        ctx.font = "900 48px Inter, sans-serif";
-        ctx.textAlign = "center";
-        ctx.fillText(s.value, x + cardW/2, y + 80);
-        ctx.fillStyle = "rgba(255,255,255,0.5)";
-        ctx.font = "600 22px Inter, sans-serif";
-        ctx.fillText(s.label, x + cardW/2, y + 120);
-      });
-
-      // XP Progress Bar
-      const barY = 1280, barW = 700, barH = 20;
-      const nextEra = ERAS.find(e => e.pts > (user.pts||0)) || ERAS[ERAS.length-1];
-      const prevEra = [...ERAS].reverse().find(e => e.pts <= (user.pts||0)) || ERAS[0];
-      const pct = nextEra.pts > prevEra.pts ? Math.min(1, ((user.pts||0) - prevEra.pts) / (nextEra.pts - prevEra.pts)) : 1;
-      ctx.fillStyle = "rgba(255,255,255,0.1)";
-      ctx.beginPath(); ctx.roundRect((W-barW)/2, barY, barW, barH, 10); ctx.fill();
-      ctx.fillStyle = "#e24a28";
-      ctx.beginPath(); ctx.roundRect((W-barW)/2, barY, barW * pct, barH, 10); ctx.fill();
-      ctx.fillStyle = "rgba(255,255,255,0.4)";
-      ctx.font = "600 20px Inter, sans-serif";
-      ctx.textAlign = "center";
-      ctx.fillText(`${user.pts||0} / ${nextEra.pts} XP`, W/2, barY + 52);
-
-      // Footer
-      ctx.fillStyle = "rgba(255,255,255,0.2)";
-      ctx.font = "600 24px Inter, sans-serif";
-      ctx.textAlign = "center";
-      ctx.fillText("cereza-loyalty.vercel.app", W/2, H - 100);
-      ctx.fillStyle = "rgba(255,255,255,0.12)";
-      ctx.font = "500 20px Inter, sans-serif";
-      ctx.fillText("Werde Teil der Cereza Fam", W/2, H - 60);
-
-      // Als Blob teilen
-      const blob = await new Promise(r => canvas.toBlob(r, "image/png"));
-      const file = new File([blob], "cereza-story.png", { type:"image/png" });
-
-      if (navigator.canShare?.({ files:[file] })) {
-        await navigator.share({ files:[file], title:"Mein Cereza Profil" });
-        // 50 XP Belohnung — 1x pro Woche, nach 1 Minute Verzögerung
-        if (user?.id) {
-          const profile = await db.getProfile(user.id);
-          const lastShare = profile?.last_story_share ? new Date(profile.last_story_share) : null;
-          const weekAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
-          if (!lastShare || lastShare < weekAgo) {
-            // 1 Minute warten, dann XP gutschreiben
-            setTimeout(async () => {
-              try {
-                await db.addPts(user.id, 50);
-                await db.updateProfile(user.id, { last_story_share: new Date().toISOString() });
-                const fresh = await db.getProfile(user.id);
-                if (fresh) setUser(u => ({ ...u, pts: fresh.pts || 0, last_story_share: fresh.last_story_share }));
-              } catch(e) { console.error('Story XP error:', e); }
-            }, 60000); // 60 Sekunden
-          }
-        }
-      } else {
-        const url = URL.createObjectURL(blob);
-        window.open(url, "_blank");
-      }
-    } catch(e) {
-      console.error("Story share error:", e);
-    }
-    setStoryLoading(false);
-  };
 
   const loadFriends = useCallback(async () => {
     if (!user?.id) return;
@@ -1554,12 +1329,13 @@ const ProfileTab = ({ user, setUser, onLogout, theme }) => {
 
   const sendGiftPts = async () => {
     if (!giftTarget || giftAmt < 10 || giftAmt > 500) return;
-    if (giftTarget.id === user?.id) { alert("Du kannst dir nicht selbst schenken."); return; }
+    const fresh = user?.id ? await db.getProfile(user.id) : null;
+    const cur = fresh?.pts || (user.pts||0);
+    if (cur < giftAmt) return;
     const res = await db.sendGift(user.id, giftTarget.id, "pts", giftAmt, null, giftMsg);
-    if (res?.error) { alert(res.error?.message || res.error); return; }
-    // Frische Daten vom Server holen statt lokal zu rechnen
-    const fresh = await db.getProfile(user.id);
-    if (fresh) setUser(u => ({ ...u, pts: fresh.pts || 0 }));
+    if (res?.error) { alert(res.error); return; }
+    await db.updateProfile(user.id, { pts:cur-giftAmt });
+    setUser(u => ({ ...u, pts:cur-giftAmt }));
     Sound.gift(); setGiftTarget(null); setGiftAmt(50); setGiftMsg("");
     db.getMyGifts(user.id).then(setGifts);
   };
@@ -1577,26 +1353,6 @@ const ProfileTab = ({ user, setUser, onLogout, theme }) => {
     <div style={{ background:C.beige, paddingBottom:"32px", minHeight:"100%" }}>
       {/* User Profile PopUp */}
       {profilePopup && <UserProfileCard userId={profilePopup} currentUser={user} C={C} font={font} onClose={() => setProfilePopup(null)}/>}
-
-      {/* QR-Code Popup */}
-      {showQR && (
-        <div onClick={() => setShowQR(false)} style={{ position:"fixed",inset:0,zIndex:9999,background:"rgba(0,0,0,0.85)",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",animation:"fadeIn 0.3s" }}>
-          <div onClick={e => e.stopPropagation()} style={{ background:C.card,borderRadius:"28px",padding:"32px 28px",textAlign:"center",maxWidth:"320px",width:"85%",boxShadow:"0 20px 60px rgba(0,0,0,0.3)" }}>
-            <div style={{ fontSize:"11px",letterSpacing:"3px",color:C.textLight,fontWeight:"600",textTransform:"uppercase",marginBottom:"6px" }}>Mein QR-Code</div>
-            <div style={{ fontSize:"20px",fontFamily:font.display,fontWeight:"700",color:C.text,marginBottom:"16px" }}>@{user.name||"user"}</div>
-            <div style={{ background:"#fff",borderRadius:"16px",padding:"16px",display:"inline-block",border:`1px solid ${C.border}` }}>
-              <img
-                src={`https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(`cereza:${user?.id}`)}&bgcolor=ffffff&color=111111&margin=5`}
-                style={{ width:"200px",height:"200px",display:"block",borderRadius:"8px" }}
-                alt="Mein QR-Code"
-              />
-            </div>
-            <div style={{ fontSize:"13px",fontWeight:"600",color:C.text,marginTop:"16px" }}>Zeige diesen Code dem Personal</div>
-            <div style={{ fontSize:"11px",color:C.textLight,marginTop:"4px" }}>Für Mission-Stempel scannen lassen</div>
-            <button onClick={() => setShowQR(false)} style={{ marginTop:"20px",padding:"13px 40px",background:C.orange,borderRadius:"50px",color:C.white,fontSize:"15px",fontWeight:"700" }}>Schließen</button>
-          </div>
-        </div>
-      )}
 
       {/* Redemption Overlay */}
       {rd && (
@@ -1642,20 +1398,18 @@ const ProfileTab = ({ user, setUser, onLogout, theme }) => {
         <div style={{ fontSize:"12px",color:C.textLight,marginTop:"2px" }}>{era.name} · Level {user.level||1}</div>
 
         {/* QR-Code Button */}
-        <div onClick={() => setShowQR(true)} style={{ display:"inline-flex",alignItems:"center",gap:"6px",marginTop:"8px",padding:"6px 14px",background:`${C.orange}18`,border:`1px solid ${C.orange}33`,borderRadius:"20px",cursor:"pointer" }}>
+        <div onClick={() => {
+          const code = `cereza:${user.id}`;
+          if (navigator.share) navigator.share({ title:"Mein Cereza QR", text:code });
+          else navigator.clipboard?.writeText(code).then(() => alert("Code kopiert: "+code));
+        }} style={{ display:"inline-flex",alignItems:"center",gap:"6px",marginTop:"8px",padding:"6px 14px",background:`${C.orange}18`,border:`1px solid ${C.orange}33`,borderRadius:"20px",cursor:"pointer" }}>
           <span style={{ fontSize:"14px" }}>▣</span>
           <span style={{ fontSize:"12px",fontWeight:"600",color:C.orange }}>Mein QR-Code</span>
         </div>
 
-        <div style={{ display:"flex",gap:"8px",justifyContent:"center",marginTop:"12px",flexWrap:"wrap" }}>
-          <button onClick={shareStory} disabled={storyLoading} style={{ padding:"9px 18px",background:`linear-gradient(135deg, ${C.orange}, #8B0000)`,borderRadius:"20px",fontSize:"13px",fontWeight:"700",color:C.white,display:"flex",alignItems:"center",gap:"6px",opacity:storyLoading?0.6:1 }}>
-            {storyLoading ? "..." : (() => {
-              const last = user.last_story_share ? new Date(user.last_story_share) : null;
-              const weekAgo = new Date(Date.now() - 7*24*60*60*1000);
-              return (!last || last < weekAgo) ? "📸 Story posten +50 XP" : "📸 Story posten";
-            })()}
-          </button>
-          <button onClick={shareApp} style={{ padding:"9px 18px",background:C.card,border:`1px solid ${C.border}`,borderRadius:"20px",fontSize:"13px",fontWeight:"600",color:C.text,display:"flex",alignItems:"center",gap:"6px" }}>{I.share} Einladen</button>
+        <div style={{ display:"flex",gap:"8px",justifyContent:"center",marginTop:"12px" }}>
+          <button onClick={shareApp} style={{ padding:"9px 18px",background:C.card,border:`1px solid ${C.border}`,borderRadius:"20px",fontSize:"13px",fontWeight:"600",color:C.text,display:"flex",alignItems:"center",gap:"6px" }}>{I.share} Teilen</button>
+          <button onClick={shareApp} style={{ padding:"9px 18px",background:C.orange,borderRadius:"20px",fontSize:"13px",fontWeight:"600",color:C.white }}>+ Einladen</button>
         </div>
       </div>
 
@@ -1789,23 +1543,55 @@ const ProfileTab = ({ user, setUser, onLogout, theme }) => {
         {/* Vibes */}
         {social==="vibes" && (
           <div>
-            <label style={{ display:"block",width:"100%",padding:"13px",background:C.orange,borderRadius:"14px",color:C.white,fontSize:"14px",fontWeight:"700",textAlign:"center",cursor:"pointer",marginBottom:"12px",boxSizing:"border-box" }}>
-              Vibe hochladen
-              <input type="file" accept="image/*" style={{ display:"none" }} onChange={async e => {
-                const f=e.target.files?.[0]; if(!f||!user?.id) return;
-                const ext=(f.name.split('.').pop()||'jpg').toLowerCase();
-                const path=`vibes/${user.id}_${Date.now()}.${ext}`;
-                const{error}=await supabase.storage.from('avatars').upload(path,f,{upsert:false,contentType:f.type||'image/jpeg'});
-                if(!error){
-                  const{data:u}=supabase.storage.from('avatars').getPublicUrl(path);
-                  await supabase.from('vibe_photos').insert({user_id:user.id,url:u.publicUrl+'?t='+Date.now(),approved:false});
-                  alert("Hochgeladen! Wartet auf Admin-Freigabe.");
-                } else { alert("Upload fehlgeschlagen: "+error.message); }
-              }}/>
-            </label>
+            <div style={{ display:"flex",gap:"8px",marginBottom:"12px" }}>
+              <label style={{ flex:1,display:"block",padding:"13px",background:C.orange,borderRadius:"14px",color:C.white,fontSize:"14px",fontWeight:"700",textAlign:"center",cursor:"pointer",boxSizing:"border-box" }}>
+                {I.cam} Kamera
+                <input type="file" accept="image/*" capture="environment" style={{ display:"none" }} onChange={async e => {
+                  const f=e.target.files?.[0]; if(!f||!user?.id) return;
+                  const ext=(f.name.split('.').pop()||'jpg').toLowerCase();
+                  const path=`vibes/${user.id}_${Date.now()}.${ext}`;
+                  const{error}=await supabase.storage.from('avatars').upload(path,f,{upsert:false,contentType:f.type||'image/jpeg'});
+                  if(!error){
+                    const{data:u}=supabase.storage.from('avatars').getPublicUrl(path);
+                    await supabase.from('vibe_photos').insert({user_id:user.id,url:u.publicUrl+'?t='+Date.now(),approved:false});
+                    alert("Hochgeladen! Wartet auf Admin-Freigabe (+50 XP bei Genehmigung)");
+                  } else { alert("Upload fehlgeschlagen: "+error.message); }
+                }}/>
+              </label>
+              <label style={{ flex:1,display:"block",padding:"13px",background:C.card,border:`1px solid ${C.border}`,borderRadius:"14px",color:C.text,fontSize:"14px",fontWeight:"700",textAlign:"center",cursor:"pointer",boxSizing:"border-box" }}>
+                {I.img} Galerie
+                <input type="file" accept="image/*" style={{ display:"none" }} onChange={async e => {
+                  const f=e.target.files?.[0]; if(!f||!user?.id) return;
+                  const ext=(f.name.split('.').pop()||'jpg').toLowerCase();
+                  const path=`vibes/${user.id}_${Date.now()}.${ext}`;
+                  const{error}=await supabase.storage.from('avatars').upload(path,f,{upsert:false,contentType:f.type||'image/jpeg'});
+                  if(!error){
+                    const{data:u}=supabase.storage.from('avatars').getPublicUrl(path);
+                    await supabase.from('vibe_photos').insert({user_id:user.id,url:u.publicUrl+'?t='+Date.now(),approved:false});
+                    alert("Hochgeladen! Wartet auf Admin-Freigabe (+50 XP bei Genehmigung)");
+                  } else { alert("Upload fehlgeschlagen: "+error.message); }
+                }}/>
+              </label>
+            </div>
             {vibes.length===0 && <div style={{ textAlign:"center",padding:"24px",color:C.textLight }}>Noch keine freigegebenen Vibes</div>}
             <div style={{ display:"grid",gridTemplateColumns:"1fr 1fr",gap:"8px" }}>
-              {vibes.map(v => <div key={v.id} style={{ borderRadius:"14px",overflow:"hidden",aspectRatio:"1" }}><img src={v.url} style={{ width:"100%",height:"100%",objectFit:"cover",filter:"sepia(0.3) contrast(1.1) saturate(0.9)" }}/></div>)}
+              {vibes.map(v => (
+                <div key={v.id} style={{ borderRadius:"14px",overflow:"hidden",aspectRatio:"1",position:"relative" }}>
+                  <img src={v.url} style={{ width:"100%",height:"100%",objectFit:"cover",filter:"sepia(0.3) contrast(1.1) saturate(0.9)" }}/>
+                  <button onClick={async () => {
+                    if (navigator.share) {
+                      try {
+                        const res = await fetch(v.url);
+                        const blob = await res.blob();
+                        const file = new File([blob], 'cereza-vibe.jpg', { type: 'image/jpeg' });
+                        await navigator.share({ files: [file], title: 'Cereza Vibe', text: `Mein Vibe bei Cereza! @${user.name} | ${user.pts||0} XP` });
+                      } catch { navigator.share({ title: 'Cereza Vibe', text: `Schau mal bei Cereza vorbei!`, url: window.location.origin }).catch(() => {}); }
+                    }
+                  }} style={{ position:"absolute",bottom:"6px",right:"6px",width:"32px",height:"32px",borderRadius:"50%",background:"rgba(0,0,0,0.5)",backdropFilter:"blur(4px)",border:"none",color:"#fff",fontSize:"14px",cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center" }}>
+                    {I.share}
+                  </button>
+                </div>
+              ))}
             </div>
           </div>
         )}
@@ -1944,6 +1730,26 @@ const AdminLogin = ({ onLogin, onBack }) => {
 };
 
 // ─── Admin Panel ──────────────────────────────────────────────────
+// ─── Suggestions Admin ───────────────────────────────────────────
+const SuggestionsAdmin = () => {
+  const [suggestions, setSuggestions] = useState([]);
+  const [loading, setLoading] = useState(true);
+  useEffect(() => { db.getPendingSuggestions().then(d => { setSuggestions(d); setLoading(false); }); }, []);
+  if (loading) return <div style={{ textAlign:"center",padding:"20px",color:"#999" }}>Laden...</div>;
+  if (!suggestions.length) return <div style={{ textAlign:"center",padding:"30px",color:"#999" }}>Keine offenen Vorschläge</div>;
+  return suggestions.map(s => (
+    <div key={s.id} style={{ background:"#fff",borderRadius:"14px",padding:"14px",border:"1px solid #e8e8e8",marginBottom:"8px" }}>
+      <div style={{ fontSize:"16px",fontWeight:"700",color:"#111" }}>{s.name}</div>
+      {s.description && <div style={{ fontSize:"13px",color:"#777",marginTop:"4px" }}>{s.description}</div>}
+      <div style={{ fontSize:"11px",color:"#999",marginTop:"6px" }}>von @{s.profile?.name} · {new Date(s.created_at).toLocaleDateString('de-DE')}</div>
+      <div style={{ display:"flex",gap:"8px",marginTop:"10px" }}>
+        <button onClick={async () => { await db.approveSuggestion(s.id, true); setSuggestions(p => p.filter(x => x.id !== s.id)); }} style={{ flex:1,padding:"10px",background:"#2d472a",borderRadius:"10px",color:"#fff",fontSize:"13px",fontWeight:"700" }}>✓ Annehmen</button>
+        <button onClick={async () => { await db.approveSuggestion(s.id, false); setSuggestions(p => p.filter(x => x.id !== s.id)); }} style={{ flex:1,padding:"10px",background:"#f5f5f5",border:"1px solid #e8e8e8",borderRadius:"10px",color:"#999",fontSize:"13px",fontWeight:"700" }}>✕ Ablehnen</button>
+      </div>
+    </div>
+  ));
+};
+
 const AdminPanel = ({ onClose }) => {
   // Inline QR Mission Scanner
   const QRMissionInline = () => {
@@ -2053,7 +1859,6 @@ const AdminPanel = ({ onClose }) => {
   const [redemptions,setRedemptions]=useState([]);
   const [vibes,    setVibes]    = useState([]);
   const [visitors, setVisitors] = useState([]);
-  const [proposals, setProposals] = useState([]);
   const [pushTitle,setPushTitle]= useState("");
   const [pushBody, setPushBody] = useState("");
   const [toast,    setToast]    = useState(null);
@@ -2082,8 +1887,6 @@ const AdminPanel = ({ onClose }) => {
     setRedemptions(r); setVibes(v); setVisitors(vis);
     setDishes((d||[]).map(x => ({ ...x, votes:x.dish_votes?.filter(v=>v.vote).length||0 })));
     setGlowHours(gh||[]);
-    const { data:props } = await supabase.from('dish_proposals').select('*, profile:user_id(name)').eq('approved', false).order('created_at', { ascending:false });
-    setProposals(props||[]);
     setLoading(false);
   }, []);
 
@@ -2125,8 +1928,8 @@ const AdminPanel = ({ onClose }) => {
   const TABS = [
     {id:"stats",l:"Stats"},{id:"users",l:"User"},{id:"redemptions",l:"Kasse"},{id:"qrscan",l:"QR-Scan"},
     {id:"shop",l:"Shop"},{id:"missions",l:"Missionen"},{id:"dishes",l:"Gerichte"},
-    {id:"glow",l:"Glow"},{id:"prizes",l:"Rad"},{id:"facts",l:"Fakten"},{id:"proposals",l:"Vorschläge"},
-    {id:"vibes",l:"Vibes"},{id:"visits",l:"Heute"},{id:"push",l:"Push"},{id:"qrgen",l:"QR-Gen"},
+    {id:"glow",l:"Glow"},{id:"prizes",l:"Rad"},{id:"facts",l:"Fakten"},
+    {id:"vibes",l:"Vibes"},{id:"suggestions",l:"Vorschläge"},{id:"visits",l:"Heute"},{id:"push",l:"Push"},{id:"qrgen",l:"QR-Gen"},
   ];
 
   const stats = [
@@ -2196,7 +1999,6 @@ const AdminPanel = ({ onClose }) => {
 
           <AdminToggle label="Wöchentlicher Reset (Fortschritt startet jede Woche neu)" value={editMission.reset_weekly||false} onChange={v=>setEditMission(p=>({...p,reset_weekly:v}))}/>
           {editMission.id && <AdminToggle label="Aktiv" value={editMission.active!==false} onChange={v=>setEditMission(p=>({...p,active:v}))}/>}
-          {editMission.id && <button onClick={async()=>{if(!confirm("Mission wirklich löschen? Alle Stempel gehen verloren."))return;await supabase.from('mission_stamps').delete().eq('mission_id',editMission.id);await supabase.from('mission_starts').delete().eq('mission_id',editMission.id);await supabase.from('missions').delete().eq('id',editMission.id);ok2("Gelöscht");setEditMission(null);loadAll();}} style={{width:"100%",padding:"12px",background:"transparent",border:"1px solid #e24a28",borderRadius:"12px",color:"#e24a28",fontSize:"14px",marginTop:"10px"}}>Mission löschen</button>}
 
           {/* Vorschau */}
           <div style={{marginTop:"14px",padding:"12px",background:"#f9f9f9",borderRadius:"10px",fontSize:"12px",color:"#666",lineHeight:1.6}}>
@@ -2220,7 +2022,6 @@ const AdminPanel = ({ onClose }) => {
           <AdminInput label="Beschreibung" value={editDish.description} onChange={v=>setEditDish(p=>({...p,description:v}))}/>
           {editDish.id && <AdminToggle label="Aktiv" value={editDish.active!==false} onChange={v=>setEditDish(p=>({...p,active:v}))}/>}
           {editDish.id && <button onClick={async()=>{if(!confirm("Votes zurücksetzen?"))return;await supabase.from('dish_votes').delete().eq('dish_id',editDish.id);ok2("Votes zurückgesetzt");setEditDish(null);loadAll();}} style={{width:"100%",padding:"11px",background:"transparent",border:"1px solid #e8e8e8",borderRadius:"12px",color:"#999",fontSize:"14px",marginTop:"8px"}}>Votes zurücksetzen</button>}
-          {editDish.id && <button onClick={async()=>{if(!confirm("Gericht und alle Votes wirklich löschen?"))return;await supabase.from('dish_votes').delete().eq('dish_id',editDish.id);await supabase.from('dishes').delete().eq('id',editDish.id);ok2("Gelöscht");setEditDish(null);loadAll();}} style={{width:"100%",padding:"12px",background:"transparent",border:"1px solid #e24a28",borderRadius:"12px",color:"#e24a28",fontSize:"14px",marginTop:"6px"}}>Gericht löschen</button>}
         </AdminModal>
       )}
       {editShop && (
@@ -2235,7 +2036,6 @@ const AdminPanel = ({ onClose }) => {
           <AdminInput label="XP Kosten" value={editShop.cost} onChange={v=>setEditShop(p=>({...p,cost:v}))} type="number"/>
           <AdminInput label="Min. Level" value={editShop.min_level} onChange={v=>setEditShop(p=>({...p,min_level:v}))} type="number"/>
           {editShop.id && <AdminToggle label="Aktiv" value={editShop.active!==false} onChange={v=>setEditShop(p=>({...p,active:v}))}/>}
-          {editShop.id && <button onClick={async()=>{if(!confirm("Item wirklich löschen?"))return;await supabase.from('shop_items').delete().eq('id',editShop.id);ok2("Gelöscht");setEditShop(null);db.getShopItems().then(setShopItems);}} style={{width:"100%",padding:"12px",background:"transparent",border:"1px solid #e24a28",borderRadius:"12px",color:"#e24a28",fontSize:"14px",marginTop:"10px"}}>Item löschen</button>}
         </AdminModal>
       )}
       {editPrize && (
@@ -2248,7 +2048,6 @@ const AdminPanel = ({ onClose }) => {
           <AdminInput label="Wert (XP, 0=nichts, -1=2x)" value={editPrize.value} onChange={v=>setEditPrize(p=>({...p,value:v}))} type="number"/>
           <AdminInput label="Farbe (Hex)" value={editPrize.color} onChange={v=>setEditPrize(p=>({...p,color:v}))}/>
           {editPrize.id && <AdminToggle label="Aktiv" value={editPrize.active!==false} onChange={v=>setEditPrize(p=>({...p,active:v}))}/>}
-          {editPrize.id && <button onClick={async()=>{if(!confirm("Preis wirklich löschen?"))return;await supabase.from('wheel_prizes').delete().eq('id',editPrize.id);ok2("Gelöscht");setEditPrize(null);db.getWheelPrizes().then(setPrizes);}} style={{width:"100%",padding:"12px",background:"transparent",border:"1px solid #e24a28",borderRadius:"12px",color:"#e24a28",fontSize:"14px",marginTop:"10px"}}>Preis löschen</button>}
         </AdminModal>
       )}
       {editGlow && (
@@ -2267,7 +2066,6 @@ const AdminPanel = ({ onClose }) => {
           <AdminInput label="Ende (HH:MM)" value={editGlow.end_time} onChange={v=>setEditGlow(p=>({...p,end_time:v}))}/>
           <AdminInput label="Multiplikator" value={editGlow.multiplier} onChange={v=>setEditGlow(p=>({...p,multiplier:v}))} type="number"/>
           {editGlow.id && <AdminToggle label="Aktiv" value={editGlow.active!==false} onChange={v=>setEditGlow(p=>({...p,active:v}))}/>}
-          {editGlow.id && <button onClick={async()=>{if(!confirm("Glow Hour wirklich löschen?"))return;await supabase.from('glow_hours').delete().eq('id',editGlow.id);ok2("Gelöscht");setEditGlow(null);supabase.from('glow_hours').select('*').order('id').then(r=>setGlowHours(r.data||[]));}} style={{width:"100%",padding:"12px",background:"transparent",border:"1px solid #e24a28",borderRadius:"12px",color:"#e24a28",fontSize:"14px",marginTop:"10px"}}>Glow Hour löschen</button>}
         </AdminModal>
       )}
 
@@ -2427,11 +2225,18 @@ const AdminPanel = ({ onClose }) => {
                 <img src={v.url} style={{ width:"100%",borderRadius:"10px",marginBottom:"8px",filter:"sepia(0.3) contrast(1.1)" }}/>
                 <div style={{ fontSize:"12px",color:"#999",marginBottom:"10px" }}>@{v.profile?.name} · {new Date(v.created_at).toLocaleDateString('de-DE')}</div>
                 <div style={{ display:"flex",gap:"8px" }}>
-                  <button onClick={async()=>{await db.approveVibe(v.id,true);if(v.user_id) await db.addPts(v.user_id, 50);ok2("Freigegeben ✓ (+50 XP für User)");db.getPendingVibes().then(setVibes);}} style={{ flex:1,padding:"11px",background:"#2d472a",borderRadius:"12px",color:"#fff",fontSize:"14px",fontWeight:"700" }}>✓ Freigeben +50XP</button>
+                  <button onClick={async()=>{await db.approveVibe(v.id,true);if(v.user_id){await db.addPts(v.user_id,50);}ok2("Freigegeben + 50 XP ✓");db.getPendingVibes().then(setVibes);}} style={{ flex:1,padding:"11px",background:"#2d472a",borderRadius:"12px",color:"#fff",fontSize:"14px",fontWeight:"700" }}>✓ Freigeben (+50 XP)</button>
                   <button onClick={async()=>{await supabase.from('vibe_photos').delete().eq('id',v.id);ok2("Abgelehnt");db.getPendingVibes().then(setVibes);}} style={{ flex:1,padding:"11px",background:"#f5f5f5",border:"1px solid #e8e8e8",borderRadius:"12px",color:"#999",fontSize:"14px",fontWeight:"700" }}>✕ Ablehnen</button>
                 </div>
               </div>
             ))}
+          </div>
+        )}
+
+        {!loading&&tab==="suggestions"&&(
+          <div>
+            <div style={{ fontSize:"12px",color:"#999",marginBottom:"10px" }}>Gericht-Vorschläge von Usern</div>
+            <SuggestionsAdmin />
           </div>
         )}
 
@@ -2466,34 +2271,6 @@ const AdminPanel = ({ onClose }) => {
         )}
 
         {!loading&&tab==="qrgen"&&<QRGenInline/>}
-
-        {!loading&&tab==="proposals"&&(
-          <div>
-            <div style={{ fontSize:"12px",color:"#999",marginBottom:"10px" }}>Gericht-Vorschläge von Level 5+ Usern ({proposals.length})</div>
-            {proposals.length===0&&<div style={{ textAlign:"center",padding:"30px",color:"#999" }}>Keine offenen Vorschläge</div>}
-            {proposals.map(p=>(
-              <div key={p.id} style={{ background:"#fff",borderRadius:"16px",padding:"14px",border:"1px solid #e8e8e8",marginBottom:"8px" }}>
-                <div style={{ fontSize:"16px",fontWeight:"700",color:"#111",marginBottom:"4px" }}>{p.name}</div>
-                {p.description&&<div style={{ fontSize:"13px",color:"#666",marginBottom:"8px" }}>{p.description}</div>}
-                <div style={{ fontSize:"12px",color:"#999",marginBottom:"12px" }}>von @{p.profile?.name||"user"} · {new Date(p.created_at).toLocaleDateString('de-DE')}</div>
-                <div style={{ display:"flex",gap:"8px" }}>
-                  <button onClick={async()=>{
-                    await supabase.from('dishes').insert({name:p.name,description:p.description||'',active:true});
-                    await supabase.from('dish_proposals').update({approved:true}).eq('id',p.id);
-                    if(p.user_id) await db.addPts(p.user_id, 100);
-                    ok2("Als Gericht hinzugefügt +100 XP für User");
-                    loadAll();
-                  }} style={{ flex:1,padding:"11px",background:"#2d472a",borderRadius:"12px",color:"#fff",fontSize:"14px",fontWeight:"700" }}>✓ Annehmen +100XP</button>
-                  <button onClick={async()=>{
-                    await supabase.from('dish_proposals').delete().eq('id',p.id);
-                    ok2("Abgelehnt");
-                    setProposals(prev=>prev.filter(x=>x.id!==p.id));
-                  }} style={{ flex:1,padding:"11px",background:"#f5f5f5",border:"1px solid #e8e8e8",borderRadius:"12px",color:"#999",fontSize:"14px",fontWeight:"700" }}>✕ Ablehnen</button>
-                </div>
-              </div>
-            ))}
-          </div>
-        )}
       </div>
     </div>
   );
@@ -2599,7 +2376,7 @@ export default function App() {
         try {
           let p = null;
           for (let i=0; i<3; i++) {
-            try { p = await Promise.race([db.getProfile(session.user.id), new Promise((_,rej) => setTimeout(() => rej(new Error('timeout')), 1500))]); } catch(e) { console.error('session profile load:', e?.message); }
+            try { p = await Promise.race([db.getProfile(session.user.id), new Promise((_,rej) => setTimeout(() => rej(), 1500))]); } catch(e) {}
             if (p) break;
             if (i<2) await new Promise(r => setTimeout(r, 400));
           }
@@ -2611,12 +2388,7 @@ export default function App() {
               db.updateProfile(p.id, { onboarded:true }).catch(()=>{});
             }
           }
-          else {
-            // Fallback nur wenn wirklich kein Profil da ist – nochmal versuchen
-            const retry = await db.getProfile(session.user.id);
-            if (retry) setUser(retry);
-            else setUser({ id:session.user.id, name:session.user.user_metadata?.name||session.user.email?.split('@')[0], email:session.user.email, pts:0, level:1, streak:0, total_visits:0, treat_count:0, treat_goal:8, wheel_spun_today:false, is_abo_member:false, is_admin:false });
-          }
+          else setUser({ id:session.user.id, name:session.user.user_metadata?.name||session.user.email?.split('@')[0], email:session.user.email, pts:0, level:1, streak:0, total_visits:0, treat_count:0, treat_goal:8, wheel_spun_today:false, is_abo_member:false, is_admin:false });
         } catch(e) { console.error('Profile load:', e); }
         setLoading(false); clearTimeout(fallback);
       }
@@ -2659,7 +2431,7 @@ export default function App() {
   // ── Push notifications ─────────────────────────────────────────
   useEffect(() => {
     if (!user?.id) return;
-    requestPushPermission(user.id).catch(e => console.error('async error:', e?.message));
+    requestPushPermission(user.id).catch(() => {});
     const unsub = onForegroundMessage(payload => {
       const { title, body } = payload.notification || {};
       if (title) { setToast({ title, body }); setTimeout(() => setToast(null), 4000); Sound.tap(); }
@@ -2709,11 +2481,8 @@ export default function App() {
     {id:"profile",  icon:I.user,   l:"Profil"},
   ];
 
-  // Höhe der Nav Bar für Content-Padding berechnen
-  const NAV_H = 64; // Buttons-Bereich (größer)
-
   return (
-    <div style={{ position:"fixed",inset:0,maxWidth:"430px",margin:"0 auto",fontFamily:font.ui,background:t.bg,overflow:"hidden" }}>
+    <div style={{ position:"fixed",inset:0,maxWidth:"430px",margin:"0 auto",fontFamily:font.ui,background:t.bg,display:"flex",flexDirection:"column",overflow:"hidden" }}>
       <style>{CSS}</style>
       {showLevelUp && <LevelUpOverlay level={showLevelUp} onClose={() => setShowLevelUp(null)}/>}
       {toast && (
@@ -2726,94 +2495,39 @@ export default function App() {
         </div>
       )}
 
-      {/* Content – kein overscroll, Platz für fixierte Nav unten */}
-      <div style={{ position:"absolute",top:0,left:0,right:0,bottom:0,overflowY:"auto",overflowX:"hidden",WebkitOverflowScrolling:"touch",overscrollBehavior:"none",paddingBottom:`${NAV_H}px` }}>
-        {tab==="home"     && <HomeTab    user={user} setUser={setUser} setTab={setTab}/>}
-        {tab==="missions" && <WheelTab   user={user} setUser={setUser}/>}
-        {tab==="scan"     && <ScanTab    user={user} setUser={setUser}/>}
-        {tab==="fam"      && <FamTab     user={user} C={C} font={font}/>}
-        {tab==="profile"  && <ProfileTab user={user} setUser={setUser} onLogout={async () => { await db.signOut(); setUser(null); }} theme={theme}/>}
+      {/* Content – kein overscroll */}
+      <div style={{ flex:1,overflow:"hidden",minHeight:0 }}>
+        <div style={{ height:"100%",overflowY:"auto",overflowX:"hidden",WebkitOverflowScrolling:"touch",overscrollBehavior:"none" }}>
+          {tab==="home"     && <HomeTab    user={user} setUser={setUser} setTab={setTab}/>}
+          {tab==="missions" && <WheelTab   user={user} setUser={setUser}/>}
+          {tab==="scan"     && <ScanTab    user={user} setUser={setUser}/>}
+          {tab==="fam"      && <FamTab     user={user} C={C} font={font}/>}
+          {tab==="profile"  && <ProfileTab user={user} setUser={setUser} onLogout={async () => { await db.signOut(); setUser(null); }} theme={theme}/>}
+        </div>
       </div>
 
-      {/* ─── Bottom Navigation Bar ─── Native-App-Quality ─── */}
-      <nav style={{
-        position:"fixed",
-        bottom:0,
-        left:0,
-        right:0,
-        maxWidth:"430px",
-        margin:"0 auto",
-        zIndex:9990,
-        /* Glassmorphism */
+      {/* Tab Bar – immer am untersten Displayrand */}
+      <div style={{
+        flexShrink:0,
         background:t.navBg,
-        backdropFilter:"blur(28px) saturate(1.6)",
-        WebkitBackdropFilter:"blur(28px) saturate(1.6)",
+        backdropFilter:"blur(24px)",
+        WebkitBackdropFilter:"blur(24px)",
         borderTop:`0.5px solid ${t.navBorder}`,
-        /* Kein Safe Area Padding — Menü liegt IN der Safe Area */
-        paddingBottom:0,
-        /* Touch-Optimierung */
-        userSelect:"none",
-        WebkitUserSelect:"none",
-        WebkitTapHighlightColor:"transparent",
-        touchAction:"manipulation",
+        paddingBottom:`env(safe-area-inset-bottom, 0px)`,
       }}>
-        <div style={{ display:"grid", gridTemplateColumns:`repeat(${NAV.length},1fr)`, height:`${NAV_H}px`, maxWidth:"430px", margin:"0 auto" }}>
+        <div style={{ display:"grid", gridTemplateColumns:`repeat(${NAV.length},1fr)`, padding:"8px 0 4px", maxWidth:"430px", margin:"0 auto" }}>
           {NAV.map(n => {
             const a = tab === n.id;
             return (
               <button key={n.id} onClick={() => { Sound.tap(); setTab(n.id); }}
-                style={{
-                  display:"flex",
-                  flexDirection:"column",
-                  alignItems:"center",
-                  justifyContent:"center",
-                  gap:"2px",
-                  /* 48px Hit-Target minimum */
-                  minHeight:"48px",
-                  minWidth:"48px",
-                  padding:0,
-                  margin:0,
-                  /* Kein Standard-Button-Style */
-                  background:"none",
-                  border:"none",
-                  outline:"none",
-                  cursor:"pointer",
-                  /* Touch */
-                  WebkitTapHighlightColor:"transparent",
-                  userSelect:"none",
-                  WebkitUserSelect:"none",
-                  touchAction:"manipulation",
-                  /* Farbe */
-                  color:a ? t.accent : t.textLight,
-                  /* Active-Übergang */
-                  transition:"color 0.15s ease, transform 0.15s ease",
-                  transform:a ? "scale(1)" : "scale(1)",
-                }}>
-                {/* Icon-Pill mit Active-State */}
-                <div style={{
-                  display:"flex",
-                  alignItems:"center",
-                  justifyContent:"center",
-                  width:a ? "48px" : "40px",
-                  height:"28px",
-                  borderRadius:"14px",
-                  background:a ? t.accent+"1a" : "transparent",
-                  transition:"all 0.2s cubic-bezier(0.4, 0, 0.2, 1)",
-                  color:a ? t.accent : t.textLight,
-                  transform:a ? "scale(1.05)" : "scale(1)",
-                }}>{n.icon}</div>
-                <span style={{
-                  fontSize:"10px",
-                  fontWeight:a ? "700" : "500",
-                  lineHeight:1,
-                  letterSpacing:a ? "0.2px" : "0px",
-                  transition:"all 0.15s ease",
-                }}>{n.l}</span>
+                style={{ display:"flex",flexDirection:"column",alignItems:"center",gap:"3px",background:"none",padding:"6px 0",color:a?t.accent:t.textLight,border:"none",outline:"none" }}>
+                <div style={{ padding:"4px 10px",borderRadius:"12px",background:a?t.accent+"1a":"transparent",transform:a?"scale(1.08)":"scale(1)",transition:"all 0.2s",color:a?t.accent:t.textLight }}>{n.icon}</div>
+                <span style={{ fontSize:"10px",fontWeight:a?"700":"500",lineHeight:1 }}>{n.l}</span>
               </button>
             );
           })}
         </div>
-      </nav>
+      </div>
     </div>
   );
 }

@@ -223,6 +223,49 @@ export const db = {
     return (data || []).some(g => time >= g.start_time && time <= g.end_time)
   },
 
+  // Nächste Glow Hour (für Countdown)
+  getNextGlowHour: async () => {
+    const now = new Date()
+    const day = now.getDay()
+    const time = now.toTimeString().slice(0, 5)
+    // Alle aktiven Glow Hours laden
+    const { data } = await supabase.from('glow_hours').select('*').eq('active', true)
+    if (!data || !data.length) return null
+    // Aktuell aktive Glow Hour?
+    const active = data.find(g => g.day_of_week === day && time >= g.start_time && time <= g.end_time)
+    if (active) return { active: true, end_time: active.end_time, day_of_week: active.day_of_week }
+    // Nächste Glow Hour finden
+    let best = null, bestDiff = Infinity
+    for (const g of data) {
+      let diffDays = g.day_of_week - day
+      if (diffDays < 0) diffDays += 7
+      const [h, m] = g.start_time.split(':').map(Number)
+      const target = new Date(now)
+      target.setDate(target.getDate() + diffDays)
+      target.setHours(h, m, 0, 0)
+      if (target <= now) { target.setDate(target.getDate() + 7) }
+      const diff = target - now
+      if (diff < bestDiff) { bestDiff = diff; best = { active: false, start_time: g.start_time, end_time: g.end_time, day_of_week: g.day_of_week, ms_until: diff } }
+    }
+    return best
+  },
+
+  // ─── Cinder Suggestions ──────────────────────────────────────
+  suggestDish: async (uid, name, description) => {
+    const { data, error } = await supabase.from('dish_suggestions').insert({ user_id: uid, name, description, status: 'pending' })
+    return { data, error }
+  },
+  getPendingSuggestions: async () => {
+    const { data } = await supabase.from('dish_suggestions')
+      .select('*, profile:user_id(name)')
+      .eq('status', 'pending')
+      .order('created_at', { ascending: false })
+    return data || []
+  },
+  approveSuggestion: async (id, approved) => {
+    return supabase.from('dish_suggestions').update({ status: approved ? 'approved' : 'rejected' }).eq('id', id)
+  },
+
   // ─── Fun Facts ────────────────────────────────────────────────
   getFunFacts: async () => {
     const { data } = await supabase.from('fun_facts').select('*').eq('active', true).order('id')

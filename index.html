@@ -3,17 +3,23 @@
   <head>
     <meta charset="UTF-8" />
     <link rel="icon" type="image/svg+xml" href="/vite.svg" />
-    <!-- viewport-fit=cover ist KRITISCH für iPhone ohne Abstand unten -->
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
     <meta name="theme-color" content="#b02605" />
     <title>Cereza Loyalty</title>
-    <!-- Fonts: Playfair Display (Editorial) + Plus Jakarta Sans (UI) -->
-    <link rel="preconnect" href="https://fonts.googleapis.com"/>
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
-    <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;600;700;800;900&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet"/>
+    <!-- Gallica (Display) + Plus Jakarta Sans (Body) -->
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:ital,wght@0,300;0,400;0,500;0,600;0,700;0,800;1,400;1,600&display=swap" rel="stylesheet" />
     <style>
+      @font-face {
+        font-family: 'Gallica';
+        src: url('/Gallica-Regular.otf') format('opentype');
+        font-weight: 400;
+        font-style: normal;
+        font-display: swap;
+      }
       * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
       html, body {
         height: 100%;
@@ -24,8 +30,8 @@
         overscroll-behavior: none;
         -webkit-overflow-scrolling: touch;
         background: #fef9eb;
-        font-family: 'Plus Jakarta Sans','Inter',-apple-system,sans-serif;
-        /* Zoom verhindern */
+        font-family: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, sans-serif;
+        color: #1d1c13;
         touch-action: pan-x pan-y;
         -ms-touch-action: pan-x pan-y;
       }
@@ -41,6 +47,7 @@
         html { height: -webkit-fill-available; }
         body { min-height: -webkit-fill-available; }
       }
+      button, a, nav { user-select: none; -webkit-user-select: none; }
     </style>
   </head>
   <body>

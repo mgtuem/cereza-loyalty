@@ -71,7 +71,7 @@ const applyTheme = t => {
   C.surfaceLow=t.surfaceLow||t.grey; C.surfaceHigh=t.surfaceHigh||t.grey;
 };
 // Typography: Editorial serif + functional sans
-const font = { ui:"'Plus Jakarta Sans','Inter',-apple-system,sans-serif", display:"'Playfair Display',Georgia,serif" };
+const font = { ui:"'Plus Jakarta Sans',-apple-system,sans-serif", display:"'Gallica','Playfair Display',Georgia,serif" };
 
 // ─── Static data ─────────────────────────────────────────────────
 const ERAS = [

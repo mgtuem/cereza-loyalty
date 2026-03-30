@@ -73,6 +73,16 @@ const applyTheme = t => {
 // Typography: Editorial serif + functional sans
 const font = { ui:"'Plus Jakarta Sans',-apple-system,sans-serif", display:"'Gallica','Playfair Display',Georgia,serif" };
 
+// Canvas helper for rounded rectangles
+const roundRect = (ctx, x, y, w, h, r) => {
+  ctx.beginPath();
+  ctx.moveTo(x+r,y); ctx.lineTo(x+w-r,y); ctx.quadraticCurveTo(x+w,y,x+w,y+r);
+  ctx.lineTo(x+w,y+h-r); ctx.quadraticCurveTo(x+w,y+h,x+w-r,y+h);
+  ctx.lineTo(x+r,y+h); ctx.quadraticCurveTo(x,y+h,x,y+h-r);
+  ctx.lineTo(x,y+r); ctx.quadraticCurveTo(x,y,x+r,y);
+  ctx.closePath(); ctx.fill();
+};
+
 // ─── Static data ─────────────────────────────────────────────────
 const ERAS = [
   {level:1,name:"Newbie",pts:0},{level:2,name:"Regular",pts:500},
@@ -303,32 +313,50 @@ const AuthScreen = ({ onLogin }) => {
 // ─── Onboarding Screen (nur beim ersten Login) ───────────────────
 const OnboardingScreen = ({ user, onDone }) => {
   const [step, setStep] = useState(0);
+  const [instaTag, setInstaTag] = useState("");
   const steps = [
-    { emoji:"🍕", title:"Willkommen bei Cereza!", sub:"Das Loyalty Club der besten Pizza in Frankfurt.", btn:"Los geht's" },
-    { emoji:"⭐", title:"Punkte sammeln", sub:"Scanne den QR-Code auf deinem Beleg nach jedem Besuch und sammle XP.", btn:"Weiter" },
-    { emoji:"🎰", title:"Glücksrad drehen", sub:"Drehe täglich das Glücksrad und gewinne Bonus-XP und Überraschungen.", btn:"Weiter" },
-    { emoji:"🍕", title:"Gerichte wählen", sub:"Swipe in Cinder für Gerichte die auf die Karte kommen sollen – deine Stimme zählt.", btn:"Weiter" },
-    { emoji:"🎁", title:"Belohnungen einlösen", sub:"Ab 300 XP kannst du Gratis-Getränke, Pizzen und mehr einlösen.", btn:"Jetzt starten!" },
+    { emoji:"\u{1F355}", title:"Willkommen bei Cereza!", sub:"Das Loyalty Club der besten Pizza in Frankfurt.", btn:"Los geht\u2019s" },
+    { emoji:"\u{1F4F8}", title:"Dein Instagram", sub:"Hinterlege deinen Instagram-Tag \u2014 er wird als dein Name in der App angezeigt.", btn:"Weiter", hasInput:true },
+    { emoji:"\u2B50", title:"Punkte sammeln", sub:"Scanne den QR-Code auf deinem Beleg nach jedem Besuch und sammle XP.", btn:"Weiter" },
+    { emoji:"\u{1F3B0}", title:"Rubbellos", sub:"Rubble t\u00e4glich dein Los frei und gewinne Bonus-XP und \u00dcberraschungen.", btn:"Weiter" },
+    { emoji:"\u{1F355}", title:"Gerichte w\u00e4hlen", sub:"Swipe in Cinder f\u00fcr Gerichte die auf die Karte kommen sollen.", btn:"Weiter" },
+    { emoji:"\u{1F381}", title:"Belohnungen einl\u00f6sen", sub:"Ab 300 XP kannst du Gratis-Getr\u00e4nke, Pizzen und mehr einl\u00f6sen.", btn:"Jetzt starten!" },
   ];
   const s = steps[step];
+  const next = async () => {
+    // Save Instagram tag if on that step
+    if (step === 1 && instaTag.trim() && user?.id) {
+      const tag = instaTag.trim().replace(/^@/,"");
+      await db.updateProfile(user.id, { instagram: tag, name: tag });
+    }
+    if (step < steps.length-1) setStep(s => s+1); else onDone();
+  };
   return (
-    <div style={{ position:"fixed",inset:0,background:"#C1272D",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",padding:"40px 32px",zIndex:99999 }}>
+    <div style={{ position:"fixed",inset:0,background:"linear-gradient(160deg, #b02605 0%, #8b1e04 60%, #5a1003 100%)",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",padding:"40px 32px",zIndex:99999 }}>
       <style>{defaultCSS}</style>
-      {/* Progress dots */}
       <div style={{ display:"flex",gap:"6px",marginBottom:"48px" }}>
         {steps.map((_,i) => (
-          <div key={i} style={{ width:i===step?24:8,height:"8px",borderRadius:"4px",background:i===step?"#fff":"rgba(255,255,255,0.3)",transition:"all 0.3s" }}/>
+          <div key={i} style={{ width:i===step?24:8,height:"8px",borderRadius:"4px",background:i===step?"#fff":"rgba(255,255,255,0.25)",transition:"all 0.3s" }}/>
         ))}
       </div>
       <div style={{ fontSize:"72px",marginBottom:"24px",animation:"scaleIn 0.4s" }}>{s.emoji}</div>
-      <div style={{ fontSize:"28px",fontFamily:font.display,color:"#fff",fontWeight:"700",textAlign:"center",marginBottom:"12px",animation:"fadeUp 0.4s" }}>{s.title}</div>
-      <div style={{ fontSize:"16px",color:"rgba(255,255,255,0.7)",textAlign:"center",lineHeight:1.6,marginBottom:"48px",maxWidth:"300px",animation:"fadeUp 0.4s" }}>{s.sub}</div>
-      <button onClick={() => { if(step<steps.length-1) setStep(s=>s+1); else onDone(); }}
-        style={{ padding:"17px 52px",background:"rgba(255,255,255,0.95)",borderRadius:"50px",color:"#C1272D",fontSize:"17px",fontWeight:"800",animation:"fadeUp 0.4s" }}>
+      <div style={{ fontSize:"28px",fontFamily:font.display,color:"#fff",textAlign:"center",marginBottom:"12px",animation:"fadeUp 0.4s" }}>{s.title}</div>
+      <div style={{ fontSize:"16px",color:"rgba(255,255,255,0.65)",textAlign:"center",lineHeight:1.6,marginBottom: s.hasInput ? "24px" : "48px",maxWidth:"300px",animation:"fadeUp 0.4s" }}>{s.sub}</div>
+      {s.hasInput && (
+        <div style={{ marginBottom:"32px",width:"100%",maxWidth:"280px",animation:"fadeUp 0.4s" }}>
+          <input value={instaTag} onChange={e => setInstaTag(e.target.value)} placeholder="@dein_instagram"
+            style={{ width:"100%",padding:"15px 20px",borderRadius:"50px",border:"2px solid rgba(255,255,255,0.2)",background:"rgba(255,255,255,0.1)",color:"#fff",fontSize:"16px",fontWeight:"600",textAlign:"center",outline:"none",backdropFilter:"blur(8px)",boxSizing:"border-box" }}/>
+          <div style={{ fontSize:"12px",color:"rgba(255,255,255,0.35)",marginTop:"8px",textAlign:"center" }}>Optional \u2014 du kannst es sp\u00e4ter im Profil \u00e4ndern</div>
+        </div>
+      )}
+      <button onClick={next}
+        style={{ padding:"17px 52px",background:"rgba(254,249,235,0.95)",borderRadius:"50px",color:"#b02605",fontSize:"17px",fontWeight:"800",animation:"fadeUp 0.4s" }}>
         {s.btn}
       </button>
       {step > 0 && (
-        <button onClick={onDone} style={{ marginTop:"18px",color:"rgba(255,255,255,0.45)",fontSize:"14px",background:"none",border:"none" }}>Überspringen</button>
+        <button onClick={onDone} style={{ marginTop:"18px",color:"rgba(255,255,255,0.35)",fontSize:"14px",background:"none",border:"none" }}>
+          \u00dcberspringen
+        </button>
       )}
     </div>
   );
@@ -649,7 +677,7 @@ const HomeTab = ({ user, setUser, setTab }) => {
 
       <div style={{ padding:"16px 20px 12px" }}>
         <div style={{ fontSize:"12px",letterSpacing:"2px",color:C.textLight,fontWeight:"600",textTransform:"uppercase" }}>Willkommen zurück</div>
-        <div style={{ fontSize:"28px",fontFamily:font.display,color:C.text,fontWeight:"700",marginTop:"2px" }}>@{user.name||"user"}</div>
+        <div style={{ fontSize:"28px",fontFamily:font.display,color:C.text,fontWeight:"700",marginTop:"2px" }}>@{user.instagram || user.name || "user"}</div>
       </div>
 
       <div style={{ padding:"0 16px" }}>
@@ -691,6 +719,65 @@ const HomeTab = ({ user, setUser, setTab }) => {
           </div>
           <button onClick={() => setTab("scan")} style={{ width:"100%",marginTop:"16px",padding:"14px",background:C.text,borderRadius:"14px",color:C.white,fontSize:"15px",fontWeight:"700",display:"flex",alignItems:"center",justifyContent:"center",gap:"10px" }}>
             {I.qr} Punkte scannen
+          </button>
+
+          {/* Story-Share Button */}
+          <button onClick={() => {
+            // Story-Card generieren
+            const canvas = document.createElement("canvas");
+            canvas.width = 1080; canvas.height = 1920;
+            const ctx = canvas.getContext("2d");
+            // Background gradient
+            const grad = ctx.createLinearGradient(0,0,1080,1920);
+            grad.addColorStop(0, "#b02605"); grad.addColorStop(0.5, "#8b1e04"); grad.addColorStop(1, "#5a1003");
+            ctx.fillStyle = grad; ctx.fillRect(0,0,1080,1920);
+            // Checkered pattern overlay
+            ctx.globalAlpha = 0.06;
+            for(let y=0;y<1920;y+=80) for(let x=0;x<1080;x+=80) { if((x/80+y/80)%2===0) { ctx.fillStyle="#fef9eb"; ctx.fillRect(x,y,80,80); } }
+            ctx.globalAlpha = 1;
+            // Logo text
+            ctx.fillStyle = "#fef9eb"; ctx.font = "700 72px Gallica, serif"; ctx.textAlign = "center";
+            ctx.fillText("cereza", 540, 500);
+            ctx.font = "600 16px 'Plus Jakarta Sans', sans-serif"; ctx.letterSpacing = "6px";
+            ctx.fillStyle = "rgba(254,249,235,0.4)";
+            ctx.fillText("L O Y A L T Y   C L U B", 540, 540);
+            // User card area
+            ctx.fillStyle = "rgba(254,249,235,0.1)"; roundRect(ctx, 140, 640, 800, 560, 40);
+            ctx.fillStyle = "#fef9eb"; ctx.font = "700 48px Gallica, serif"; ctx.textAlign = "center";
+            ctx.fillText("@" + (user.instagram||user.name||"user"), 540, 780);
+            ctx.fillStyle = "rgba(254,249,235,0.6)"; ctx.font = "500 28px 'Plus Jakarta Sans', sans-serif";
+            ctx.fillText(era.name + " \u00b7 Level " + (user.level||1), 540, 830);
+            // Stats
+            const stats = [{v:user.pts||0,l:"XP"},{v:user.total_visits||0,l:"Besuche"},{v:user.streak||0,l:"Streak"}];
+            stats.forEach((s,i) => {
+              const sx = 260 + i*280;
+              ctx.fillStyle = "#fef9eb"; ctx.font = "800 52px Gallica, serif";
+              ctx.fillText(String(s.v), sx, 960);
+              ctx.fillStyle = "rgba(254,249,235,0.45)"; ctx.font = "600 20px 'Plus Jakarta Sans', sans-serif";
+              ctx.fillText(s.l, sx, 1000);
+            });
+            // Watermark
+            ctx.fillStyle = "rgba(254,249,235,0.2)"; ctx.font = "500 18px 'Plus Jakarta Sans', sans-serif";
+            ctx.fillText("cereza-loyalty.vercel.app", 540, 1800);
+            // Share
+            canvas.toBlob(async blob => {
+              if (!blob) return;
+              const file = new File([blob], "cereza-story.png", {type:"image/png"});
+              try {
+                if (navigator.canShare?.({files:[file]})) {
+                  await navigator.share({files:[file], title:"Mein Cereza Status"});
+                } else {
+                  navigator.share?.({title:"Cereza Loyalty", text:`Ich bin ${era.name} bei Cereza! ${user.pts||0} XP`, url:"https://cereza-loyalty.vercel.app"});
+                }
+              } catch { /* cancelled */ }
+            }, "image/png");
+          }} style={{
+            width:"100%",marginTop:"10px",padding:"13px",
+            background:C.greyBg,borderRadius:"50px",
+            color:C.textSub,fontSize:"14px",fontWeight:"600",
+            display:"flex",alignItems:"center",justifyContent:"center",gap:"8px"
+          }}>
+            {I.share} Story teilen
           </button>
         </Card>
 
@@ -991,6 +1078,18 @@ const ScanTab = ({ user, setUser }) => {
 
   return (
     <div style={{ background:C.beige, minHeight:"100%", display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center", padding:`calc(${ST} + 40px) 24px calc(${SB} + 40px)` }}>
+      {/* Mein QR-Code Bereich */}
+      {!done && !scanning && !err && (
+        <div style={{ marginBottom:"28px",textAlign:"center" }}>
+          <div style={{ fontSize:"10px",letterSpacing:"2.5px",color:C.textLight,fontWeight:"700",textTransform:"uppercase",marginBottom:"8px" }}>Dein Code</div>
+          <div style={{ display:"inline-flex",alignItems:"center",gap:"8px",padding:"10px 20px",background:C.card,borderRadius:"16px",boxShadow:"0 2px 16px rgba(29,28,19,0.05)" }}>
+            <span style={{ fontSize:"18px" }}>▣</span>
+            <span style={{ fontSize:"14px",fontWeight:"700",color:C.text,fontFamily:"monospace",letterSpacing:"1px" }}>cereza:{(user.id||"").slice(0,8)}</span>
+          </div>
+          <div style={{ fontSize:"11px",color:C.textLight,marginTop:"6px" }}>Zeige diesen Code an der Kasse</div>
+        </div>
+      )}
+
       {!done ? (
         <>
           <div style={{ fontSize:"11px",letterSpacing:"3px",color:C.textLight,fontWeight:"600",marginBottom:"6px",textTransform:"uppercase" }}>Beleg scannen</div>
@@ -1403,22 +1502,11 @@ const ProfileTab = ({ user, setUser, onLogout, theme }) => {
             }}/>
           </label>
         </div>
-        <div style={{ fontSize:"20px",fontFamily:font.display,fontWeight:"700",color:C.text }}>@{user.name||"user"}</div>
+        <div style={{ fontSize:"20px",fontFamily:font.display,fontWeight:"700",color:C.text }}>@{user.instagram || user.name || "user"}</div>
         <div style={{ fontSize:"12px",color:C.textLight,marginTop:"2px" }}>{era.name} · Level {user.level||1}</div>
 
-        {/* QR-Code Button */}
-        <div onClick={() => {
-          const code = `cereza:${user.id}`;
-          if (navigator.share) navigator.share({ title:"Mein Cereza QR", text:code });
-          else navigator.clipboard?.writeText(code).then(() => alert("Code kopiert: "+code));
-        }} style={{ display:"inline-flex",alignItems:"center",gap:"6px",marginTop:"8px",padding:"6px 14px",background:`${C.orange}18`,border:`1px solid ${C.orange}33`,borderRadius:"20px",cursor:"pointer" }}>
-          <span style={{ fontSize:"14px" }}>▣</span>
-          <span style={{ fontSize:"12px",fontWeight:"600",color:C.orange }}>Mein QR-Code</span>
-        </div>
-
         <div style={{ display:"flex",gap:"8px",justifyContent:"center",marginTop:"12px" }}>
-          <button onClick={shareApp} style={{ padding:"9px 18px",background:C.card,border:`1px solid ${C.border}`,borderRadius:"20px",fontSize:"13px",fontWeight:"600",color:C.text,display:"flex",alignItems:"center",gap:"6px" }}>{I.share} Teilen</button>
-          <button onClick={shareApp} style={{ padding:"9px 18px",background:C.orange,borderRadius:"20px",fontSize:"13px",fontWeight:"600",color:C.white }}>+ Einladen</button>
+          <button onClick={shareApp} style={{ padding:"9px 18px",background:C.orange,borderRadius:"50px",fontSize:"13px",fontWeight:"700",color:C.white }}>+ Einladen</button>
         </div>
       </div>
 

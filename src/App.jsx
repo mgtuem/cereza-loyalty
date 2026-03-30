@@ -300,7 +300,19 @@ const AuthScreen = ({ onLogin }) => {
         <button onClick={submit} disabled={loading} style={{ width:"100%",padding:"16px",background:"rgba(255,255,255,0.95)",borderRadius:"14px",color:"#C1272D",fontSize:"16px",fontWeight:"700",opacity:loading?0.7:1 }}>
           {loading ? "..." : isLogin ? "Einloggen" : "Registrieren"}
         </button>
-        <p style={{ textAlign:"center",marginTop:"22px",color:"rgba(255,255,255,0.45)",fontSize:"14px" }}>
+        {isLogin && (
+          <p onClick={async () => {
+            if (!email) { setErr("Bitte E-Mail eingeben"); return; }
+            setLoading(true);
+            const { error } = await supabase.auth.resetPasswordForEmail(email, { redirectTo: "https://cereza-loyalty.vercel.app" });
+            setLoading(false);
+            if (error) setErr(error.message);
+            else setErr("Link zum Zur\u00fccksetzen wurde gesendet! Pr\u00fcfe dein Postfach.");
+          }} style={{ textAlign:"center",marginTop:"14px",color:"rgba(255,255,255,0.5)",fontSize:"13px",cursor:"pointer" }}>
+            Passwort vergessen?
+          </p>
+        )}
+        <p style={{ textAlign:"center",marginTop:"14px",color:"rgba(255,255,255,0.45)",fontSize:"14px" }}>
           {isLogin ? "Noch kein Mitglied? " : "Schon dabei? "}
           <span onClick={() => { setIsLogin(!isLogin); setErr(""); }} style={{ color:"rgba(255,255,255,0.9)",cursor:"pointer",textDecoration:"underline" }}>
             {isLogin ? "Jetzt beitreten" : "Einloggen"}
@@ -689,9 +701,10 @@ const HomeTab = ({ user, setUser, setTab }) => {
         const end = new Date(now); end.setHours(h,m,0,0);
         const diff = end - now;
         if (diff <= 0) { setGlowCountdown(""); return; }
-        const mins = Math.floor(diff/60000);
+        const hrs = Math.floor(diff/3600000);
+        const mins = Math.floor((diff%3600000)/60000);
         const secs = Math.floor((diff%60000)/1000);
-        setGlowCountdown(`${mins}:${secs.toString().padStart(2,'0')}`);
+        setGlowCountdown(`${hrs.toString().padStart(2,'0')}:${mins.toString().padStart(2,'0')}:${secs.toString().padStart(2,'0')}`);
       };
       tick();
       const iv = setInterval(tick, 1000);
@@ -707,10 +720,11 @@ const HomeTab = ({ user, setUser, setTab }) => {
           const hrs = Math.floor(totalHrs % 24);
           setGlowCountdown(days > 0 ? `${days}d ${hrs}h` : `${Math.floor(totalHrs)}h`);
         } else {
-          // Show hh:mm
+          // Show hh:mm:ss
           const hrs = Math.floor(totalHrs);
           const mins = Math.floor((diff % 3600000) / 60000);
-          setGlowCountdown(`${hrs}:${mins.toString().padStart(2,'0')}`);
+          const secs = Math.floor((diff % 60000) / 1000);
+          setGlowCountdown(`${hrs.toString().padStart(2,'0')}:${mins.toString().padStart(2,'0')}:${secs.toString().padStart(2,'0')}`);
         }
       };
       const startRef = Date.now();
@@ -845,6 +859,12 @@ const HomeTab = ({ user, setUser, setTab }) => {
               ctx.fillStyle = "rgba(255,255,255,0.4)"; ctx.font = "600 20px sans-serif";
               ctx.fillText(s.l, sx, 980);
             });
+            // Glow Hour Badge wenn aktiv
+            if (glowInfo?.active) {
+              ctx.fillStyle = "rgba(255,60,60,0.9)"; ctx.font = "800 28px sans-serif"; ctx.textAlign = "center";
+              ctx.fillText("\uD83D\uDD25 GLOW HOUR AKTIV \u2022 2\u00D7 CP", 540, 1100);
+              ctx.textAlign = "left";
+            }
             // Watermark
             ctx.fillStyle = "rgba(255,255,255,0.15)"; ctx.font = "500 18px sans-serif";
             ctx.fillText("cereza-loyalty.vercel.app", 540, 1800);
@@ -863,6 +883,15 @@ const HomeTab = ({ user, setUser, setTab }) => {
             display:"flex",alignItems:"center",justifyContent:"center",gap:"8px"
           }}>
             {I.share} Story teilen
+          </button>
+          {/* Shop Button */}
+          <button onClick={() => setTab("shop")} style={{
+            width:"100%",marginTop:"8px",padding:"14px",
+            background:`linear-gradient(135deg, ${C.orange}, #8b1e04)`,borderRadius:"50px",
+            color:"#fff",fontSize:"14px",fontWeight:"700",
+            display:"flex",alignItems:"center",justifyContent:"center",gap:"8px"
+          }}>
+            {I.shop} Shop & Gutscheine
           </button>
         </Card>
 
@@ -2341,15 +2370,39 @@ const AdminPanel = ({ onClose, adminProfile }) => {
 
         {!loading&&tab==="redemptions"&&(
           <div>
-            <div style={{ fontSize:"12px",color:"#999",marginBottom:"10px" }}>Offene Einlösungen bestätigen</div>
-            {redemptions.length===0&&<div style={{ textAlign:"center",padding:"30px",color:"#999" }}>Keine offenen Einlösungen</div>}
+            {/* Gutschein-Code Eingabe */}
+            <div style={{ background:"#fff",borderRadius:"16px",padding:"16px",border:"1px solid #e8e8e8",marginBottom:"14px" }}>
+              <div style={{ fontSize:"13px",fontWeight:"700",color:"#111",marginBottom:"10px" }}>Gutschein-Code einl\u00f6sen</div>
+              <div style={{ display:"flex",gap:"8px" }}>
+                <input id="voucher-code-input" placeholder="CZ-XXXXXX" style={{ flex:1,padding:"13px 16px",border:"1px solid #e8e8e8",borderRadius:"12px",fontSize:"16px",fontFamily:"monospace",letterSpacing:"2px",textTransform:"uppercase",outline:"none",background:"#fafafa" }}/>
+                <button onClick={async()=>{
+                  const code = document.getElementById("voucher-code-input")?.value?.trim();
+                  if(!code) return ok2("Bitte Code eingeben");
+                  // Code in redemptions suchen (pending Status)
+                  const match = redemptions.find(r => {
+                    const rCode = `CZ-${r.id?.toString(36)?.toUpperCase()?.slice(0,6)}`;
+                    return code.toUpperCase() === rCode || code.toUpperCase().includes(r.id?.toString()?.slice(-6));
+                  });
+                  if (match) {
+                    await db.confirmRedemption(match.id);
+                    ok2(`\u2713 ${match.item?.name} best\u00e4tigt f\u00fcr @${match.profile?.name}`);
+                    db.getPendingRedemptions().then(setRedemptions);
+                    document.getElementById("voucher-code-input").value = "";
+                  } else {
+                    ok2("Code nicht gefunden oder bereits eingelöst");
+                  }
+                }} style={{ padding:"13px 20px",background:"#2d472a",borderRadius:"12px",color:"#fff",fontSize:"15px",fontWeight:"700" }}>\u2713</button>
+              </div>
+            </div>
+            <div style={{ fontSize:"12px",color:"#999",marginBottom:"10px" }}>Offene Einl\u00f6sungen ({redemptions.length})</div>
+            {redemptions.length===0&&<div style={{ textAlign:"center",padding:"30px",color:"#999" }}>Keine offenen Einl\u00f6sungen</div>}
             {redemptions.map(r=>(
               <div key={r.id} style={{ background:"#fff",borderRadius:"16px",padding:"14px",border:"1px solid #e8e8e8",marginBottom:"8px",display:"flex",justifyContent:"space-between",alignItems:"center" }}>
                 <div>
                   <div style={{ fontSize:"15px",fontWeight:"700",color:"#111" }}>{r.item?.icon} {r.item?.name||"Unbekannt"}</div>
-                  <div style={{ fontSize:"12px",color:"#999" }}>@{r.profile?.name} · {r.pts_spent} XP</div>
+                  <div style={{ fontSize:"12px",color:"#999" }}>@{r.profile?.name} \u00b7 {r.pts_spent} CP</div>
                 </div>
-                <button onClick={async()=>{await db.confirmRedemption(r.id);ok2("Bestätigt ✓");db.getPendingRedemptions().then(setRedemptions);}} style={{ background:"#2d472a",borderRadius:"12px",padding:"12px 18px",color:"#fff",fontSize:"14px",fontWeight:"700" }}>✓ OK</button>
+                <button onClick={async()=>{await db.confirmRedemption(r.id);ok2("Best\u00e4tigt \u2713");db.getPendingRedemptions().then(setRedemptions);}} style={{ background:"#2d472a",borderRadius:"12px",padding:"12px 18px",color:"#fff",fontSize:"14px",fontWeight:"700" }}>\u2713 OK</button>
               </div>
             ))}
           </div>
@@ -2880,7 +2933,7 @@ export default function App() {
     {id:"home",     icon:I.home,   l:"Home"},
     {id:"missions", icon:I.target, l:"Missions"},
     {id:"scan",     icon:I.qr,     l:"Scan"},
-    {id:"shop",     icon:I.shop,   l:"Shop"},
+    {id:"fam",      icon:I.fam,    l:"Fam"},
     {id:"profile",  icon:I.user,   l:"Profil"},
   ];
 
@@ -2905,21 +2958,23 @@ export default function App() {
           {tab==="home"     && <HomeTab    user={user} setUser={setUser} setTab={setTab}/>}
           {tab==="missions" && <WheelTab   user={user} setUser={setUser}/>}
           {tab==="scan"     && <ScanTab    user={user} setUser={setUser}/>}
+          {tab==="fam"      && <FamTab     user={user} C={C} font={font}/>}
           {tab==="shop"     && <ShopTab    user={user} setUser={setUser}/>}
           {tab==="profile"  && <ProfileTab user={user} setUser={setUser} onLogout={async () => { await supabase.auth.signOut(); localStorage.removeItem("cz-user"); setUser(null); setTab("home"); }} theme={theme}/>}
         </div>
       </div>
 
-      {/* Tab Bar – immer am untersten Displayrand */}
+      {/* Tab Bar – direkt am untersten Displayrand, KEIN Abstand */}
       <div style={{
         flexShrink:0,
         background:t.navBg,
         backdropFilter:"blur(24px)",
         WebkitBackdropFilter:"blur(24px)",
         borderTop:`0.5px solid ${t.navBorder}`,
-        paddingBottom:`env(safe-area-inset-bottom, 0px)`,
+        paddingBottom:0,
+        marginBottom:0,
       }}>
-        <div style={{ display:"grid", gridTemplateColumns:`repeat(${NAV.length},1fr)`, padding:"8px 0 4px", maxWidth:"430px", margin:"0 auto" }}>
+        <div style={{ display:"grid", gridTemplateColumns:`repeat(${NAV.length},1fr)`, padding:"6px 0 2px", maxWidth:"430px", margin:"0 auto" }}>
           {NAV.map(n => {
             const a = tab === n.id;
             return (

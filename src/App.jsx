@@ -791,14 +791,14 @@ const WheelTab = ({ user, setUser }) => {
       if (user?.id) {
         const fresh = await db.getProfile(user.id);
         if (fresh) {
-          // Nur Felder übernehmen die nicht undefined/null sind, pts nie auf 0 setzen wenn User schon welche hat
           setUser(u => {
             const merged = { ...u };
             for (const [k, v] of Object.entries(fresh)) { if (v !== null && v !== undefined) merged[k] = v; }
             return merged;
           });
           const today = new Date().toISOString().split('T')[0];
-          setSpins(fresh.last_spin_date===today ? (fresh.wheel_spun_today?2:1) : 0);
+          // spins_today Feld statt Boolean
+          setSpins(fresh.last_spin_date === today ? (fresh.spins_today || 0) : 0);
         }
       }
       const p = await db.getWheelPrizes(); if(p.length) setPrizes(p);
@@ -842,11 +842,16 @@ const WheelTab = ({ user, setUser }) => {
   };
 
   const startScratchCard = async () => {
-    if (scratching || !canSpin) return;
+    if (scratching || revealed || !canSpin) return;
     const today = new Date().toISOString().split('T')[0];
+    // Server-Check: wie viele Spins heute wirklich verbraucht?
     if (user?.id) {
       const fresh = await db.getProfile(user.id);
-      if (fresh && fresh.last_spin_date===today && (fresh.wheel_spun_today?2:1)>=MAX) { setSpins(2); return; }
+      if (fresh) {
+        const serverSpins = fresh.last_spin_date === today ? (fresh.spins_today || 0) : 0;
+        setSpins(serverSpins);
+        if (serverSpins >= MAX) return; // Wirklich kein Spin mehr
+      }
     }
     if (needsPay) {
       const fresh = user?.id ? await db.getProfile(user.id) : null;
@@ -856,7 +861,7 @@ const WheelTab = ({ user, setUser }) => {
       const updated = await db.getProfile(user.id);
       if (updated) setUser(u => ({ ...u, pts: updated.pts || 0 }));
     }
-    // Zufälliger Preis
+    // Zufälliger Preis — Counter wird NICHT hier hochgezählt, erst beim Reveal
     const idx = Math.floor(Math.random() * prizes.length);
     setResult(prizes[idx]);
     setRevealed(false);
@@ -884,15 +889,17 @@ const WheelTab = ({ user, setUser }) => {
   };
 
   const reveal = async () => {
-    setRevealed(true); setScratching(false); setSpins(s => s+1);
+    setRevealed(true); setScratching(false);
     if (!result) return;
     result.value > 0 ? Sound.win() : Sound.lose();
     const today2 = new Date().toISOString().split('T')[0];
-    const upd = { wheel_spun_today:true, last_spin_date:today2 };
+    const newSpins = spins + 1;
+    setSpins(newSpins);
+    // XP gutschreiben + Spin-Counter in DB speichern
     if (result.value > 0 && user?.id) {
       await db.addPts(user.id, result.value);
     }
-    if (user?.id) await db.updateProfile(user.id, upd);
+    if (user?.id) await db.updateProfile(user.id, { spins_today: newSpins, last_spin_date: today2 });
     const fresh = await db.getProfile(user.id);
     if (fresh) setUser(u => ({ ...u, ...fresh }));
   };
@@ -2703,7 +2710,7 @@ export default function App() {
   ];
 
   // Höhe der Nav Bar für Content-Padding berechnen
-  const NAV_H = 56; // Buttons-Bereich
+  const NAV_H = 64; // Buttons-Bereich (größer)
 
   return (
     <div style={{ position:"fixed",inset:0,maxWidth:"430px",margin:"0 auto",fontFamily:font.ui,background:t.bg,overflow:"hidden" }}>
@@ -2720,7 +2727,7 @@ export default function App() {
       )}
 
       {/* Content – kein overscroll, Platz für fixierte Nav unten */}
-      <div style={{ position:"absolute",top:0,left:0,right:0,bottom:0,overflowY:"auto",overflowX:"hidden",WebkitOverflowScrolling:"touch",overscrollBehavior:"none",paddingBottom:`calc(${NAV_H}px + env(safe-area-inset-bottom, 0px))` }}>
+      <div style={{ position:"absolute",top:0,left:0,right:0,bottom:0,overflowY:"auto",overflowX:"hidden",WebkitOverflowScrolling:"touch",overscrollBehavior:"none",paddingBottom:`${NAV_H}px` }}>
         {tab==="home"     && <HomeTab    user={user} setUser={setUser} setTab={setTab}/>}
         {tab==="missions" && <WheelTab   user={user} setUser={setUser}/>}
         {tab==="scan"     && <ScanTab    user={user} setUser={setUser}/>}
@@ -2742,8 +2749,8 @@ export default function App() {
         backdropFilter:"blur(28px) saturate(1.6)",
         WebkitBackdropFilter:"blur(28px) saturate(1.6)",
         borderTop:`0.5px solid ${t.navBorder}`,
-        /* iOS Safe Area */
-        paddingBottom:`env(safe-area-inset-bottom, 0px)`,
+        /* Kein Safe Area Padding — Menü liegt IN der Safe Area */
+        paddingBottom:0,
         /* Touch-Optimierung */
         userSelect:"none",
         WebkitUserSelect:"none",

@@ -46,8 +46,6 @@ workflows:
       - ios/App/build/**/*.xcarchive
 
     publishing:
-      app_store_connect:
-        auth: integration
       email:
         recipients:
           - your-email@example.com

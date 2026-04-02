@@ -3,15 +3,15 @@ import { getMessaging, getToken, onMessage } from 'firebase/messaging';
 import supabase from './supabase';
 
 const firebaseConfig = {
-  apiKey: "AIzaSyCnxIoJ9v5Wlutk59fc8aMTARss1S78xbc",
-  authDomain: "cereza-loyalty.firebaseapp.com",
-  projectId: "cereza-loyalty",
-  storageBucket: "cereza-loyalty.firebasestorage.app",
-  messagingSenderId: "684783511032",
-  appId: "1:684783511032:web:8951cb96551d350209220d"
+  apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
+  authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN,
+  projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID,
+  storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET,
+  messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID,
+  appId: import.meta.env.VITE_FIREBASE_APP_ID
 };
 
-const VAPID_KEY = "BLTPvtkf-HFJ5y1kMoCPxAqriPCIA0xQp3mR1bjo3Cgt-s2el6QCiuZdp2sJR7OHtS1IbBSwFC1Vz5B0GcjKGP0";
+const VAPID_KEY = import.meta.env.VITE_FIREBASE_VAPID_KEY;
 
 let app, messaging;
 

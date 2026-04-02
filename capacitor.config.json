@@ -1,0 +1,30 @@
+{
+  "appId": "com.cereza.loyalty",
+  "appName": "Cereza",
+  "webDir": "dist",
+  "backgroundColor": "#fef9eb",
+  "ios": {
+    "contentInset": "automatic",
+    "preferredContentMode": "mobile",
+    "scheme": "Cereza"
+  },
+  "android": {
+    "allowMixedContent": false,
+    "backgroundColor": "#fef9eb"
+  },
+  "plugins": {
+    "PushNotifications": {
+      "presentationOptions": ["badge", "sound", "alert"]
+    },
+    "SplashScreen": {
+      "launchAutoHide": true,
+      "launchShowDuration": 2000,
+      "backgroundColor": "#fef9eb",
+      "showSpinner": false
+    },
+    "StatusBar": {
+      "style": "DARK",
+      "backgroundColor": "#fef9eb"
+    }
+  }
+}

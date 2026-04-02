@@ -1,3 +1,13 @@
 node_modules
 dist
 .env
+.env.local
+.env.production
+.env*.local
+
+# Native platforms (regenerated via cap sync)
+ios/App/Pods
+ios/App/App/public
+android/app/src/main/assets/public
+android/.gradle
+android/app/build
